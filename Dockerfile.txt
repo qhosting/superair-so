@@ -1,3 +1,4 @@
+
 # Stage 1: Build the React Application
 FROM node:20-alpine as builder
 
@@ -6,7 +7,7 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies (including devDependencies for Vite build)
+# Install dependencies
 RUN npm install
 
 # Copy the rest of the application code
@@ -23,7 +24,7 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install only production dependencies (Express, PG)
+# Install only production dependencies
 RUN npm install --only=production
 
 # Copy the server code
@@ -33,8 +34,9 @@ COPY server ./server
 COPY --from=builder /app/dist ./dist
 
 # Environment variables
-ENV PORT=3000
 ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOST=0.0.0.0
 
 # Expose the port
 EXPOSE 3000
