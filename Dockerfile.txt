@@ -4,6 +4,10 @@ FROM node:20-alpine as builder
 
 WORKDIR /app
 
+# Argument for Gemini API Key (Required at build time for Vite)
+ARG API_KEY
+ENV API_KEY=$API_KEY
+
 # Copy package files
 COPY package*.json ./
 

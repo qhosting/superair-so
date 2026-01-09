@@ -2,7 +2,8 @@
 // Módulo de conexión a Base de Datos Postgres
 // Se utiliza para conectar el sistema a la instancia externa proporcionada
 
-const { Pool } = require('pg');
+import pg from 'pg';
+const { Pool } = pg;
 
 // Configuración de la conexión utilizando la URL proporcionada
 // NOTA: Para Easypanel, es recomendable usar process.env.DATABASE_URL
@@ -19,7 +20,7 @@ pool.on('error', (err, client) => {
 });
 
 // Función de prueba de conexión
-const checkConnection = async () => {
+export const checkConnection = async () => {
   try {
     const client = await pool.connect();
     const res = await client.query('SELECT NOW()');
@@ -32,8 +33,5 @@ const checkConnection = async () => {
   }
 };
 
-module.exports = {
-  query: (text, params) => pool.query(text, params),
-  checkConnection,
-  pool
-};
+export const query = (text, params) => pool.query(text, params);
+export { pool };
