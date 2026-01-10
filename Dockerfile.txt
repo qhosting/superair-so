@@ -1,18 +1,17 @@
-
 # Stage 1: Build the React Application
 FROM node:20-alpine as builder
 
 WORKDIR /app
 
-# Argument for Gemini API Key (Required at build time for Vite)
+# Argument for Gemini API Key (Required at build time for Vite env injection)
 ARG API_KEY
 ENV API_KEY=$API_KEY
 
-# Copy package files
+# Copy package files first to leverage Docker cache
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies (use ci for deterministic builds)
+RUN npm ci
 
 # Copy the rest of the application code
 COPY . .
@@ -29,7 +28,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install only production dependencies
-RUN npm install --only=production
+RUN npm ci --only=production
 
 # Copy the server code
 COPY server ./server
@@ -44,6 +43,10 @@ ENV HOST=0.0.0.0
 
 # Expose the port
 EXPOSE 3000
+
+# Health check (Optional but recommended)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
 # Start the Express server
 CMD ["node", "server/index.js"]
