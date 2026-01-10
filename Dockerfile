@@ -1,0 +1,57 @@
+# Stage 1: Build the React Application
+FROM node:20-alpine as builder
+
+WORKDIR /app
+
+# Force development environment for build tools
+ENV NODE_ENV=development
+
+# Argument for Gemini API Key (Required at build time for Vite env injection)
+ARG API_KEY
+ENV API_KEY=$API_KEY
+
+# Copy package files first to leverage Docker cache
+COPY package*.json ./
+
+# Install dependencies (force include dev dependencies for build tools)
+RUN npm install --include=dev
+
+# Copy the rest of the application code
+COPY . .
+
+# Build the React app (Output goes to /app/dist)
+RUN npm run build
+
+# Stage 2: Production Server
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Production environment
+ENV NODE_ENV=production
+
+# Copy package files
+COPY package*.json ./
+
+# Install only production dependencies
+RUN npm install --only=production
+
+# Copy the server code
+COPY server ./server
+
+# Copy the built static files from the builder stage
+COPY --from=builder /app/dist ./dist
+
+# Environment variables
+ENV PORT=3000
+ENV HOST=0.0.0.0
+
+# Expose the port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
+
+# Start the Express server
+CMD ["node", "server/index.js"]
