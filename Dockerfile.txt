@@ -10,8 +10,8 @@ ENV API_KEY=$API_KEY
 # Copy package files first to leverage Docker cache
 COPY package*.json ./
 
-# Install dependencies (use ci for deterministic builds)
-RUN npm ci
+# Install dependencies (using install instead of ci to handle missing lockfile)
+RUN npm install
 
 # Copy the rest of the application code
 COPY . .
@@ -28,7 +28,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install only production dependencies
-RUN npm ci --only=production
+RUN npm install --only=production
 
 # Copy the server code
 COPY server ./server
