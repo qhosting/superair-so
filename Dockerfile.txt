@@ -13,7 +13,7 @@ ENV API_KEY=$API_KEY
 # Copy package files first to leverage Docker cache
 COPY package*.json ./
 
-# Install dependencies (force include dev dependencies for build tools)
+# Install dependencies (force include dev dependencies for build tools like Vite)
 RUN npm install --include=dev
 
 # Copy the rest of the application code
@@ -33,7 +33,8 @@ ENV NODE_ENV=production
 # Copy package files
 COPY package*.json ./
 
-# Install only production dependencies (Backend only)
+# Install only production dependencies (Backend only: Express, PG, Redis, etc.)
+# This omits frontend libraries like @google/genai which are not needed for the server
 RUN npm install --omit=dev
 
 # Copy the server code
