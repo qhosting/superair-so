@@ -3,6 +3,9 @@ FROM node:20-alpine as builder
 
 WORKDIR /app
 
+# Force development environment for build tools
+ENV NODE_ENV=development
+
 # Argument for Gemini API Key (Required at build time for Vite env injection)
 ARG API_KEY
 ENV API_KEY=$API_KEY
@@ -10,8 +13,8 @@ ENV API_KEY=$API_KEY
 # Copy package files first to leverage Docker cache
 COPY package*.json ./
 
-# Install dependencies (using install instead of ci to handle missing lockfile)
-RUN npm install
+# Install dependencies (force include dev dependencies for build tools)
+RUN npm install --include=dev
 
 # Copy the rest of the application code
 COPY . .
@@ -23,6 +26,9 @@ RUN npm run build
 FROM node:20-alpine
 
 WORKDIR /app
+
+# Production environment
+ENV NODE_ENV=production
 
 # Copy package files
 COPY package*.json ./
@@ -37,14 +43,13 @@ COPY server ./server
 COPY --from=builder /app/dist ./dist
 
 # Environment variables
-ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
 
 # Expose the port
 EXPOSE 3000
 
-# Health check (Optional but recommended)
+# Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
