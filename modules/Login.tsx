@@ -1,37 +1,86 @@
-
-import React, { useState } from 'react';
-import { Wind, Lock, Mail, ChevronRight, AlertCircle, ArrowLeft } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { 
+  Wind, Lock, Mail, ChevronRight, AlertCircle, ArrowLeft, Loader2, 
+  CheckCircle2, Eye, EyeOff, HelpCircle, X, Send
+} from 'lucide-react';
+import { Link, useNavigate } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext';
 
 const Login: React.FC = () => {
+  const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+  
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  
-  const handleLogin = (e: React.FormEvent) => {
+  const [success, setSuccess] = useState(false);
+
+  // Recovery Modal State
+  const [showRecovery, setShowRecovery] = useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [isRecovering, setIsRecovering] = useState(false);
+
+  // 1. Efecto de Navegación: Fuente única de verdad
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/dashboard');
+    }
+  }, [isAuthenticated, navigate]);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading || success) return;
+
     setLoading(true);
     setError('');
     
-    // Simulación de login con credenciales estáticas
-    setTimeout(() => {
-      const cleanEmail = email.trim().toLowerCase();
-      if (cleanEmail === 'admin@superair.com.mx' && password === 'admin123') {
-        localStorage.setItem('superair_auth', 'true');
-        // Usamos navigate en lugar de window.location.href para evitar recargar la app
-        navigate('/dashboard');
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+
+      const data = await response.json();
+
+      // 2. Validación Robusta: Verificar response.ok Y existencia de user
+      if (response.ok && data.user) {
+        setSuccess(true);
+        // 3. UX Delay: Mostrar éxito y luego actualizar estado
+        setTimeout(() => {
+            // Actualiza el contexto. Esto disparará el useEffect de arriba para navegar.
+            // No navegamos aquí directamente para evitar condiciones de carrera.
+            login(data.user, rememberMe); 
+        }, 800);
       } else {
-        setError('Credenciales inválidas. Revisa tu correo o contraseña.');
+        setError(data.error || 'Credenciales incorrectas');
         setLoading(false);
       }
-    }, 1000);
+    } catch (err: any) {
+      console.error("Login Error:", err);
+      setError('Error de conexión con el servidor de producción.');
+      setLoading(false);
+    }
+  };
+
+  const handleRecovery = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsRecovering(true);
+    // En producción, esto debería conectar con un endpoint real de email
+    setTimeout(() => {
+        setIsRecovering(false);
+        alert(`Solicitud enviada. Si ${recoveryEmail} existe, recibirás instrucciones.`);
+        setShowRecovery(false);
+        setRecoveryEmail('');
+    }, 2000);
   };
 
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 overflow-hidden relative font-sans">
-      {/* Background patterns */}
       <div className="absolute top-0 left-0 w-full h-full opacity-30 pointer-events-none">
         <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-sky-600/20 blur-[120px] rounded-full"></div>
         <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-600/10 blur-[120px] rounded-full"></div>
@@ -61,8 +110,8 @@ const Login: React.FC = () => {
                   type="email" 
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-12 pr-4 py-4 bg-slate-900/50 border border-slate-700 rounded-2xl text-white outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
-                  placeholder="admin@superair.com.mx"
+                  className="w-full pl-12 pr-4 py-4 bg-slate-900/50 border border-slate-700 rounded-2xl text-white outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all placeholder:text-slate-600"
+                  placeholder="usuario@superair.com.mx"
                   required
                 />
               </div>
@@ -73,14 +122,34 @@ const Login: React.FC = () => {
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                 <input 
-                  type="password" 
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-12 pr-4 py-4 bg-slate-900/50 border border-slate-700 rounded-2xl text-white outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
+                  className="w-full pl-12 pr-12 py-4 bg-slate-900/50 border border-slate-700 rounded-2xl text-white outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all placeholder:text-slate-600"
                   placeholder="••••••••"
                   required
                 />
+                <button 
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${rememberMe ? 'bg-sky-600 border-sky-600' : 'border-slate-600 bg-transparent group-hover:border-slate-500'}`}>
+                        {rememberMe && <CheckCircle2 size={12} className="text-white" />}
+                    </div>
+                    <input type="checkbox" className="hidden" checked={rememberMe} onChange={() => setRememberMe(!rememberMe)} />
+                    <span className="text-xs text-slate-400 font-medium group-hover:text-slate-300">Mantener sesión</span>
+                </label>
+                <button type="button" onClick={() => setShowRecovery(true)} className="text-xs font-bold text-sky-400 hover:text-sky-300 transition-colors">
+                    ¿Olvidaste tu contraseña?
+                </button>
             </div>
 
             {error && (
@@ -92,11 +161,22 @@ const Login: React.FC = () => {
 
             <button 
               type="submit" 
-              disabled={loading}
-              className="w-full py-5 bg-sky-600 hover:bg-sky-500 text-white font-black rounded-2xl transition-all shadow-xl shadow-sky-900/20 flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={loading || success}
+              className={`w-full py-5 font-black rounded-2xl transition-all shadow-xl flex items-center justify-center gap-2 group disabled:opacity-80 disabled:cursor-not-allowed ${
+                  success 
+                  ? 'bg-emerald-500 text-white shadow-emerald-900/20' 
+                  : 'bg-sky-600 hover:bg-sky-500 text-white shadow-sky-900/20'
+              }`}
             >
               {loading ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                success ? (
+                    <>
+                        <CheckCircle2 size={20} className="animate-bounce" />
+                        ACCESO AUTORIZADO
+                    </>
+                ) : (
+                    <Loader2 className="animate-spin" size={20} />
+                )
               ) : (
                 <>
                   INGRESAR AL ERP <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
@@ -106,19 +186,51 @@ const Login: React.FC = () => {
           </form>
 
           <div className="mt-10 pt-8 border-t border-slate-700/50 flex flex-col gap-4">
-            <div className="text-slate-500 text-[10px] text-center mb-2">
-              <p>Demo: admin@superair.com.mx</p>
-              <p>Pass: admin123</p>
-            </div>
-            <button className="text-slate-500 hover:text-sky-400 text-xs font-bold uppercase tracking-widest transition-colors text-center">
-              ¿Olvidaste tu contraseña?
-            </button>
             <p className="text-[10px] text-slate-600 text-center font-bold uppercase tracking-[0.2em]">
-              Sistema de Gestión SuperAir v1.2.0
+              SuperAir Production System v3.0
             </p>
           </div>
         </div>
       </div>
+
+      {showRecovery && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-6">
+            <div className="bg-slate-800 w-full max-w-md rounded-[2.5rem] shadow-2xl border border-slate-700 animate-in zoom-in duration-300">
+                <div className="p-8 border-b border-slate-700 flex justify-between items-center">
+                    <h3 className="text-xl font-black text-white uppercase tracking-tight flex items-center gap-2">
+                        <HelpCircle size={24} className="text-sky-400"/> Recuperar Acceso
+                    </h3>
+                    <button onClick={() => setShowRecovery(false)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-xl transition-all">
+                        <X size={20} />
+                    </button>
+                </div>
+                <div className="p-8">
+                    <p className="text-slate-400 text-sm mb-6">Ingresa tu correo institucional.</p>
+                    <form onSubmit={handleRecovery} className="space-y-6">
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black text-sky-400 uppercase tracking-widest ml-1">Email Registrado</label>
+                            <input 
+                                type="email" 
+                                value={recoveryEmail}
+                                onChange={(e) => setRecoveryEmail(e.target.value)}
+                                className="w-full p-4 bg-slate-900 border border-slate-600 rounded-2xl text-white outline-none focus:ring-2 focus:ring-sky-500 transition-all"
+                                placeholder="usuario@superair.com.mx"
+                                required
+                            />
+                        </div>
+                        <button 
+                            type="submit"
+                            disabled={isRecovering}
+                            className="w-full py-4 bg-white text-slate-900 font-black rounded-2xl hover:bg-slate-200 transition-all uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 disabled:opacity-70"
+                        >
+                            {isRecovering ? <Loader2 className="animate-spin" size={16}/> : <Send size={16} />}
+                            Enviar Enlace de Rescate
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 };

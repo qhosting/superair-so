@@ -1,30 +1,11 @@
-
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  Search, 
-  Plus, 
-  UserPlus, 
-  Mail, 
-  Phone, 
-  MapPin, 
-  MoreHorizontal, 
-  Filter, 
-  Workflow, 
-  History as HistoryIcon, 
-  Calendar,
-  X,
-  Save,
-  Trash2,
-  FileText,
-  TrendingUp,
-  CheckCircle2,
-  Clock,
-  ChevronRight,
-  ClipboardList,
-  // Added missing Users icon from lucide-react
-  Users
+  Search, UserPlus, Mail, Phone, MapPin, MoreHorizontal, Workflow, 
+  History as HistoryIcon, Calendar, X, TrendingUp, CheckCircle2, Clock, 
+  ClipboardList, Users, Loader2, FileUp, FileText, ScanLine, Building2, Sparkles, Trash2
 } from 'lucide-react';
 import { Client } from '../types';
+import { GoogleGenAI, Type } from "@google/genai";
 
 const Clients: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -32,17 +13,152 @@ const Clients: React.FC = () => {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [triggeringId, setTriggeringId] = useState<string | null>(null);
+  
+  const [clients, setClients] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  const [newClient, setNewClient] = useState({
+    name: '', email: '', phone: '', address: '', rfc: '', type: 'Residencial', status: 'Prospecto', notes: ''
+  });
+  const [isSaving, setIsSaving] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
 
-  const [clients, setClients] = useState<Client[]>([
-    { id: '1', name: 'Ana Martínez', email: 'ana.m@example.com', phone: '55 1234 5678', address: 'Av. Reforma 123, CDMX', type: 'Residencial', status: 'Activo', totalSpent: 24500, lastService: '2024-03-15', notes: 'Prefiere mantenimientos los sábados por la mañana.' },
-    { id: '2', name: 'Corporativo Omega', email: 'ventas@omega.com', phone: '55 8765 4321', address: 'Polanco III, CDMX', type: 'Comercial', status: 'Activo', totalSpent: 142000, lastService: '2024-04-10', notes: 'Requiere factura inmediata. 12 unidades tipo paquete.' },
-    { id: '3', name: 'Roberto Garza', email: 'r.garza@test.com', phone: '81 4455 6677', address: 'Colonia Del Valle, Monterrey', type: 'Residencial', status: 'Prospecto', totalSpent: 0, notes: 'Interesado en Mini Split Inverter para recámara principal.' },
-  ]);
+  useEffect(() => {
+    fetch('/api/clients')
+      .then(res => {
+          if(!res.ok) throw new Error("API Error");
+          return res.json();
+      })
+      .then(data => {
+        if (Array.isArray(data)) setClients(data);
+      })
+      .catch(err => {
+        console.error("Failed to load clients:", err);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSaveClient = async () => {
+    setIsSaving(true);
+    try {
+        const response = await fetch('/api/clients', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newClient)
+        });
+        
+        if (response.ok) {
+            const savedClient = await response.json();
+            setClients([savedClient, ...clients]);
+            setShowForm(false);
+            setNewClient({ name: '', email: '', phone: '', address: '', rfc: '', type: 'Residencial', status: 'Prospecto', notes: '' });
+        } else {
+            throw new Error('Save Failed');
+        }
+    } catch (e) {
+        alert("Error al guardar cliente en la base de datos.");
+    } finally {
+        setIsSaving(false);
+    }
+  };
+
+  const handleDeleteClient = async (id: string) => {
+    if (!confirm("¿Eliminar este cliente y todos sus datos?")) return;
+    try {
+        await fetch(`/api/clients/${id}`, { method: 'DELETE' });
+        setClients(clients.filter(c => c.id !== id));
+        if (selectedClient?.id === id) setSelectedClient(null);
+    } catch(e) {
+        alert("Error al eliminar cliente.");
+    }
+  };
+
+  // --- LOGICA DE IA (Gemini) ---
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    
+    const file = files[0];
+    const validTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic'];
+
+    if (!validTypes.includes(file.type)) {
+        alert('Formato no soportado. Por favor sube PDF (Constancia Fiscal) o Imagen (JPG, PNG).');
+        return;
+    }
+
+    setIsAnalyzing(true);
+
+    try {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onloadend = async () => {
+            const base64Data = (reader.result as string).split(',')[1];
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            
+            // Configuración del Modelo y Prompt
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash-latest',
+                contents: {
+                    parts: [
+                        { inlineData: { mimeType: file.type, data: base64Data } },
+                        { text: "Analiza este documento fiscal mexicano (Constancia de Situación Fiscal). Extrae con precisión: Razón Social (name), RFC, Dirección Fiscal Completa (address) y determina si es Persona Física (Residencial) o Moral (Comercial)." }
+                    ]
+                },
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.OBJECT,
+                        properties: {
+                            name: { type: Type.STRING, description: "Nombre completo o Razón Social" },
+                            rfc: { type: Type.STRING, description: "RFC (Registro Federal de Contribuyentes)" },
+                            address: { type: Type.STRING, description: "Calle, Número, Colonia, Código Postal, Estado" },
+                            type: { type: Type.STRING, enum: ["Residencial", "Comercial"], description: "Tipo de cliente basado en el régimen fiscal" }
+                        },
+                        required: ["name", "rfc", "address", "type"]
+                    }
+                }
+            });
+
+            if (response.text) {
+                const extractedData = JSON.parse(response.text);
+                setNewClient(prev => ({
+                    ...prev,
+                    name: extractedData.name || prev.name,
+                    rfc: extractedData.rfc || prev.rfc,
+                    address: extractedData.address || prev.address,
+                    type: extractedData.type || prev.type,
+                    notes: `Datos extraídos automáticamente por IA el ${new Date().toLocaleDateString()} desde: ${file.name}`
+                }));
+                alert('¡Datos Fiscales extraídos con éxito!');
+            }
+        };
+    } catch (e) {
+        console.error(e);
+        alert("Ocurrió un error al procesar el documento con IA. Intenta con una imagen más clara o un PDF nativo.");
+    } finally {
+        setIsAnalyzing(false);
+    }
+  };
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') setDragActive(true);
+    else if (e.type === 'dragleave') setDragActive(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) handleFileUpload(e.dataTransfer.files);
+  };
 
   const filteredClients = useMemo(() => {
     return clients.filter(c => {
       const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                           c.email.toLowerCase().includes(searchTerm.toLowerCase());
+                           (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                           (c.rfc && c.rfc.toLowerCase().includes(searchTerm.toLowerCase()));
       const matchesFilter = activeFilter === 'Todos' || c.type === activeFilter;
       return matchesSearch && matchesFilter;
     });
@@ -55,12 +171,23 @@ const Clients: React.FC = () => {
     revenue: clients.reduce((acc, c) => acc + (c.totalSpent || 0), 0)
   };
 
-  const triggerN8n = (clientId: string) => {
+  const triggerN8n = async (clientId: string) => {
     setTriggeringId(clientId);
-    setTimeout(() => {
-      setTriggeringId(null);
-      alert('Datos sincronizados con Chatwoot y n8n.');
-    }, 1500);
+    try {
+        await fetch('/api/trigger-n8n', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                webhookUrl: 'https://n8n.tu-dominio.com/webhook/sync-client',
+                payload: { clientId, action: 'SYNC_CRM' }
+            })
+        });
+        alert('Datos enviados al Webhook de n8n exitosamente.');
+    } catch (e) {
+        alert('Error conectando con n8n.');
+    } finally {
+        setTimeout(() => setTriggeringId(null), 1000);
+    }
   };
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
@@ -71,9 +198,9 @@ const Clients: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {[
           { label: 'Total Clientes', value: stats.total, icon: Users, color: 'text-sky-600', bg: 'bg-sky-50' },
-          { label: 'Ingreso Total', value: formatCurrency(stats.revenue), icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+          { label: 'Ingreso Histórico', value: formatCurrency(stats.revenue), icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50' },
           { label: 'Prospectos', value: stats.prospects, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50' },
-          { label: 'Servicios Realizados', value: '142', icon: CheckCircle2, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+          { label: 'Servicios Realizados', value: '0', icon: CheckCircle2, color: 'text-indigo-600', bg: 'bg-indigo-50' },
         ].map((stat, idx) => (
           <div key={idx} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
             <div className={`w-10 h-10 ${stat.bg} ${stat.color} rounded-2xl flex items-center justify-center mb-4`}>
@@ -92,7 +219,7 @@ const Clients: React.FC = () => {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input 
               type="text" 
-              placeholder="Buscar por nombre, email, empresa..."
+              placeholder="Buscar por nombre, RFC, email..."
               className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-sky-500 outline-none transition-all font-medium"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -119,7 +246,20 @@ const Clients: React.FC = () => {
         </button>
       </div>
 
+      {/* Loading State */}
+      {loading && (
+        <div className="flex justify-center py-20">
+            <Loader2 className="animate-spin text-sky-600" size={48} />
+        </div>
+      )}
+
       {/* Clients Grid */}
+      {!loading && filteredClients.length === 0 && (
+          <div className="text-center py-20 text-slate-400">
+              <p>No se encontraron clientes.</p>
+          </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
         {filteredClients.map((client) => (
           <div key={client.id} className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm hover:shadow-2xl hover:border-sky-200 transition-all group overflow-hidden flex flex-col">
@@ -128,24 +268,28 @@ const Clients: React.FC = () => {
                 <div className={`w-14 h-14 rounded-3xl flex items-center justify-center text-xl font-black shadow-inner ${
                   client.type === 'Comercial' ? 'bg-indigo-50 text-indigo-500' : 'bg-sky-50 text-sky-500'
                 }`}>
-                  {client.name.split(' ').map(n => n[0]).join('')}
+                  {client.type === 'Comercial' ? <Building2 size={24}/> : client.name.charAt(0)}
                 </div>
                 <div className="flex gap-2">
                   <button 
                     onClick={() => triggerN8n(client.id)}
                     className={`p-3 rounded-2xl transition-all ${triggeringId === client.id ? 'bg-orange-500 text-white animate-pulse' : 'bg-slate-50 text-slate-400 hover:text-orange-500 hover:bg-orange-50'}`}
+                    title="Sincronizar con n8n"
                   >
                     <Workflow size={20} />
                   </button>
-                  <button className="p-3 bg-slate-50 text-slate-400 rounded-2xl hover:text-slate-600">
-                    <MoreHorizontal size={20} />
+                  <button 
+                    onClick={() => handleDeleteClient(client.id)}
+                    className="p-3 bg-slate-50 text-slate-400 rounded-2xl hover:text-rose-600 hover:bg-rose-50 transition-all"
+                  >
+                    <Trash2 size={20} />
                   </button>
                 </div>
               </div>
               
               <div className="mb-6">
                 <h4 className="font-black text-slate-900 text-xl tracking-tighter mb-1">{client.name}</h4>
-                <div className="flex gap-2 items-center">
+                <div className="flex flex-wrap gap-2 items-center">
                   <span className={`text-[9px] font-black uppercase tracking-[0.2em] px-3 py-1 rounded-full border ${
                     client.status === 'Activo' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'
                   }`}>
@@ -154,21 +298,26 @@ const Clients: React.FC = () => {
                   <span className="text-[9px] font-black uppercase tracking-[0.2em] px-3 py-1 rounded-full bg-slate-50 text-slate-500 border border-slate-100">
                     {client.type}
                   </span>
+                  {client.rfc && (
+                    <span className="text-[9px] font-mono font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                      {client.rfc}
+                    </span>
+                  )}
                 </div>
               </div>
 
               <div className="space-y-4 text-sm font-medium text-slate-500">
                 <div className="flex items-center gap-4">
                   <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400"><Mail size={14} /></div>
-                  <span className="truncate">{client.email}</span>
+                  <span className="truncate">{client.email || 'Sin email'}</span>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400"><Phone size={14} /></div>
-                  <span>{client.phone}</span>
+                  <span>{client.phone || 'Sin teléfono'}</span>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400"><MapPin size={14} /></div>
-                  <span className="truncate">{client.address}</span>
+                  <span className="truncate">{client.address || 'Sin dirección'}</span>
                 </div>
               </div>
             </div>
@@ -190,7 +339,7 @@ const Clients: React.FC = () => {
         ))}
       </div>
 
-      {/* Client Detail Drawer (Modal) */}
+      {/* Client Detail Drawer */}
       {selectedClient && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex justify-end">
            <div className="w-full max-w-2xl bg-white h-full shadow-2xl animate-in slide-in-from-right duration-500 flex flex-col">
@@ -210,18 +359,16 @@ const Clients: React.FC = () => {
               </div>
 
               <div className="flex-1 overflow-y-auto p-10 space-y-12 custom-scrollbar">
-                {/* Info Cards */}
-                <div className="grid grid-cols-2 gap-6">
-                   <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Total Invertido</p>
-                      <h4 className="text-2xl font-black text-slate-900">{formatCurrency(selectedClient.totalSpent || 0)}</h4>
-                   </div>
-                   <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Último Servicio</p>
-                      <h4 className="text-2xl font-black text-slate-900">{selectedClient.lastService || 'N/A'}</h4>
-                   </div>
-                </div>
-
+                {selectedClient.rfc && (
+                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between">
+                        <div>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">RFC Registrado</p>
+                            <p className="font-mono text-lg font-bold text-slate-800">{selectedClient.rfc}</p>
+                        </div>
+                        <FileText className="text-slate-300" size={24} />
+                    </div>
+                )}
+                
                 {/* Notes Section */}
                 <div>
                    <h5 className="font-black text-slate-900 uppercase tracking-tighter text-lg mb-6 flex items-center gap-3">
@@ -232,41 +379,6 @@ const Clients: React.FC = () => {
                       {selectedClient.notes || 'No hay notas registradas para este cliente.'}
                    </div>
                 </div>
-
-                {/* Activity Timeline */}
-                <div>
-                   <h5 className="font-black text-slate-900 uppercase tracking-tighter text-lg mb-8 flex items-center gap-3">
-                      <FileText size={20} className="text-sky-500" />
-                      Historial de Actividad
-                   </h5>
-                   <div className="space-y-6">
-                      {[
-                        { date: '2024-04-10', type: 'Mantenimiento', status: 'Completado', amount: '$850' },
-                        { date: '2024-03-05', type: 'Venta de Unidad', status: 'Completado', amount: '$14,500' },
-                        { date: '2024-02-12', type: 'Reparación', status: 'Garantía', amount: '$0' },
-                      ].map((item, i) => (
-                        <div key={i} className="flex gap-6 items-start group">
-                           <div className="pt-1">
-                              <div className="w-12 h-12 bg-white border-2 border-slate-100 rounded-2xl flex items-center justify-center text-slate-400 group-hover:border-sky-500 group-hover:text-sky-600 transition-all">
-                                 <HistoryIcon size={20} />
-                              </div>
-                           </div>
-                           <div className="flex-1 pb-6 border-b border-slate-100 last:border-0">
-                              <div className="flex justify-between mb-1">
-                                 <p className="font-black text-slate-800 uppercase tracking-tight">{item.type}</p>
-                                 <span className="text-xs font-bold text-sky-600">{item.amount}</span>
-                              </div>
-                              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{item.date} • {item.status}</p>
-                           </div>
-                        </div>
-                      ))}
-                   </div>
-                </div>
-              </div>
-
-              <div className="p-10 border-t border-slate-100 flex gap-4 bg-slate-50/50">
-                 <button className="flex-1 py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-sky-700 shadow-xl shadow-sky-600/20">Nueva Cotización</button>
-                 <button className="px-10 py-4 bg-white text-slate-600 border border-slate-200 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-slate-100">Editar Cliente</button>
               </div>
            </div>
         </div>
@@ -275,45 +387,129 @@ const Clients: React.FC = () => {
       {/* Add Client Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[110] flex items-center justify-center p-6">
-           <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
-              <div className="p-10 border-b border-slate-100 flex items-center justify-between">
+           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[3rem] shadow-2xl animate-in zoom-in duration-300 custom-scrollbar">
+              <div className="p-8 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
                  <h3 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Nuevo Cliente</h3>
                  <button onClick={() => setShowForm(false)} className="p-3 hover:bg-slate-100 rounded-2xl transition-all"><X size={24}/></button>
               </div>
-              <div className="p-10 grid grid-cols-2 gap-6">
-                 <div className="col-span-2 space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nombre Completo / Empresa</label>
-                    <input className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 font-bold" />
+
+              <div className="p-8 space-y-8">
+                 
+                 {/* AI Upload Area */}
+                 <div 
+                    className={`border-2 border-dashed rounded-[2rem] p-8 text-center transition-all relative overflow-hidden group ${dragActive ? 'border-sky-500 bg-sky-50' : 'border-slate-200 bg-slate-50'}`}
+                    onDragEnter={handleDrag}
+                    onDragLeave={handleDrag}
+                    onDragOver={handleDrag}
+                    onDrop={handleDrop}
+                 >
+                     {isAnalyzing ? (
+                         <div className="flex flex-col items-center justify-center py-6">
+                             <Loader2 size={48} className="text-sky-600 animate-spin mb-4" />
+                             <h4 className="font-black text-slate-900 uppercase tracking-tight">Analizando Documento...</h4>
+                             <p className="text-xs text-slate-400 font-medium">Gemini está extrayendo los datos fiscales.</p>
+                         </div>
+                     ) : (
+                         <>
+                             <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center mx-auto mb-4 text-sky-500 group-hover:scale-110 transition-transform">
+                                <ScanLine size={32} />
+                             </div>
+                             <h4 className="font-black text-slate-900 text-lg uppercase tracking-tight mb-2">
+                                 Lectura Inteligente <span className="text-sky-500">AI</span>
+                             </h4>
+                             <p className="text-xs text-slate-400 font-medium max-w-xs mx-auto mb-6">
+                                 Arrastra aquí la <strong>Constancia de Situación Fiscal (PDF o Imagen)</strong> para autocompletar el formulario.
+                             </p>
+                             <label className="cursor-pointer px-6 py-3 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg inline-flex items-center gap-2">
+                                <FileUp size={14} /> Seleccionar Archivo
+                                <input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => handleFileUpload(e.target.files)} />
+                             </label>
+                         </>
+                     )}
                  </div>
-                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Correo Electrónico</label>
-                    <input className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none" />
-                 </div>
-                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Teléfono (WhatsApp)</label>
-                    <input className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none" />
-                 </div>
-                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo de Cliente</label>
-                    <select className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold">
-                       <option>Residencial</option>
-                       <option>Comercial</option>
-                    </select>
-                 </div>
-                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Estado</label>
-                    <select className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold">
-                       <option>Prospecto</option>
-                       <option>Activo</option>
-                    </select>
-                 </div>
-                 <div className="col-span-2 space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dirección de Servicio</label>
-                    <textarea className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none h-24 resize-none" />
-                 </div>
+
+                 <div className="grid grid-cols-2 gap-6">
+                     <div className="col-span-2 space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nombre Completo / Razón Social</label>
+                        <input 
+                            value={newClient.name}
+                            onChange={(e) => setNewClient({...newClient, name: e.target.value})}
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 font-bold" 
+                            placeholder="Ej. Comercializadora del Bajío SA de CV"
+                        />
+                     </div>
+
+                     <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                           RFC <Sparkles size={10} className="text-sky-500" />
+                        </label>
+                        <input 
+                            value={newClient.rfc}
+                            onChange={(e) => setNewClient({...newClient, rfc: e.target.value})}
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 font-bold uppercase" 
+                            placeholder="XAXX010101000"
+                        />
+                     </div>
+
+                     <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo de Cliente</label>
+                        <select 
+                            value={newClient.type}
+                            onChange={(e) => setNewClient({...newClient, type: e.target.value})}
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                        >
+                           <option value="Residencial">Residencial</option>
+                           <option value="Comercial">Comercial</option>
+                        </select>
+                     </div>
+
+                     <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Correo Electrónico</label>
+                        <input 
+                            value={newClient.email}
+                            onChange={(e) => setNewClient({...newClient, email: e.target.value})}
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none" 
+                        />
+                     </div>
+                     <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Teléfono (WhatsApp)</label>
+                        <input 
+                            value={newClient.phone}
+                            onChange={(e) => setNewClient({...newClient, phone: e.target.value})}
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none" 
+                        />
+                     </div>
+                     
+                     <div className="col-span-2 space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dirección Fiscal / Servicio</label>
+                        <textarea 
+                            value={newClient.address}
+                            onChange={(e) => setNewClient({...newClient, address: e.target.value})}
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none h-20 resize-none" 
+                        />
+                     </div>
+
+                     <div className="col-span-2 space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Notas Internas</label>
+                        <textarea 
+                            value={newClient.notes}
+                            onChange={(e) => setNewClient({...newClient, notes: e.target.value})}
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none h-16 resize-none text-xs" 
+                            placeholder="Notas generadas por IA o comentarios adicionales..."
+                        />
+                     </div>
+                  </div>
               </div>
-              <div className="p-10 border-t border-slate-100 flex gap-4 bg-slate-50/50">
-                 <button onClick={() => setShowForm(false)} className="flex-1 py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-sky-600/20">Registrar Cliente</button>
+
+              <div className="p-8 border-t border-slate-100 flex gap-4 bg-slate-50/50 sticky bottom-0">
+                 <button 
+                    onClick={handleSaveClient}
+                    disabled={isSaving || !newClient.name}
+                    className="flex-1 py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-sky-600/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                 >
+                    {isSaving ? <Loader2 className="animate-spin" size={16}/> : <CheckCircle2 size={16}/>}
+                    {isSaving ? 'Guardando...' : 'Registrar Cliente'}
+                 </button>
                  <button onClick={() => setShowForm(false)} className="px-10 py-4 bg-white text-slate-500 rounded-2xl font-black uppercase tracking-widest text-[10px] border border-slate-200">Cancelar</button>
               </div>
            </div>

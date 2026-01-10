@@ -5,6 +5,7 @@ export interface Client {
   email: string;
   phone: string;
   address: string;
+  rfc?: string; // Nuevo campo fiscal
   type: 'Residencial' | 'Comercial';
   status: 'Prospecto' | 'Activo' | 'Inactivo';
   notes?: string;
@@ -18,7 +19,7 @@ export interface Product {
   description: string;
   price: number;
   stock: number;
-  category: 'Unidad AC' | 'Refacción' | 'Servicio' | 'Insumo';
+  category: 'Unidad AC' | 'Refacción' | 'Servicio' | 'Insumo' | 'Herramienta';
   btu?: number;
 }
 
@@ -87,6 +88,15 @@ export interface User {
   lastLogin: string;
 }
 
+export interface Template {
+  id: string;
+  code: 'email_quote' | 'email_invoice' | 'pdf_quote_layout';
+  name: string;
+  subject?: string;
+  content: string; // HTML allowed
+  variables: string[]; // List of available vars e.g. {{client_name}}
+}
+
 export enum AppRoute {
   DASHBOARD = 'dashboard',
   BUILDER = 'builder',
@@ -96,5 +106,18 @@ export enum AppRoute {
   INVENTORY = 'inventory',
   APPOINTMENTS = 'appointments',
   USERS = 'users',
-  SETTINGS = 'settings'
+  SETTINGS = 'settings',
+  REPORTS = 'reports'
+}
+
+// --- CMS TYPES ---
+export type SectionType = 'hero' | 'about' | 'services' | 'history' | 'cta' | 'footer';
+
+export interface LandingSection {
+  id: string;
+  type: SectionType;
+  title: string;
+  subtitle: string;
+  buttonText?: string;
+  imageUrl?: string;
 }

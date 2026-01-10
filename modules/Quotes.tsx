@@ -1,5 +1,4 @@
-
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Plus, 
   Search, 
@@ -33,17 +32,8 @@ import {
   Layout as LayoutIcon,
   Palette
 } from 'lucide-react';
-import { PaymentTerms, Product, Quote } from '../types';
+import { PaymentTerms, Product, Quote, Template } from '../types';
 import { GoogleGenAI } from "@google/genai";
-
-const AVAILABLE_PRODUCTS: Product[] = [
-  { id: '1', name: 'Mini Split Inverter 12k BTU', description: 'Alta eficiencia, Solo Frío', price: 8500, stock: 15, category: 'Unidad AC' },
-  { id: '2', name: 'Mini Split Inverter 18k BTU', description: 'Eficiencia Premium', price: 12400, stock: 8, category: 'Unidad AC' },
-  { id: '3', name: 'Mini Split Inverter 24k BTU', description: 'Uso rudo industrial', price: 18900, stock: 4, category: 'Unidad AC' },
-  { id: '4', name: 'Mantenimiento Preventivo', description: 'Limpieza profunda y revisión', price: 850, stock: 999, category: 'Servicio' },
-  { id: '5', name: 'Instalación Básica', description: 'Hasta 5 metros de tubería', price: 2500, stock: 999, category: 'Servicio' },
-  { id: '6', name: 'Carga de Gas R410a', description: 'Carga completa por unidad', price: 1200, stock: 50, category: 'Refacción' },
-];
 
 interface QuoteItem {
   product: Product;
@@ -56,17 +46,89 @@ const Quotes: React.FC = () => {
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [isSyncingChatwoot, setIsSyncingChatwoot] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [isApproving, setIsApproving] = useState<number | null>(null);
   
   const [roomSize, setRoomSize] = useState({ width: '', length: '', height: '', sunlight: 'normal', equipmentCount: '0' });
   const [recommendation, setRecommendation] = useState<{ text: string, suggestedUnit?: Product } | null>(null);
   const [loadingAI, setLoadingAI] = useState(false);
   
+  // Data State
+  const [quotes, setQuotes] = useState<any[]>([]);
+  const [availableProducts, setAvailableProducts] = useState<Product[]>([]);
+  const [loadingQuotes, setLoadingQuotes] = useState(true);
+
+  // Email Template State
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
+
   const [selectedTerms, setSelectedTerms] = useState<PaymentTerms>(PaymentTerms.FIFTY_FIFTY);
   const [addedItems, setAddedItems] = useState<QuoteItem[]>([]);
   const [productSearch, setProductSearch] = useState('');
   const [discount, setDiscount] = useState(0);
   const [clientName, setClientName] = useState('Residencial Lomas');
   const [clientEmail, setClientEmail] = useState('cliente@ejemplo.com');
+
+  const fetchQuotes = async () => {
+    try {
+      setLoadingQuotes(true);
+      const res = await fetch('/api/quotes');
+      if (res.ok) {
+        const data = await res.json();
+        setQuotes(data);
+      }
+    } catch (e) {
+      console.error("Error fetching quotes", e);
+    } finally {
+      setLoadingQuotes(false);
+    }
+  };
+
+  const fetchProducts = async () => {
+      try {
+          const res = await fetch('/api/products');
+          if (res.ok) {
+              const data = await res.json();
+              if (Array.isArray(data)) setAvailableProducts(data);
+          }
+      } catch (e) { console.error(e); }
+  }
+
+  useEffect(() => {
+    fetchQuotes();
+    fetchProducts();
+  }, []);
+
+  // --- LOGIC: Cargar Plantilla de Email ---
+  const prepareEmailModal = async () => {
+      setShowEmailModal(true);
+      try {
+          const res = await fetch('/api/templates');
+          const templates = await res.json();
+          const emailTemplate = templates.find((t: Template) => t.code === 'email_quote');
+          
+          if (emailTemplate) {
+              let subject = emailTemplate.subject || '';
+              let body = emailTemplate.content || '';
+              
+              // Replace Variables
+              const replaceMap: any = {
+                  '{{client_name}}': clientName,
+                  '{{quote_id}}': 'BORRADOR', // Or actual ID if saved
+                  '{{total}}': formatCurrency(totalAmount)
+              };
+
+              Object.keys(replaceMap).forEach(key => {
+                  subject = subject.replaceAll(key, replaceMap[key]);
+                  body = body.replaceAll(key, replaceMap[key]);
+              });
+
+              setEmailSubject(subject);
+              setEmailBody(body);
+          }
+      } catch (e) {
+          console.error("Error loading template");
+      }
+  };
 
   const subtotal = useMemo(() => addedItems.reduce((acc, item) => acc + (item.product.price * item.quantity), 0), [addedItems]);
   const discountAmount = (subtotal * discount) / 100;
@@ -89,14 +151,70 @@ const Quotes: React.FC = () => {
   const removeItem = (id: string) => setAddedItems(addedItems.filter(item => item.product.id !== id));
 
   const formatCurrency = (amount: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(amount);
-  const filteredProducts = AVAILABLE_PRODUCTS.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.category.toLowerCase().includes(productSearch.toLowerCase()));
+  const filteredProducts = availableProducts.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.category.toLowerCase().includes(productSearch.toLowerCase()));
 
-  const handleChatwootSync = () => {
+  const handleSaveQuote = async () => {
+    try {
+      const res = await fetch('/api/quotes', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          client_name: clientName,
+          total: totalAmount,
+          items: addedItems
+        })
+      });
+      if (res.ok) {
+        setShowNewQuote(false);
+        setAddedItems([]);
+        fetchQuotes();
+        alert("Cotización creada exitosamente.");
+      }
+    } catch(e) {
+      alert("Error guardando cotización.");
+    }
+  };
+
+  const handleApproveQuote = async (id: number) => {
+    if (!confirm("¿Aprobar esta cotización y generar una Orden de Venta?")) return;
+    setIsApproving(id);
+    try {
+      const res = await fetch(`/api/quotes/${id}/approve`, { method: 'POST' });
+      if (res.ok) {
+        alert("¡Éxito! La cotización ha sido aprobada y la Orden de Venta generada.");
+        fetchQuotes();
+      } else {
+        throw new Error("Failed");
+      }
+    } catch(e) {
+      alert("Error al aprobar cotización.");
+    } finally {
+      setIsApproving(null);
+    }
+  };
+
+  const handleChatwootSync = async () => {
     setIsSyncingChatwoot(true);
-    setTimeout(() => {
-      setIsSyncingChatwoot(false);
-      alert('Cotización sincronizada con la conversación activa en Chatwoot.');
-    }, 2000);
+    try {
+        await fetch('/api/trigger-n8n', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                webhookUrl: 'https://n8n.webhook.url/test', // Mock URL
+                payload: {
+                    action: 'SYNC_QUOTE',
+                    clientName,
+                    amount: totalAmount,
+                    items: addedItems
+                }
+            })
+        });
+        alert('Cotización enviada a n8n para sincronización con Chatwoot.');
+    } catch(e) {
+        alert('Error conectando con servicio de mensajería.');
+    } finally {
+        setIsSyncingChatwoot(false);
+    }
   };
 
   const handleSendEmail = () => {
@@ -104,7 +222,7 @@ const Quotes: React.FC = () => {
     setTimeout(() => {
       setIsSendingEmail(false);
       setShowEmailModal(false);
-      alert('Correo enviado exitosamente a ' + clientEmail);
+      alert('Correo enviado exitosamente a ' + clientEmail + ' usando la plantilla configurada.');
     }, 2500);
   };
 
@@ -126,9 +244,10 @@ const Quotes: React.FC = () => {
       });
 
       const text = response.text || "No se pudo generar una recomendación.";
-      let suggestedUnit = AVAILABLE_PRODUCTS[0];
-      if (text.includes('18k') || text.includes('18,000')) suggestedUnit = AVAILABLE_PRODUCTS[1];
-      if (text.includes('24k') || text.includes('24,000')) suggestedUnit = AVAILABLE_PRODUCTS[2];
+      // Simple logic to map AI text to available products roughly
+      let suggestedUnit = availableProducts.find(p => p.name.includes('12000') || p.name.includes('1 Ton')); 
+      if (text.includes('18k') || text.includes('18,000')) suggestedUnit = availableProducts.find(p => p.name.includes('18000') || p.name.includes('1.5 Ton'));
+      if (text.includes('24k') || text.includes('24,000')) suggestedUnit = availableProducts.find(p => p.name.includes('24000') || p.name.includes('2 Ton'));
 
       setRecommendation({ text, suggestedUnit });
     } catch (error) {
@@ -261,7 +380,7 @@ const Quotes: React.FC = () => {
                   <div className="w-12 h-12 bg-sky-600 rounded-2xl flex items-center justify-center text-white"><FileText size={24}/></div>
                   <div>
                     <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Editor de Cotización</h3>
-                    <p className="text-slate-400 text-xs font-bold">Folio: COT-2024-0012</p>
+                    <p className="text-slate-400 text-xs font-bold">Nueva Propuesta Comercial</p>
                   </div>
                 </div>
                 <button onClick={() => setShowNewQuote(false)} className="p-3 hover:bg-slate-100 rounded-2xl transition-all text-slate-400"><X size={24} /></button>
@@ -298,7 +417,7 @@ const Quotes: React.FC = () => {
                               <button key={p.id} onClick={() => addItem(p)} className="p-4 bg-slate-50 hover:bg-sky-50 border border-slate-100 rounded-2xl text-left transition-all flex items-center gap-4 group">
                                  <div className="flex-1 min-w-0">
                                     <p className="font-bold text-slate-800 text-sm truncate">{p.name}</p>
-                                    <p className="text-sky-600 font-black text-xs">{formatCurrency(p.price)}</p>
+                                    <p className="text-sky-600 font-black text-xs">{formatCurrency(Number(p.price))}</p>
                                  </div>
                                  <PlusCircle className="text-slate-200 group-hover:text-sky-500" size={20} />
                               </button>
@@ -344,21 +463,26 @@ const Quotes: React.FC = () => {
 
                    <div className="grid grid-cols-2 gap-4">
                       <button 
-                        onClick={handleChatwootSync}
-                        disabled={isSyncingChatwoot}
-                        className="col-span-2 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-indigo-700 flex items-center justify-center gap-3 disabled:opacity-50"
+                        onClick={handleSaveQuote}
+                        disabled={addedItems.length === 0}
+                        className="col-span-2 py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-emerald-700 flex items-center justify-center gap-3 disabled:opacity-50"
                       >
-                         {isSyncingChatwoot ? <Loader2 className="animate-spin" size={18}/> : <MessageSquare size={18} />}
-                         Sincronizar Chatwoot
+                         <CheckCircle2 size={18} />
+                         Guardar Cotización
                       </button>
                       <button 
-                        onClick={() => setShowEmailModal(true)}
+                        onClick={handleChatwootSync}
+                        disabled={isSyncingChatwoot}
+                        className="py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-indigo-700 flex items-center justify-center gap-3 disabled:opacity-50"
+                      >
+                         {isSyncingChatwoot ? <Loader2 className="animate-spin" size={18}/> : <MessageSquare size={18} />}
+                         Sync n8n
+                      </button>
+                      <button 
+                        onClick={prepareEmailModal}
                         className="py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-sky-700 flex items-center justify-center gap-2"
                       >
                          <Mail size={16} /> Enviar Email
-                      </button>
-                      <button className="py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-slate-800 flex items-center justify-center gap-2">
-                         <Printer size={16} /> Generar PDF
                       </button>
                    </div>
                 </div>
@@ -370,36 +494,41 @@ const Quotes: React.FC = () => {
       {/* Email Sending Modal */}
       {showEmailModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[130] flex items-center justify-center p-6">
-           <div className="bg-white w-full max-w-lg rounded-[3.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
-              <div className="p-10 border-b border-slate-100 flex items-center justify-between">
+           <div className="bg-white w-full max-w-lg max-h-[90vh] flex flex-col rounded-[3.5rem] shadow-2xl animate-in zoom-in duration-300">
+              <div className="p-10 border-b border-slate-100 flex items-center justify-between shrink-0">
                  <h3 className="text-2xl font-black text-slate-900 tracking-tighter uppercase">Enviar Cotización</h3>
                  <button onClick={() => setShowEmailModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all"><X size={20}/></button>
               </div>
-              <div className="p-10 space-y-6">
+              <div className="p-10 space-y-6 overflow-y-auto custom-scrollbar">
                  <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Destinatario</label>
                     <input value={clientEmail} disabled className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold opacity-60" />
                  </div>
                  <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Asunto</label>
-                    <input defaultValue={`Cotización SuperAir: Propuesta Climatización - ${clientName}`} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-sky-500" />
+                    <input 
+                        value={emailSubject}
+                        onChange={e => setEmailSubject(e.target.value)}
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-sky-500" 
+                    />
                  </div>
                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mensaje Adicional</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mensaje (Editable)</label>
                     <textarea 
-                      placeholder="Hola, adjunto la propuesta técnica para tu proyecto..."
-                      className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none h-32 resize-none font-medium"
+                      value={emailBody}
+                      onChange={e => setEmailBody(e.target.value)}
+                      className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none h-64 resize-none font-medium leading-relaxed"
                     />
                  </div>
                  <div className="flex items-center gap-3 p-4 bg-sky-50 border border-sky-100 rounded-2xl">
                     <FileText className="text-sky-600" size={24} />
                     <div>
                        <p className="text-[10px] font-black text-sky-900 uppercase tracking-widest leading-none mb-1">Archivo Adjunto</p>
-                       <p className="text-xs font-bold text-sky-600">SuperAir_Cotizacion_2024.pdf</p>
+                       <p className="text-xs font-bold text-sky-600">Cotización_PDF_Generado.pdf</p>
                     </div>
                  </div>
               </div>
-              <div className="p-10 border-t border-slate-100 flex gap-4 bg-slate-50/50">
+              <div className="p-10 border-t border-slate-100 flex gap-4 bg-slate-50/50 shrink-0">
                  <button 
                   onClick={handleSendEmail}
                   disabled={isSendingEmail}
@@ -413,49 +542,66 @@ const Quotes: React.FC = () => {
         </div>
       )}
 
-      {/* Historial (No changes needed in layout, just functionality) */}
+      {/* Historial */}
       <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-8 border-b border-slate-100 flex justify-between items-center">
           <h3 className="font-black text-slate-900 uppercase tracking-tighter">Historial de Operaciones</h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest">
-              <tr>
-                <th className="px-8 py-5">Folio</th>
-                <th className="px-8 py-5">Cliente</th>
-                <th className="px-8 py-5">Monto Total</th>
-                <th className="px-8 py-5">Estado</th>
-                <th className="px-8 py-5">Canal Envío</th>
-                <th className="px-8 py-5 text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-sm">
-              {[
-                { id: 'COT-2024-001', client: 'Residencial Lomas', total: 14500, status: 'Aceptada', channel: 'Email' },
-                { id: 'COT-2024-002', client: 'Corporativo Nexus', total: 82000, status: 'Enviada', channel: 'Chatwoot' },
-                { id: 'COT-2024-003', client: 'Ana Martínez', total: 950, status: 'Borrador', channel: '-' },
-              ].map((row, idx) => (
-                <tr key={idx} className="hover:bg-slate-50 transition-colors group">
-                  <td className="px-8 py-6 font-black text-sky-600">{row.id}</td>
-                  <td className="px-8 py-6 font-bold text-slate-800">{row.client}</td>
-                  <td className="px-8 py-6 font-black text-slate-900">{formatCurrency(row.total)}</td>
-                  <td className="px-8 py-6">
-                    <span className="px-3 py-1 bg-sky-50 text-sky-600 rounded-full text-[9px] font-black border border-sky-100 uppercase tracking-widest">{row.status}</span>
-                  </td>
-                  <td className="px-8 py-6">
-                    <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                       {row.channel === 'Email' ? <Mail size={14} className="text-sky-500" /> : row.channel === 'Chatwoot' ? <MessageSquare size={14} className="text-indigo-500" /> : null}
-                       {row.channel}
-                    </div>
-                  </td>
-                  <td className="px-8 py-6 text-right">
-                    <button className="p-2 hover:bg-white rounded-lg border border-slate-200 opacity-0 group-hover:opacity-100 transition-all"><ChevronRight size={16}/></button>
-                  </td>
+          {loadingQuotes ? (
+             <div className="p-20 flex justify-center"><Loader2 className="animate-spin text-sky-600" size={32} /></div>
+          ) : quotes.length === 0 ? (
+             <div className="p-10 text-center text-slate-400">No hay cotizaciones registradas.</div>
+          ) : (
+            <table className="w-full text-left">
+                <thead className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest">
+                <tr>
+                    <th className="px-8 py-5">Folio</th>
+                    <th className="px-8 py-5">Cliente</th>
+                    <th className="px-8 py-5">Monto Total</th>
+                    <th className="px-8 py-5">Estado</th>
+                    <th className="px-8 py-5">Fecha</th>
+                    <th className="px-8 py-5 text-right">Acciones</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-sm">
+                {quotes.map((row: any) => (
+                    <tr key={row.id} className="hover:bg-slate-50 transition-colors group">
+                    <td className="px-8 py-6 font-black text-sky-600">#{row.id}</td>
+                    <td className="px-8 py-6 font-bold text-slate-800">{row.client_name || 'Sin Nombre'}</td>
+                    <td className="px-8 py-6 font-black text-slate-900">{formatCurrency(Number(row.total))}</td>
+                    <td className="px-8 py-6">
+                        <span className={`px-3 py-1 rounded-full text-[9px] font-black border uppercase tracking-widest ${
+                            row.status === 'Aceptada' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'
+                        }`}>
+                            {row.status}
+                        </span>
+                    </td>
+                    <td className="px-8 py-6 text-slate-400 font-medium text-xs">
+                        {new Date(row.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-8 py-6 text-right">
+                       <div className="flex items-center justify-end gap-2">
+                            {row.status !== 'Aceptada' && (
+                                <button 
+                                    onClick={() => handleApproveQuote(row.id)}
+                                    disabled={isApproving === row.id}
+                                    className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white border border-emerald-100 rounded-xl transition-all font-black text-[9px] uppercase tracking-widest disabled:opacity-50"
+                                >
+                                    {isApproving === row.id ? <Loader2 size={12} className="animate-spin"/> : <CheckCircle2 size={12} />}
+                                    Aprobar
+                                </button>
+                            )}
+                            <button className="p-2 hover:bg-white rounded-lg border border-slate-200 opacity-50 group-hover:opacity-100 transition-all">
+                                <Printer size={16}/>
+                            </button>
+                       </div>
+                    </td>
+                    </tr>
+                ))}
+                </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>

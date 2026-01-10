@@ -1,6 +1,5 @@
-
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation } from '../context/AuthContext';
 import { 
   LayoutDashboard, 
   Construction, 
@@ -13,20 +12,25 @@ import {
   X,
   Wind,
   ShieldCheck,
-  ShoppingBag
+  ShoppingBag,
+  BarChart3,
+  LogOut
 } from 'lucide-react';
 import { AppRoute } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
+  const { user, logout } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const location = useLocation();
 
   const menuItems = [
     { name: 'Dashboard', icon: LayoutDashboard, route: AppRoute.DASHBOARD },
+    { name: 'Reportes e Insights', icon: BarChart3, route: AppRoute.REPORTS },
     { name: 'Constructor Web', icon: Construction, route: AppRoute.BUILDER },
     { name: 'Clientes', icon: Users, route: AppRoute.CLIENTS },
     { name: 'Cotizaciones', icon: FileText, route: AppRoute.QUOTES },
@@ -39,6 +43,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const currentPath = location.pathname.split('/').filter(Boolean)[0];
   const activeRoute = currentPath || AppRoute.DASHBOARD;
+
+  // Obtener iniciales del usuario
+  const userInitials = user?.name 
+    ? user.name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()
+    : 'SA';
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900">
@@ -56,7 +65,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto p-2 space-y-1">
+        <nav className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
           {menuItems.map((item) => {
             const isActive = activeRoute === item.route;
             const Icon = item.icon;
@@ -72,6 +81,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             );
           })}
         </nav>
+
+        {/* Footer Sidebar (Logout) */}
+        <div className="p-4 border-t border-slate-800 shrink-0">
+            <button 
+                onClick={logout}
+                className="w-full flex items-center gap-3 p-3 rounded-xl text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-all"
+            >
+                <LogOut size={20} className="shrink-0" />
+                {isSidebarOpen && <span className="font-bold text-sm">Cerrar Sesión</span>}
+            </button>
+        </div>
       </aside>
 
       <main className="flex-1 flex flex-col overflow-hidden min-w-0">
@@ -80,8 +100,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             {menuItems.find(m => m.route === activeRoute)?.name || 'Dashboard'}
           </h1>
           <div className="flex items-center gap-4 text-slate-500 text-sm font-bold">
-            <span className="hidden md:inline">Status: <span className="text-emerald-500 animate-pulse">Online</span></span>
-            <div className="w-8 h-8 rounded-full bg-sky-600 flex items-center justify-center text-white text-xs font-black">SA</div>
+            <span className="hidden md:inline">
+                Status: <span className="text-emerald-500 animate-pulse">Online</span>
+            </span>
+            <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
+                <div className="text-right hidden sm:block">
+                    <p className="text-xs font-black text-slate-900 leading-none">{user?.name || 'Usuario'}</p>
+                    <p className="text-[10px] text-slate-400 uppercase">{user?.role || 'Staff'}</p>
+                </div>
+                <div className="w-9 h-9 rounded-xl bg-sky-600 flex items-center justify-center text-white text-xs font-black shadow-lg shadow-sky-600/20">
+                    {userInitials}
+                </div>
+            </div>
           </div>
         </header>
         <section className="flex-1 overflow-y-auto p-8 bg-slate-50">

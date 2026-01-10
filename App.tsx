@@ -1,57 +1,97 @@
+import React, { useEffect, useState } from 'react';
+import { HashRouter, Routes, Route, Navigate, useLocation } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { Loader2 } from 'lucide-react';
 
-import React from 'react';
-import { MemoryRouter, Routes, Route, Navigate } from 'react-router-dom';
-import Layout from './components/Layout';
-import Dashboard from './modules/Dashboard';
-import LandingBuilder from './modules/LandingBuilder';
+// Public Modules
 import LandingPage from './modules/LandingPage';
 import Login from './modules/Login';
+import Maintenance from './modules/Maintenance';
+
+// Protected Modules
+import Layout from './components/Layout';
+import Dashboard from './modules/Dashboard';
 import Clients from './modules/Clients';
-import Inventory from './modules/Inventory';
 import Quotes from './modules/Quotes';
+import Inventory from './modules/Inventory';
 import Sales from './modules/Sales';
 import Appointments from './modules/Appointments';
-import Users from './modules/Users';
 import Settings from './modules/Settings';
-import Maintenance from './modules/Maintenance';
-import { AppRoute } from './types';
+import Users from './modules/Users';
+import LandingBuilder from './modules/LandingBuilder';
+import Reports from './modules/Reports';
 
-// Componente para proteger las rutas administrativas
-const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const isAuthenticated = localStorage.getItem('superair_auth') === 'true';
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+        <Loader2 className="w-12 h-12 text-sky-600 animate-spin mb-4" />
+        <p className="text-slate-400 text-xs font-black uppercase tracking-widest animate-pulse">
+          Verificando Credenciales...
+        </p>
+      </div>
+    );
+  }
+
+  // Lógica Reforzada: Se requiere estar autenticado Y tener un objeto de usuario válido
+  if (!isAuthenticated || !user) {
+    // Redirige al login guardando la ubicación intentada en el estado
+    return <Navigate to="/login" state={{ from: location }} />;
+  }
+
+  return <Layout>{children}</Layout>;
 };
 
-// Componente para manejar la visualización pública principal
-const PublicHomeHandler: React.FC = () => {
-  const isPublished = localStorage.getItem('superair_is_published') !== 'false';
-  if (!isPublished) return <Maintenance />;
-  return <LandingPage />;
+const AppRoutes: React.FC = () => {
+  const [isMaintenance, setIsMaintenance] = useState(false);
+
+  useEffect(() => {
+    // Check maintenance mode from local storage (set in Settings)
+    const checkMaintenance = () => {
+      const maintenanceStatus = localStorage.getItem('superair_is_published') === 'false';
+      setIsMaintenance(maintenanceStatus);
+    };
+    
+    checkMaintenance();
+    window.addEventListener('storage', checkMaintenance);
+    return () => window.removeEventListener('storage', checkMaintenance);
+  }, []);
+
+  return (
+    <Routes>
+      {/* Public Routes */}
+      <Route path="/" element={isMaintenance ? <Maintenance /> : <LandingPage />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/maintenance" element={<Maintenance />} />
+
+      {/* Protected Dashboard Routes - Wrapped individually for granular security */}
+      <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="/clients" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
+      <Route path="/quotes" element={<ProtectedRoute><Quotes /></ProtectedRoute>} />
+      <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
+      <Route path="/sales" element={<ProtectedRoute><Sales /></ProtectedRoute>} />
+      <Route path="/appointments" element={<ProtectedRoute><Appointments /></ProtectedRoute>} />
+      <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+      <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
+      <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+      <Route path="/builder" element={<ProtectedRoute><LandingBuilder /></ProtectedRoute>} />
+
+      {/* Fallback - Redirect to root */}
+      <Route path="*" element={<Navigate to="/" />} />
+    </Routes>
+  );
 };
 
 const App: React.FC = () => {
   return (
-    <MemoryRouter initialEntries={['/']}>
-      <Routes>
-        {/* RUTAS PÚBLICAS */}
-        <Route path="/" element={<PublicHomeHandler />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/live" element={<LandingPage />} />
-        
-        {/* RUTAS ADMINISTRATIVAS (PROTEGIDAS) */}
-        <Route path={`/${AppRoute.DASHBOARD}`} element={<PrivateRoute><Layout><Dashboard /></Layout></PrivateRoute>} />
-        <Route path={`/${AppRoute.BUILDER}`} element={<PrivateRoute><Layout><LandingBuilder /></Layout></PrivateRoute>} />
-        <Route path={`/${AppRoute.CLIENTS}`} element={<PrivateRoute><Layout><Clients /></Layout></PrivateRoute>} />
-        <Route path={`/${AppRoute.INVENTORY}`} element={<PrivateRoute><Layout><Inventory /></Layout></PrivateRoute>} />
-        <Route path={`/${AppRoute.QUOTES}`} element={<PrivateRoute><Layout><Quotes /></Layout></PrivateRoute>} />
-        <Route path={`/${AppRoute.SALES}`} element={<PrivateRoute><Layout><Sales /></Layout></PrivateRoute>} />
-        <Route path={`/${AppRoute.APPOINTMENTS}`} element={<PrivateRoute><Layout><Appointments /></Layout></PrivateRoute>} />
-        <Route path={`/${AppRoute.USERS}`} element={<PrivateRoute><Layout><Users /></Layout></PrivateRoute>} />
-        <Route path={`/${AppRoute.SETTINGS}`} element={<PrivateRoute><Layout><Settings /></Layout></PrivateRoute>} />
-
-        <Route path="/admin" element={<Navigate to={`/${AppRoute.DASHBOARD}`} />} />
-      </Routes>
-    </MemoryRouter>
+    <AuthProvider>
+      <HashRouter>
+        <AppRoutes />
+      </HashRouter>
+    </AuthProvider>
   );
 };
 
