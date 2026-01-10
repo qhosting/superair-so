@@ -327,7 +327,7 @@ app.put('/api/templates/:code', async (req, res) => {
 app.get('/api/settings', async (req, res) => {
     try {
         const result = await db.query('SELECT * FROM app_settings');
-        const settings: any = {};
+        const settings = {};
         result.rows.forEach(row => {
             settings[row.category] = row.data;
         });
