@@ -69,6 +69,10 @@ const LandingPage: React.FC = () => {
     setMobileMenuOpen(false);
     // Pequeño timeout para permitir que el DOM se estabilice si hubo cambios
     setTimeout(() => {
+        if (id === 'hero') {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+        }
         const element = document.getElementById(id);
         if (element) {
           element.scrollIntoView({ behavior: 'smooth' });
@@ -113,10 +117,10 @@ const LandingPage: React.FC = () => {
       switch(section.type) {
           case 'hero':
               return (
-                <header key={section.id} id="hero" className="relative pt-20">
-                    <div className="relative h-[600px] md:h-[700px] flex items-center overflow-hidden">
+                <header key={section.id} id="hero" className="relative pt-32 pb-20">
+                    <div className="relative h-[600px] md:h-[700px] flex items-center overflow-hidden rounded-[3rem] mx-4 md:mx-6 shadow-2xl">
                         <img src={section.imageUrl || "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=2069"} className="absolute inset-0 w-full h-full object-cover" alt="Hero Background" />
-                        <div className="absolute inset-0 bg-slate-900/70" />
+                        <div className="absolute inset-0 bg-slate-900/60" />
                         <div className="relative z-10 max-w-7xl mx-auto px-6 w-full text-center md:text-left">
                             <h1 className="text-4xl md:text-7xl font-black text-white mb-6 uppercase tracking-tighter leading-none animate-in slide-in-from-bottom-5 duration-700">
                                 {section.title}
@@ -176,47 +180,103 @@ const LandingPage: React.FC = () => {
   return (
     <div className="bg-white font-sans text-slate-900 scroll-smooth selection:bg-sky-100 selection:text-sky-900">
       {/* Floating WhatsApp */}
-      <a href="https://wa.me/524423325814" target="_blank" rel="noreferrer" className="fixed bottom-6 right-6 z-[50] w-14 h-14 bg-emerald-500 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-emerald-600 hover:scale-110 transition-all duration-300 animate-bounce">
+      <a href="https://wa.me/524423325814" target="_blank" rel="noreferrer" className="fixed bottom-6 right-6 z-[60] w-14 h-14 bg-emerald-500 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-emerald-600 hover:scale-110 transition-all duration-300 animate-bounce">
         <MessageCircle size={28} />
       </a>
 
-      {/* Navigation */}
-      <nav className="fixed w-full bg-white/90 backdrop-blur-md z-40 border-b border-slate-100 transition-all">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-            <div className="flex items-center gap-2 font-black text-2xl text-sky-600 tracking-tighter cursor-pointer" onClick={() => window.scrollTo(0,0)}>
-                <Wind size={28} /> <span>SuperAir</span>
-            </div>
-            
-            <div className="hidden md:flex items-center gap-8 text-xs font-black uppercase tracking-widest text-slate-500">
-                <button onClick={() => window.scrollTo(0,0)} className="hover:text-sky-600 transition-colors">Inicio</button>
-                <button onClick={() => scrollToSection('services')} className="hover:text-sky-600 transition-colors">Servicios</button>
-                <button onClick={() => scrollToSection('contact')} className="hover:text-sky-600 transition-colors">Contacto</button>
+      {/* Floating Island Navigation */}
+      <nav className="fixed top-6 left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
+        <div 
+            className={`
+                pointer-events-auto
+                w-full max-w-5xl bg-white/90 backdrop-blur-xl border border-white/40 shadow-2xl shadow-sky-900/10 
+                transition-all duration-500 ease-in-out overflow-hidden
+                ${mobileMenuOpen ? 'rounded-[2.5rem] bg-white h-auto' : 'rounded-full h-20'}
+            `}
+        >
+            <div className="flex items-center justify-between px-2 pl-6 pr-3 h-20">
+                {/* Logo */}
+                <div 
+                    className="flex items-center gap-3 font-black text-2xl text-slate-800 tracking-tighter cursor-pointer group" 
+                    onClick={() => { window.scrollTo({top:0, behavior:'smooth'}); setMobileMenuOpen(false); }}
+                >
+                    <div className="bg-sky-600 text-white p-2 rounded-xl group-hover:rotate-12 transition-transform shadow-lg shadow-sky-600/30">
+                        <Wind size={20} /> 
+                    </div>
+                    <span className="hidden sm:inline group-hover:text-sky-600 transition-colors">SuperAir</span>
+                </div>
+
+                {/* Desktop Links (Pill Style) */}
+                <div className="hidden md:flex items-center gap-1 bg-slate-100/80 p-1.5 rounded-full border border-slate-200/50 absolute left-1/2 -translate-x-1/2">
+                    {[
+                        { id: 'hero', label: 'Inicio' },
+                        { id: 'services', label: 'Servicios' },
+                        { id: 'contact', label: 'Contacto' }
+                    ].map(link => (
+                        <button 
+                            key={link.id}
+                            onClick={() => scrollToSection(link.id)} 
+                            className="px-6 py-2.5 rounded-full text-xs font-black uppercase tracking-widest text-slate-500 hover:bg-white hover:text-sky-600 hover:shadow-sm transition-all"
+                        >
+                            {link.label}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Desktop Actions */}
+                <div className="hidden md:flex items-center gap-3">
+                     <Link to="/login" className="text-[10px] font-black text-slate-400 hover:text-sky-600 transition-colors uppercase tracking-widest px-2">
+                        Acceso Staff
+                     </Link>
+                     <button 
+                        onClick={() => setShowAppointmentModal(true)} 
+                        className="bg-slate-900 text-white px-6 py-3 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-sky-600 hover:scale-105 transition-all shadow-lg flex items-center gap-2 group"
+                     >
+                        Agendar <div className="bg-white/20 rounded-full p-1 group-hover:bg-white/30 transition-colors"><ArrowRight size={10}/></div>
+                     </button>
+                </div>
+
+                {/* Mobile Toggle */}
+                <div className="md:hidden flex items-center gap-3">
+                    <button 
+                        onClick={() => setShowAppointmentModal(true)}
+                        className="bg-sky-600 text-white p-3 rounded-full shadow-lg shadow-sky-600/20 active:scale-95 transition-transform"
+                    >
+                        <Zap size={18} fill="currentColor" />
+                    </button>
+                    <button 
+                        className={`p-3 rounded-full transition-all ${mobileMenuOpen ? 'bg-slate-100 text-slate-900 rotate-90' : 'bg-white text-slate-600 hover:bg-slate-50'}`} 
+                        onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                    >
+                        {mobileMenuOpen ? <X size={20}/> : <Menu size={20}/>}
+                    </button>
+                </div>
             </div>
 
-            <div className="hidden md:flex items-center gap-4">
-                 <Link to="/login" className="text-xs font-black text-slate-400 hover:text-sky-600 transition-colors uppercase tracking-widest">Soy Staff</Link>
-                 <button 
-                    onClick={() => setShowAppointmentModal(true)} 
-                    className="bg-slate-900 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-sky-600 transition-all shadow-lg active:scale-95 flex items-center gap-2"
-                 >
-                    <Calendar size={14} /> Agendar Cita
-                 </button>
+            {/* Mobile Content (Expanded) */}
+            <div className={`md:hidden px-6 pb-8 space-y-2 transition-all duration-500 ${mobileMenuOpen ? 'opacity-100 delay-100' : 'opacity-0 pointer-events-none'}`}>
+                 <div className="w-full h-px bg-slate-100 mb-6"></div>
+                 {[
+                    { id: 'hero', label: 'Inicio' },
+                    { id: 'services', label: 'Servicios' },
+                    { id: 'contact', label: 'Contacto' }
+                 ].map(link => (
+                     <button 
+                        key={link.id}
+                        onClick={() => scrollToSection(link.id)} 
+                        className="w-full py-4 text-left font-black text-slate-600 hover:text-sky-600 hover:bg-slate-50 rounded-2xl px-4 transition-all text-lg flex justify-between items-center group"
+                     >
+                        {link.label}
+                        <ArrowRight size={16} className="text-slate-300 group-hover:text-sky-500 -translate-x-2 group-hover:translate-x-0 transition-transform opacity-0 group-hover:opacity-100" />
+                     </button>
+                 ))}
+                 <div className="pt-6">
+                     <Link to="/login" className="block w-full py-4 text-center font-bold text-slate-400 bg-slate-50 rounded-2xl text-xs uppercase tracking-widest hover:bg-slate-100 mb-2">
+                        Portal de Empleados
+                     </Link>
+                 </div>
             </div>
-
-            <button className="md:hidden p-2 text-slate-600" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-                {mobileMenuOpen ? <X size={24}/> : <Menu size={24}/>}
-            </button>
         </div>
-        {/* Mobile Menu */}
-        {mobileMenuOpen && (
-          <div className="md:hidden absolute top-20 left-0 w-full bg-white border-b border-slate-100 p-6 flex flex-col gap-4 shadow-xl z-50 animate-in slide-in-from-top-10">
-             <button onClick={() => { window.scrollTo(0,0); setMobileMenuOpen(false); }} className="font-bold text-slate-600 py-2 border-b border-slate-50 text-left">Inicio</button>
-             <button onClick={() => scrollToSection('services')} className="font-bold text-slate-600 py-2 border-b border-slate-50 text-left">Servicios</button>
-             <button onClick={() => scrollToSection('contact')} className="font-bold text-slate-600 py-2 border-b border-slate-50 text-left">Contacto</button>
-             <button onClick={() => { setShowAppointmentModal(true); setMobileMenuOpen(false); }} className="font-bold text-white bg-sky-600 rounded-xl py-3 text-center shadow-lg">Agendar Cita Ahora</button>
-             <Link to="/login" className="font-bold text-slate-400 py-2 text-center text-xs uppercase tracking-widest">Acceso Staff</Link>
-          </div>
-        )}
       </nav>
 
       {loadingCms ? (
@@ -285,41 +345,41 @@ const LandingPage: React.FC = () => {
       ) : (
           // FALLBACK: DISEÑO ESTÁTICO (Original High Quality)
           <>
-            <header id="hero" className="relative pt-20">
-                <div className="relative h-[700px] flex items-center overflow-hidden">
-                    <img src="https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=2069" className="absolute inset-0 w-full h-full object-cover" alt="Hero Background" />
-                    <div className="absolute inset-0 bg-slate-900/70" />
+            <header id="hero" className="relative pt-32 pb-10 px-4">
+                <div className="relative h-[650px] flex items-center overflow-hidden rounded-[3.5rem] shadow-2xl mx-auto max-w-[1400px]">
+                    <img src="https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=2069" className="absolute inset-0 w-full h-full object-cover transform hover:scale-105 transition-transform duration-[20s]" alt="Hero Background" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-slate-900/90 via-slate-900/50 to-transparent" />
                     
-                    <div className="relative z-10 max-w-7xl mx-auto px-6 w-full grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+                    <div className="relative z-10 max-w-7xl mx-auto px-10 w-full grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
                         <div className="text-center md:text-left animate-in slide-in-from-bottom-8 duration-700">
-                            <div className="inline-flex items-center gap-2 px-4 py-2 bg-sky-500/20 border border-sky-400/30 rounded-full text-sky-300 text-[10px] font-black uppercase tracking-widest mb-6 backdrop-blur-sm">
+                            <div className="inline-flex items-center gap-2 px-4 py-2 bg-sky-500/20 border border-sky-400/30 rounded-full text-sky-300 text-[10px] font-black uppercase tracking-widest mb-6 backdrop-blur-md">
                                 <Star size={12} fill="currentColor" /> #1 En Climatización Querétaro
                             </div>
-                            <h1 className="text-5xl md:text-7xl font-black text-white mb-6 uppercase tracking-tighter leading-none">
+                            <h1 className="text-5xl md:text-7xl font-black text-white mb-6 uppercase tracking-tighter leading-none drop-shadow-lg">
                                 El clima perfecto <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-cyan-300">existe</span>.
                             </h1>
                             <p className="text-slate-300 text-lg mb-10 leading-relaxed font-medium max-w-xl mx-auto md:mx-0">
                                 Expertos en instalación, reparación y mantenimiento de aire acondicionado. Servicio residencial y comercial con garantía por escrito.
                             </p>
                             <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
-                                <button onClick={() => setShowAppointmentModal(true)} className="px-8 py-4 bg-sky-600 text-white font-black rounded-2xl hover:bg-sky-500 transition-all shadow-xl shadow-sky-600/20 uppercase tracking-widest text-xs flex items-center justify-center gap-2">
+                                <button onClick={() => setShowAppointmentModal(true)} className="px-10 py-4 bg-sky-600 text-white font-black rounded-2xl hover:bg-sky-500 transition-all shadow-xl shadow-sky-600/30 uppercase tracking-widest text-xs flex items-center justify-center gap-2 hover:-translate-y-1">
                                 <Zap size={16} /> Cotizar Ahora
                                 </button>
-                                <a href="tel:4423325814" className="px-8 py-4 bg-white text-slate-900 font-black rounded-2xl hover:bg-slate-50 transition-all shadow-xl uppercase tracking-widest text-xs flex items-center justify-center gap-2">
+                                <a href="tel:4423325814" className="px-10 py-4 bg-white/10 backdrop-blur-md border border-white/20 text-white font-black rounded-2xl hover:bg-white hover:text-slate-900 transition-all shadow-xl uppercase tracking-widest text-xs flex items-center justify-center gap-2">
                                 <Phone size={16} /> Llamar
                                 </a>
                             </div>
                             
                             <div className="mt-12 flex items-center justify-center md:justify-start gap-8">
-                                <div className="flex items-center gap-2 text-white">
-                                    <ShieldCheck className="text-emerald-400" size={24} />
+                                <div className="flex items-center gap-2 text-white/80">
+                                    <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400"><ShieldCheck size={20} /></div>
                                     <div className="text-left">
                                         <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Garantía</p>
                                         <p className="text-xs font-bold">Por Escrito</p>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2 text-white">
-                                    <Wrench className="text-amber-400" size={24} />
+                                <div className="flex items-center gap-2 text-white/80">
+                                    <div className="p-2 bg-amber-500/10 rounded-lg text-amber-400"><Wrench size={20} /></div>
                                     <div className="text-left">
                                         <p className="text-[10px] font-black uppercase tracking-widest text-amber-400">Técnicos</p>
                                         <p className="text-xs font-bold">Certificados</p>
