@@ -71,6 +71,13 @@ const authenticateToken = (req, res, next) => {
     '/api/webhooks/invoices',
     '/api/settings/public'
   ];
+
+  // Permitir POST a /api/leads públicamente (Formulario de Contacto Landing)
+  // Pero mantener GET protegido para el Dashboard
+  if (req.path === '/api/leads' && req.method === 'POST') {
+    return next();
+  }
+
   if (publicPaths.includes(req.path) || req.path.startsWith('/api/n8n') || (req.method === 'GET' && req.path.startsWith('/uploads'))) {
     return next();
   }
@@ -176,12 +183,19 @@ app.post('/api/ai/chat', async (req, res) => {
             reply = completion.choices[0].message.content;
         } else {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const model = ai.getGenerativeModel({ model: "gemini-2.5-flash-latest", systemInstruction: systemPrompt });
-            const result = await model.generateContent(message);
-            reply = result.response.text();
+            // Corrected SDK v1+ Usage
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash-latest',
+                contents: message,
+                config: {
+                    systemInstruction: systemPrompt
+                }
+            });
+            reply = response.text; // Access property directly, not method
         }
         res.json({ reply, provider });
     } catch (e) {
+        console.error("AI Error:", e);
         res.status(500).json({ error: "AI no disponible" });
     }
 });
@@ -269,6 +283,12 @@ app.post('/api/leads', async (req, res) => {
     const l = req.body; 
     try { 
         const r = await db.query("INSERT INTO leads (name, email, phone, source, status, notes) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *", [l.name, l.email, l.phone, l.source || 'Manual', l.status || 'Nuevo', l.notes]); 
+        
+        // Notify admins if it's a public submission
+        if (!req.user) {
+             await db.query("INSERT INTO notifications (title, message, type) VALUES ($1, $2, 'info')", ['Nuevo Lead Web', `Prospecto: ${l.name} (${l.source})`]);
+        }
+
         res.json(r.rows[0]); 
     } catch(e){res.status(500).json({error:e.message});} 
 });

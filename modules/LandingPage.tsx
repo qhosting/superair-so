@@ -37,6 +37,12 @@ const LandingPage: React.FC = () => {
     notes: ''
   });
 
+  const [contactForm, setContactForm] = useState({
+      name: '',
+      phone: '',
+      service: 'Mantenimiento Preventivo'
+  });
+
   // CMS Data State
   const [cmsSections, setCmsSections] = useState<LandingSection[] | null>(null);
   const [loadingCms, setLoadingCms] = useState(true);
@@ -86,26 +92,64 @@ const LandingPage: React.FC = () => {
     }, 100);
   };
 
-  const handleContactSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setTimeout(() => {
-        setIsSubmitting(false);
-        alert("¡Gracias por tu mensaje! Tu solicitud ha sido recibida. Un técnico de SuperAir te contactará en breve.");
-    }, 1500);
-  };
-
-  const handleAppointmentSubmit = (e: React.FormEvent) => {
+  const handleContactSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     
-    // Simular envío a API/WhatsApp
-    setTimeout(() => {
+    try {
+        const res = await fetch('/api/leads', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                name: contactForm.name,
+                phone: contactForm.phone,
+                source: 'Web',
+                notes: `Interesado en: ${contactForm.service}`
+            })
+        });
+
+        if (res.ok) {
+            alert("¡Gracias por tu mensaje! Tu solicitud ha sido recibida. Un técnico de SuperAir te contactará en breve.");
+            setContactForm({ name: '', phone: '', service: 'Mantenimiento Preventivo' });
+        } else {
+            alert("Hubo un error al enviar tus datos. Por favor intenta más tarde o llama directamente.");
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Error de conexión.");
+    } finally {
         setIsSubmitting(false);
-        setShowAppointmentModal(false);
-        alert(`¡Solicitud Recibida! Hemos agendado una pre-reserva para ${appointmentForm.name}. Te confirmaremos la hora exacta por WhatsApp al número ${appointmentForm.phone}.`);
-        setAppointmentForm({ name: '', phone: '', service: 'Mantenimiento Preventivo', date: '', notes: '' });
-    }, 2000);
+    }
+  };
+
+  const handleAppointmentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    
+    try {
+        const res = await fetch('/api/leads', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                name: appointmentForm.name,
+                phone: appointmentForm.phone,
+                source: 'Web (Cita)',
+                notes: `Solicitud de Cita para: ${appointmentForm.service}. Fecha preferida: ${appointmentForm.date}`
+            })
+        });
+
+        if (res.ok) {
+             setShowAppointmentModal(false);
+             alert(`¡Solicitud Recibida! Hemos agendado una pre-reserva para ${appointmentForm.name}. Te confirmaremos la hora exacta por WhatsApp al número ${appointmentForm.phone}.`);
+             setAppointmentForm({ name: '', phone: '', service: 'Mantenimiento Preventivo', date: '', notes: '' });
+        } else {
+            alert("Error al procesar solicitud.");
+        }
+    } catch (e) {
+        alert("Error de conexión.");
+    } finally {
+        setIsSubmitting(false);
+    }
   };
 
   const faqs = [
@@ -329,14 +373,33 @@ const LandingPage: React.FC = () => {
                     
                     <div className="p-12 md:w-1/2">
                         <form className="space-y-6" onSubmit={handleContactSubmit}>
-                            <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Nombre</label><input required className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" /></div>
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Nombre</label>
+                                <input 
+                                    required 
+                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" 
+                                    value={contactForm.name}
+                                    onChange={e => setContactForm({...contactForm, name: e.target.value})}
+                                />
+                            </div>
                             <div>
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Teléfono</label>
-                                <input required type="tel" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" placeholder="10 dígitos" />
+                                <input 
+                                    required 
+                                    type="tel" 
+                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" 
+                                    placeholder="10 dígitos" 
+                                    value={contactForm.phone}
+                                    onChange={e => setContactForm({...contactForm, phone: e.target.value})}
+                                />
                             </div>
                             <div>
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Servicio Requerido</label>
-                                <select className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold">
+                                <select 
+                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                                    value={contactForm.service}
+                                    onChange={e => setContactForm({...contactForm, service: e.target.value})}
+                                >
                                     <option>Mantenimiento Preventivo</option>
                                     <option>Reparación / Diagnóstico</option>
                                     <option>Instalación Nueva</option>
@@ -501,14 +564,33 @@ const LandingPage: React.FC = () => {
                     
                     <div className="p-12 md:w-1/2">
                         <form className="space-y-6" onSubmit={handleContactSubmit}>
-                            <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Nombre</label><input required className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" /></div>
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Nombre</label>
+                                <input 
+                                    required 
+                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" 
+                                    value={contactForm.name}
+                                    onChange={e => setContactForm({...contactForm, name: e.target.value})}
+                                />
+                            </div>
                             <div>
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Teléfono</label>
-                                <input required type="tel" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" placeholder="10 dígitos" />
+                                <input 
+                                    required 
+                                    type="tel" 
+                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" 
+                                    placeholder="10 dígitos" 
+                                    value={contactForm.phone}
+                                    onChange={e => setContactForm({...contactForm, phone: e.target.value})}
+                                />
                             </div>
                             <div>
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Servicio Requerido</label>
-                                <select className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold">
+                                <select 
+                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                                    value={contactForm.service}
+                                    onChange={e => setContactForm({...contactForm, service: e.target.value})}
+                                >
                                     <option>Mantenimiento Preventivo</option>
                                     <option>Reparación / Diagnóstico</option>
                                     <option>Instalación Nueva</option>
