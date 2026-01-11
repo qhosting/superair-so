@@ -36,6 +36,10 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 
+// --- HEALTH CHECK (CRITICAL: Define FIRST) ---
+// Debe estar antes del middleware de auth para que Docker no mate el contenedor
+app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok', timestamp: new Date() }));
+
 // --- CONFIGURACIÓN EXTERNA ---
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
@@ -87,13 +91,24 @@ const authenticateToken = (req, res, next) => {
     '/api/settings/public'
   ];
 
-  if (req.path === '/api/leads' && req.method === 'POST') {
+  // Usamos originalUrl para obtener la ruta completa (/api/...) 
+  // ya que req.path dentro de app.use('/api') es relativo (/...)
+  const currentPath = req.originalUrl.split('?')[0];
+
+  if (req.method === 'GET' && currentPath.startsWith('/uploads')) {
     return next();
   }
 
-  if (publicPaths.includes(req.path) || req.path.startsWith('/api/n8n') || (req.method === 'GET' && req.path.startsWith('/uploads'))) {
+  // Permitir Webhook Leads POST sin token
+  if (currentPath === '/api/leads' && req.method === 'POST') {
     return next();
   }
+
+  // Verificar rutas públicas
+  if (publicPaths.some(p => currentPath === p || currentPath.startsWith(p + '/')) || currentPath.startsWith('/api/n8n')) {
+    return next();
+  }
+
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Acceso Denegado: Token requerido' });
@@ -115,6 +130,7 @@ const authorize = (roles = []) => {
   };
 };
 
+// Aplicar middleware de auth a todas las rutas bajo /api (excepto las excluidas arriba)
 app.use('/api', authenticateToken);
 
 // --- DB INIT & MIGRATIONS ---
@@ -470,9 +486,13 @@ app.post('/api/auth/login', async (req, res) => {
 if (isProduction) {
   const distPath = path.join(__dirname, '../dist');
   app.use(express.static(distPath));
-  app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok' }));
+  
+  // Catch-all para SPA
   app.get('*', (req, res) => {
-    if (req.path.startsWith('/api')) return res.status(404).json({ error: 'Not Found' });
+    // Evitar que llamadas a API caigan aquí si no matchearon arriba
+    if (req.path.startsWith('/api')) {
+       return res.status(404).json({ error: 'Not Found' });
+    }
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }
