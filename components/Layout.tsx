@@ -29,7 +29,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const menuItems = [
     { name: 'Dashboard', icon: LayoutDashboard, route: AppRoute.DASHBOARD },
-    { name: 'Leads y Prospectos', icon: Magnet, route: AppRoute.LEADS },
+    { name: 'Leads y Prospectos', icon: Magnet, route: AppRoute.LEADS }, // Asegurado aquí
     { name: 'Reportes e Insights', icon: BarChart3, route: AppRoute.REPORTS },
     { name: 'Constructor Web', icon: Construction, route: AppRoute.BUILDER },
     { name: 'Clientes', icon: Users, route: AppRoute.CLIENTS },
