@@ -5,22 +5,24 @@ import {
   AlertCircle, X, Calendar, User, ArrowDownCircle, TrendingDown, Printer, 
   Share2, Camera, History, MapPin, Navigation, Phone, MessageSquare, 
   ArrowUpRight, ShieldCheck, Zap, Download, Eye, Info, FileText, FileCode, 
-  RefreshCw, Link as LinkIcon, Paperclip, Inbox, Loader2
+  RefreshCw, Link as LinkIcon, Paperclip, Inbox, Loader2, Send
 } from 'lucide-react';
 import { Order, FiscalData } from '../types';
+import { useNotification } from '../context/NotificationContext';
 
 const N8N_INBOX_MOCK: FiscalData[] = [
   { uuid: 'E45A-1234-5678-90AB', rfc: 'HQU180512AB3', legalName: 'HOTEL QUERETARO SA DE CV', issuedAt: '2024-06-03 10:30', originEmail: 'facturacion@proveedor.com', xmlUrl: '#', pdfUrl: '#' }
 ];
 
 const Sales: React.FC = () => {
+  const { showToast } = useNotification();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showFiscalVault, setShowFiscalVault] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
-  const [isSyncing, setIsSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [sendingMsg, setSendingMsg] = useState(false);
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [vaultItems, setVaultItems] = useState<FiscalData[]>(N8N_INBOX_MOCK);
@@ -50,8 +52,36 @@ const Sales: React.FC = () => {
           // Update local state
           setOrders(orders.map(o => o.id === updatedOrder.id ? updatedOrder : o));
           setSelectedOrder(updatedOrder);
+          showToast('Orden actualizada correctamente');
       } catch (e) {
-          alert("Error actualizando la orden");
+          showToast('Error actualizando la orden', 'error');
+      }
+  };
+
+  const notifyClient = async (channel: 'whatsapp' | 'chatwoot') => {
+      if (!selectedOrder) return;
+      setSendingMsg(true);
+      try {
+          const res = await fetch('/api/notify/external', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  channel,
+                  recipient: '524423325814', // En prod usar el del cliente
+                  name: selectedOrder.clientName,
+                  message: `Hola ${selectedOrder.clientName}, tu orden #${selectedOrder.id} ha sido actualizada. Estado: ${selectedOrder.status}.`
+              })
+          });
+          
+          if(res.ok) {
+              showToast(`Notificación enviada por ${channel}`, 'success');
+          } else {
+              throw new Error("Failed");
+          }
+      } catch (e) {
+          showToast(`Error al notificar por ${channel}`, 'error');
+      } finally {
+          setSendingMsg(false);
       }
   };
 
@@ -208,7 +238,7 @@ const Sales: React.FC = () => {
         </div>
       </div>
 
-      {/* Payment Modal */}
+      {/* Payment Modal with Notification Options */}
       {showPaymentModal && selectedOrder && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[200] flex items-center justify-center p-6">
            <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
@@ -234,6 +264,24 @@ const Sales: React.FC = () => {
                        />
                     </div>
                  </div>
+                 
+                 {/* Notification Buttons */}
+                 <div className="flex gap-2">
+                    <button 
+                        onClick={() => notifyClient('whatsapp')}
+                        disabled={sendingMsg}
+                        className="flex-1 py-3 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-emerald-100 flex items-center justify-center gap-2"
+                    >
+                        {sendingMsg ? <Loader2 size={14} className="animate-spin"/> : <MessageSquare size={14}/>} Notificar WA
+                    </button>
+                    <button 
+                        onClick={() => notifyClient('chatwoot')}
+                        disabled={sendingMsg}
+                        className="flex-1 py-3 bg-blue-50 text-blue-600 border border-blue-200 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-blue-100 flex items-center justify-center gap-2"
+                    >
+                        {sendingMsg ? <Loader2 size={14} className="animate-spin"/> : <Send size={14}/>} Notificar CW
+                    </button>
+                 </div>
               </div>
               <div className="p-8 border-t border-slate-100 flex gap-3 bg-slate-50/50">
                  <button 
@@ -245,7 +293,7 @@ const Sales: React.FC = () => {
         </div>
       )}
 
-      {/* FISCAL VAULT MODAL */}
+      {/* FISCAL VAULT MODAL (Same as before) */}
       {showFiscalVault && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6">
             <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">

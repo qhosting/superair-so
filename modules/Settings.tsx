@@ -1,57 +1,48 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Settings as SettingsIcon, 
-  MessageSquare, 
-  Globe, 
-  Mail, 
-  ShieldCheck, 
-  CreditCard, 
-  ExternalLink, 
-  ChevronRight, 
-  Workflow, 
-  Zap, 
-  CheckCircle2, 
-  Image as ImageIcon, 
-  Palette, 
-  FileText, 
-  Lock, 
-  Clock, 
-  Save, 
-  AlertTriangle, 
-  RefreshCw, 
-  Eye, 
-  Trash2, 
-  Bell, 
-  Languages, 
-  DollarSign, 
-  Percent,
-  Download,
-  LayoutTemplate,
-  Edit
+  Settings as SettingsIcon, Globe, Mail, ShieldCheck, CreditCard, 
+  Workflow, Zap, CheckCircle2, Image as ImageIcon, Palette, FileText, 
+  Lock, Clock, Save, AlertTriangle, RefreshCw, Eye, Trash2, 
+  Languages, DollarSign, Percent, Download, LayoutTemplate, 
+  Edit, UploadCloud, Database, Server, Smartphone, Key, X
 } from 'lucide-react';
 import { Template } from '../types';
 
-const Settings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'general' | 'facturacion' | 'plantillas' | 'integrations' | 'seguridad'>('general');
-  const [n8nStatus, setN8nStatus] = useState<'connected' | 'disconnected'>('connected');
-  const [isMaintenanceMode, setIsMaintenanceMode] = useState(() => {
-    return localStorage.getItem('superair_is_published') === 'false';
-  });
+// --- Components ---
 
-  // Templates State
+const Toast: React.FC<{ message: string; type: 'success' | 'error'; onClose: () => void }> = ({ message, type, onClose }) => {
+    useEffect(() => {
+        const timer = setTimeout(onClose, 3000);
+        return () => clearTimeout(timer);
+    }, [onClose]);
+
+    return (
+        <div className={`fixed bottom-6 right-6 px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-bottom-5 z-50 ${type === 'success' ? 'bg-slate-900 text-white' : 'bg-rose-600 text-white'}`}>
+            {type === 'success' ? <CheckCircle2 size={20} className="text-emerald-400" /> : <AlertTriangle size={20} />}
+            <span className="font-bold text-xs uppercase tracking-widest">{message}</span>
+        </div>
+    );
+};
+
+const Settings: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'general' | 'billing' | 'templates' | 'system' | 'integrations'>('general');
+  const [isMaintenanceMode, setIsMaintenanceMode] = useState(() => localStorage.getItem('superair_is_published') === 'false');
+  const [toast, setToast] = useState<{msg: string, type: 'success'|'error'} | null>(null);
+
+  // Data State
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
-  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Configuration State
+  // Config State
   const [companyInfo, setCompanyInfo] = useState({
-    name: '', rfc: '', email: '', phone: '', address: '', currency: 'MXN', timezone: ''
+    name: '', rfc: '', email: '', phone: '', address: '', website: '', brandColor: '#0ea5e9'
   });
   const [billingInfo, setBillingInfo] = useState({
-    taxRate: 16, quotePrefix: '', orderPrefix: '', invoicePrefix: '', nextQuoteNumber: 1000, defaultTerms: ''
+    taxRate: 16, quotePrefix: 'COT', nextQuoteNumber: 1000, csdUploaded: false
   });
 
-  // PWA Install State
+  // PWA
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallable, setIsInstallable] = useState(false);
 
@@ -61,72 +52,32 @@ const Settings: React.FC = () => {
       setDeferredPrompt(e);
       setIsInstallable(true);
     };
-
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     
-    // Load Templates
-    fetch('/api/templates')
-        .then(res => res.json())
-        .then(data => {
-            if(Array.isArray(data)) {
-                setTemplates(data);
-                if(data.length > 0) setSelectedTemplate(data[0]);
+    // Load Initial Data
+    const loadData = async () => {
+        try {
+            const [tplRes, setRes] = await Promise.all([fetch('/api/templates'), fetch('/api/settings')]);
+            const tplData = await tplRes.json();
+            const setData = await setRes.json();
+
+            if(Array.isArray(tplData)) {
+                setTemplates(tplData);
+                if(tplData.length > 0) setSelectedTemplate(tplData[0]);
             }
-        })
-        .catch(err => console.error("Error loading templates", err));
-
-    // Load Settings
-    fetch('/api/settings')
-        .then(res => res.json())
-        .then(data => {
-            if (data.company_info) setCompanyInfo(data.company_info);
-            if (data.billing_info) setBillingInfo(data.billing_info);
-        })
-        .catch(err => console.error("Error loading settings", err));
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+            if (setData.company_info) setCompanyInfo(prev => ({ ...prev, ...setData.company_info }));
+            if (setData.billing_info) setBillingInfo(prev => ({ ...prev, ...setData.billing_info }));
+        } catch (e) { console.error("Error init settings", e); }
     };
+    loadData();
+
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, []);
 
-  const handleInstallClick = () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    deferredPrompt.userChoice.then((choiceResult: any) => {
-      if (choiceResult.outcome === 'accepted') setIsInstallable(false);
-      setDeferredPrompt(null);
-    });
-  };
-
-  const handleMaintenanceToggle = () => {
-    const newState = !isMaintenanceMode;
-    setIsMaintenanceMode(newState);
-    localStorage.setItem('superair_is_published', (!newState).toString());
-  };
-
-  const handleSaveTemplate = async () => {
-      if (!selectedTemplate) return;
-      setIsSavingTemplate(true);
-      try {
-          await fetch(`/api/templates/${selectedTemplate.code}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  subject: selectedTemplate.subject,
-                  content: selectedTemplate.content
-              })
-          });
-          alert("Plantilla actualizada correctamente.");
-          // Update local list
-          setTemplates(templates.map(t => t.id === selectedTemplate.id ? selectedTemplate : t));
-      } catch (e) {
-          alert("Error al guardar plantilla.");
-      } finally {
-          setIsSavingTemplate(false);
-      }
-  };
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => setToast({ msg, type });
 
   const handleSaveConfig = async () => {
+      setIsSaving(true);
       try {
           await fetch('/api/settings', {
               method: 'POST',
@@ -138,374 +89,447 @@ const Settings: React.FC = () => {
               headers: {'Content-Type': 'application/json'},
               body: JSON.stringify({ category: 'billing_info', data: billingInfo })
           });
-          alert('Configuración guardada exitosamente.');
+          showToast('Configuración guardada correctamente');
       } catch(e) {
-          alert('Error al guardar configuración.');
+          showToast('Error al guardar cambios', 'error');
+      } finally {
+          setIsSaving(false);
       }
   };
 
+  const handleSaveTemplate = async () => {
+      if (!selectedTemplate) return;
+      setIsSaving(true);
+      try {
+          await fetch(`/api/templates/${selectedTemplate.code}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  subject: selectedTemplate.subject,
+                  content: selectedTemplate.content
+              })
+          });
+          showToast('Plantilla actualizada');
+          // Update local
+          setTemplates(templates.map(t => t.id === selectedTemplate.id ? selectedTemplate : t));
+      } catch (e) {
+          showToast('Error al actualizar plantilla', 'error');
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
+  const toggleMaintenance = () => {
+      const newState = !isMaintenanceMode;
+      setIsMaintenanceMode(newState);
+      localStorage.setItem('superair_is_published', (!newState).toString());
+      showToast(newState ? 'Sitio puesto en Mantenimiento' : 'Sitio publicado exitosamente');
+  };
+
+  const handleInstallClick = () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then((choiceResult: any) => {
+      if (choiceResult.outcome === 'accepted') setIsInstallable(false);
+      setDeferredPrompt(null);
+    });
+  };
+
   return (
-    <div className="max-w-6xl mx-auto space-y-8 pb-20">
-      {/* Tab Navigation High End */}
-      <div className="bg-white p-2 rounded-[2rem] border border-slate-200 shadow-sm flex flex-wrap md:flex-nowrap gap-2">
-        {[
-          { id: 'general', label: 'General y Marca', icon: Globe },
-          { id: 'facturacion', label: 'Facturación', icon: FileText },
-          { id: 'plantillas', label: 'Plantillas y Correos', icon: LayoutTemplate },
-          { id: 'integrations', label: 'Integraciones', icon: Zap },
-          { id: 'seguridad', label: 'Seguridad', icon: ShieldCheck },
-        ].map((tab) => (
-          <button 
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`flex-1 flex items-center justify-center gap-3 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-slate-900 text-white shadow-xl' : 'text-slate-400 hover:bg-slate-50'}`}
-          >
-            <tab.icon size={18} />
-            {tab.label}
-          </button>
-        ))}
+    <div className="max-w-7xl mx-auto space-y-8 pb-20 relative">
+      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
+
+      {/* Header & Nav */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div>
+            <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">Configuración</h2>
+            <p className="text-slate-500 text-sm font-medium">Administración global del sistema ERP.</p>
+        </div>
+        <div className="flex bg-slate-100 p-1.5 rounded-2xl overflow-x-auto max-w-full">
+            {[
+                { id: 'general', label: 'Empresa', icon: Globe },
+                { id: 'billing', label: 'Fiscal', icon: FileText },
+                { id: 'templates', label: 'Plantillas', icon: LayoutTemplate },
+                { id: 'integrations', label: 'Apps', icon: Zap },
+                { id: 'system', label: 'Sistema', icon: Server },
+            ].map(tab => (
+                <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                        activeTab === tab.id ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                    <tab.icon size={16} className={activeTab === tab.id ? 'text-sky-600' : ''} />
+                    {tab.label}
+                </button>
+            ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* Main Configuration Area */}
-        <div className="lg:col-span-2 space-y-8 animate-in fade-in duration-500">
-          
-          {activeTab === 'general' && (
-            <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-10">
-              <div className="flex items-center justify-between">
-                 <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Perfil de Empresa</h3>
-                 <div className="p-3 bg-sky-50 text-sky-600 rounded-2xl"><Globe size={24}/></div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-8">
-                 <div className="col-span-2 flex items-center gap-8 p-8 bg-slate-50 rounded-[2.5rem] border border-slate-100">
-                    <div className="w-24 h-24 bg-white border-2 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center text-slate-400 hover:text-sky-500 hover:border-sky-500 transition-all cursor-pointer group">
-                       <ImageIcon size={32} />
-                       <span className="text-[8px] font-black uppercase mt-2">Subir Logo</span>
+        {/* Main Content Area */}
+        <div className="lg:col-span-2 space-y-6">
+            
+            {/* GENERAL TAB */}
+            {activeTab === 'general' && (
+                <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in zoom-in duration-300">
+                    <div className="p-10 border-b border-slate-100 flex justify-between items-center">
+                        <div>
+                            <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Identidad Corporativa</h3>
+                            <p className="text-xs text-slate-400 font-bold mt-1">Información visible en documentos y web.</p>
+                        </div>
+                        <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400">
+                            <Globe size={24} />
+                        </div>
                     </div>
-                    <div>
-                       <h4 className="font-black text-slate-800 uppercase tracking-tight text-lg">Logotipo Institucional</h4>
-                       <p className="text-xs text-slate-400 font-medium">Se utilizará en Cotizaciones, Facturas y Web.</p>
+                    <div className="p-10 space-y-8">
+                        <div className="flex gap-8 items-start">
+                            <div className="group relative w-32 h-32 bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200 flex flex-col items-center justify-center cursor-pointer hover:border-sky-500 transition-all">
+                                <ImageIcon size={32} className="text-slate-300 group-hover:text-sky-500 transition-colors mb-2" />
+                                <span className="text-[9px] font-black uppercase text-slate-400 group-hover:text-sky-600">Subir Logo</span>
+                                <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" />
+                            </div>
+                            <div className="flex-1 space-y-4">
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Color de Marca</label>
+                                    <div className="flex items-center gap-3 mt-2">
+                                        <input 
+                                            type="color" 
+                                            value={companyInfo.brandColor}
+                                            onChange={(e) => setCompanyInfo({...companyInfo, brandColor: e.target.value})}
+                                            className="w-12 h-12 rounded-2xl border-none cursor-pointer bg-transparent"
+                                        />
+                                        <div className="flex-1">
+                                            <input 
+                                                value={companyInfo.brandColor}
+                                                onChange={(e) => setCompanyInfo({...companyInfo, brandColor: e.target.value})}
+                                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm uppercase"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-6">
+                            <div className="col-span-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Razón Social</label>
+                                <input 
+                                    value={companyInfo.name}
+                                    onChange={(e) => setCompanyInfo({...companyInfo, name: e.target.value})}
+                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 focus:ring-2 focus:ring-sky-500 transition-all"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">RFC</label>
+                                <input 
+                                    value={companyInfo.rfc}
+                                    onChange={(e) => setCompanyInfo({...companyInfo, rfc: e.target.value})}
+                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Teléfono</label>
+                                <input 
+                                    value={companyInfo.phone}
+                                    onChange={(e) => setCompanyInfo({...companyInfo, phone: e.target.value})}
+                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700"
+                                />
+                            </div>
+                            <div className="col-span-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Dirección Fiscal</label>
+                                <input 
+                                    value={companyInfo.address}
+                                    onChange={(e) => setCompanyInfo({...companyInfo, address: e.target.value})}
+                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700"
+                                />
+                            </div>
+                        </div>
                     </div>
-                 </div>
+                    <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
+                        <button onClick={handleSaveConfig} className="flex items-center gap-2 px-8 py-3 bg-slate-900 text-white rounded-xl font-black uppercase tracking-widest text-[10px] hover:bg-slate-800 transition-all shadow-lg">
+                            {isSaving ? <RefreshCw className="animate-spin" size={16}/> : <Save size={16} />}
+                            Guardar Cambios
+                        </button>
+                    </div>
+                </div>
+            )}
 
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Razón Social</label>
-                    <input 
-                      type="text" 
-                      value={companyInfo.name}
-                      onChange={(e) => setCompanyInfo({...companyInfo, name: e.target.value})}
-                      className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 font-bold"
-                    />
-                 </div>
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">RFC</label>
-                    <input type="text" value={companyInfo.rfc} onChange={e => setCompanyInfo({...companyInfo, rfc: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" />
-                 </div>
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email de Ventas</label>
-                    <input type="email" value={companyInfo.email} onChange={e => setCompanyInfo({...companyInfo, email: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" />
-                 </div>
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Teléfono Principal</label>
-                    <input type="text" value={companyInfo.phone} onChange={e => setCompanyInfo({...companyInfo, phone: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" />
-                 </div>
-                 <div className="col-span-2 space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Dirección Fiscal / Bodega</label>
-                    <input type="text" value={companyInfo.address} onChange={e => setCompanyInfo({...companyInfo, address: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" />
-                 </div>
-              </div>
+            {/* BILLING TAB */}
+            {activeTab === 'billing' && (
+                <div className="space-y-6 animate-in fade-in zoom-in duration-300">
+                    <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden p-10">
+                        <div className="flex items-center justify-between mb-8">
+                            <div>
+                                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Parámetros Fiscales</h3>
+                                <p className="text-xs text-slate-400 font-bold mt-1">Configuración para CFDI 4.0</p>
+                            </div>
+                            <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-500">
+                                <DollarSign size={24} />
+                            </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-8 mb-8">
+                            <div className="p-6 rounded-3xl bg-slate-50 border border-slate-100 space-y-4">
+                                <div className="flex items-center gap-3 text-slate-800 font-black text-sm uppercase">
+                                    <Percent size={16} className="text-emerald-500"/> Tasa Impuesto
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <input 
+                                        type="number" 
+                                        value={billingInfo.taxRate}
+                                        onChange={(e) => setBillingInfo({...billingInfo, taxRate: parseFloat(e.target.value)})}
+                                        className="flex-1 p-3 bg-white border border-slate-200 rounded-xl font-black text-lg outline-none"
+                                    />
+                                    <span className="font-bold text-slate-400">%</span>
+                                </div>
+                            </div>
+                            <div className="p-6 rounded-3xl bg-slate-50 border border-slate-100 space-y-4">
+                                <div className="flex items-center gap-3 text-slate-800 font-black text-sm uppercase">
+                                    <FileText size={16} className="text-sky-500"/> Serie Facturación
+                                </div>
+                                <input 
+                                    type="text" 
+                                    value={billingInfo.quotePrefix}
+                                    onChange={(e) => setBillingInfo({...billingInfo, quotePrefix: e.target.value})}
+                                    className="w-full p-3 bg-white border border-slate-200 rounded-xl font-black text-lg outline-none"
+                                />
+                            </div>
+                        </div>
 
-              <div className="pt-6 border-t border-slate-100 flex justify-end">
-                 <button onClick={handleSaveConfig} className="flex items-center gap-3 px-10 py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-sky-600/20 hover:bg-sky-700 transition-all">
-                    <Save size={18} /> Guardar Configuración
-                 </button>
-              </div>
-            </div>
-          )}
+                        {/* CSD Vault Simulation */}
+                        <div className="border-t border-slate-100 pt-8">
+                            <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                <Key size={16} className="text-amber-500"/> Certificados Digitales (CSD)
+                            </h4>
+                            
+                            {billingInfo.csdUploaded ? (
+                                <div className="flex items-center justify-between p-4 bg-emerald-50 border border-emerald-100 rounded-2xl">
+                                    <div className="flex items-center gap-4">
+                                        <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><CheckCircle2 size={20}/></div>
+                                        <div>
+                                            <p className="font-bold text-emerald-900 text-xs uppercase">Certificados Activos</p>
+                                            <p className="text-[10px] text-emerald-700 font-mono">Vence: 12/2026</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setBillingInfo({...billingInfo, csdUploaded: false})} className="p-2 text-emerald-600 hover:bg-emerald-100 rounded-lg"><Trash2 size={16}/></button>
+                                </div>
+                            ) : (
+                                <div className="border-2 border-dashed border-slate-200 rounded-2xl p-8 flex flex-col items-center text-center hover:border-amber-400 hover:bg-amber-50/10 transition-all cursor-pointer" onClick={() => setBillingInfo({...billingInfo, csdUploaded: true})}>
+                                    <UploadCloud size={32} className="text-slate-300 mb-2"/>
+                                    <p className="text-xs font-bold text-slate-500">Click para cargar .CER y .KEY</p>
+                                    <p className="text-[9px] text-slate-400 mt-1">Requerido para timbrar facturas.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <div className="flex justify-end">
+                        <button onClick={handleSaveConfig} className="flex items-center gap-2 px-8 py-3 bg-slate-900 text-white rounded-xl font-black uppercase tracking-widest text-[10px] hover:bg-slate-800 transition-all shadow-lg">
+                            {isSaving ? <RefreshCw className="animate-spin" size={16}/> : <Save size={16} />}
+                            Actualizar Fiscal
+                        </button>
+                    </div>
+                </div>
+            )}
 
-          {activeTab === 'plantillas' && (
-            <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-8">
-               <div className="flex items-center justify-between">
-                 <div>
-                    <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Editor de Plantillas</h3>
-                    <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">Personaliza correos y documentos PDF</p>
-                 </div>
-                 <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl"><Edit size={24}/></div>
-              </div>
+            {/* TEMPLATES TAB */}
+            {activeTab === 'templates' && (
+                <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in zoom-in duration-300 p-10 flex flex-col h-[600px]">
+                    <div className="flex justify-between items-center mb-6 shrink-0">
+                        <div>
+                            <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Motor de Plantillas</h3>
+                            <p className="text-xs text-slate-400 font-bold mt-1">Personaliza la comunicación automática.</p>
+                        </div>
+                        <div className="flex gap-2">
+                            {templates.map(t => (
+                                <button 
+                                    key={t.id}
+                                    onClick={() => setSelectedTemplate(t)}
+                                    className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border ${
+                                        selectedTemplate?.id === t.id 
+                                        ? 'bg-indigo-600 text-white border-indigo-600' 
+                                        : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                                    }`}
+                                >
+                                    {t.name}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
 
-              <div className="flex flex-col md:flex-row gap-8">
-                  <div className="w-full md:w-1/3 space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Seleccionar Plantilla</label>
-                      <div className="space-y-2">
-                          {templates.map(t => (
-                              <button 
-                                key={t.id} 
-                                onClick={() => setSelectedTemplate(t)}
-                                className={`w-full text-left p-4 rounded-xl font-bold text-xs transition-all border ${
-                                    selectedTemplate?.id === t.id 
-                                    ? 'bg-sky-50 border-sky-200 text-sky-700 shadow-sm' 
-                                    : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-50'
-                                }`}
-                              >
-                                {t.name}
-                              </button>
-                          ))}
-                      </div>
-                  </div>
-                  
-                  {selectedTemplate && (
-                      <div className="w-full md:w-2/3 space-y-6">
-                          <div className="space-y-2">
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Asunto del Correo / Título</label>
-                              <input 
+                    {selectedTemplate ? (
+                        <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+                            <input 
                                 value={selectedTemplate.subject || ''}
                                 onChange={(e) => setSelectedTemplate({...selectedTemplate, subject: e.target.value})}
-                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700" 
-                              />
-                          </div>
-                          
-                          <div className="space-y-2">
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                                  Contenido (Soporta HTML básico)
-                              </label>
-                              <textarea 
+                                placeholder="Asunto del correo"
+                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 shrink-0"
+                            />
+                            <textarea 
                                 value={selectedTemplate.content}
                                 onChange={(e) => setSelectedTemplate({...selectedTemplate, content: e.target.value})}
-                                className="w-full h-64 p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-mono text-sm leading-relaxed resize-none"
-                              />
-                          </div>
-                          
-                          <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Variables Disponibles</p>
-                              <div className="flex flex-wrap gap-2">
-                                  {selectedTemplate.variables?.map(v => (
-                                      <span key={v} className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-[10px] font-mono text-sky-600 select-all cursor-pointer hover:bg-sky-50" title="Click para copiar">
-                                          {v}
-                                      </span>
-                                  ))}
-                              </div>
-                          </div>
-
-                          <div className="flex justify-end pt-4">
-                                <button 
-                                    onClick={handleSaveTemplate}
-                                    disabled={isSavingTemplate}
-                                    className="px-8 py-3 bg-sky-600 text-white rounded-xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-sky-700 transition-all flex items-center gap-2"
-                                >
-                                    {isSavingTemplate ? <RefreshCw className="animate-spin" size={16}/> : <Save size={16}/>}
-                                    Guardar Cambios
+                                className="flex-1 w-full p-6 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-mono text-sm leading-relaxed resize-none focus:ring-2 focus:ring-indigo-500 overflow-y-auto custom-scrollbar"
+                            />
+                            <div className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100 shrink-0">
+                                <div className="flex gap-2">
+                                    {selectedTemplate.variables.map(v => (
+                                        <span key={v} className="px-2 py-1 bg-white border border-slate-200 rounded text-[9px] font-mono text-indigo-500">{v}</span>
+                                    ))}
+                                </div>
+                                <button onClick={handleSaveTemplate} className="flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white rounded-xl font-black uppercase tracking-widest text-[9px] hover:bg-indigo-700 transition-all">
+                                    <Save size={14} /> Guardar
                                 </button>
-                          </div>
-                      </div>
-                  )}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'facturacion' && (
-            <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-10">
-              <div className="flex items-center justify-between">
-                 <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Impuestos y Folios</h3>
-                 <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><DollarSign size={24}/></div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-8">
-                 <div className="space-y-4 p-8 bg-slate-50 rounded-[2.5rem] border border-slate-100">
-                    <h5 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-2 flex items-center gap-2">
-                       <Percent className="text-sky-500" size={16} /> Impuestos Locales
-                    </h5>
-                    <div className="flex items-center gap-4">
-                       <div className="flex-1">
-                          <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Tasa IVA (%)</label>
-                          <input 
-                            type="number" 
-                            value={billingInfo.taxRate}
-                            onChange={(e) => setBillingInfo({...billingInfo, taxRate: Number(e.target.value)})}
-                            className="w-full p-3 bg-white border border-slate-200 rounded-xl font-black text-sky-600"
-                          />
-                       </div>
-                       <div className="flex-1">
-                          <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Moneda Default</label>
-                          <select className="w-full p-3 bg-white border border-slate-200 rounded-xl font-black">
-                             <option>MXN</option>
-                             <option>USD</option>
-                          </select>
-                       </div>
-                    </div>
-                 </div>
-
-                 <div className="space-y-4 p-8 bg-slate-50 rounded-[2.5rem] border border-slate-100">
-                    <h5 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-2 flex items-center gap-2">
-                       <FileText className="text-sky-500" size={16} /> Serie y Folios
-                    </h5>
-                    <div className="grid grid-cols-2 gap-4">
-                       <div>
-                          <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Prefijo Cotiz.</label>
-                          <input type="text" value={billingInfo.quotePrefix} onChange={(e) => setBillingInfo({...billingInfo, quotePrefix: e.target.value})} className="w-full p-3 bg-white border border-slate-200 rounded-xl font-black" />
-                       </div>
-                       <div>
-                          <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Siguiente No.</label>
-                          <input type="number" value={billingInfo.nextQuoteNumber} onChange={(e) => setBillingInfo({...billingInfo, nextQuoteNumber: Number(e.target.value)})} className="w-full p-3 bg-white border border-slate-200 rounded-xl font-black" />
-                       </div>
-                    </div>
-                 </div>
-              </div>
-
-              <div className="p-8 bg-slate-900 rounded-[2.5rem] text-white">
-                 <div className="flex items-center gap-4 mb-4">
-                    <div className="p-3 bg-white/10 rounded-2xl text-sky-400"><Languages size={24}/></div>
-                    <h4 className="font-black text-lg uppercase tracking-tight">Región y Formatos</h4>
-                 </div>
-                 <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-1">
-                       <label className="text-[9px] font-black text-slate-500 uppercase">Zona Horaria (Field Jobs)</label>
-                       <select className="w-full bg-slate-800 border-none rounded-xl p-3 text-sm font-bold text-slate-200 outline-none">
-                          <option>America/Mexico_City (GMT-6)</option>
-                          <option>America/Tijuana (GMT-8)</option>
-                       </select>
-                    </div>
-                    <div className="space-y-1">
-                       <label className="text-[9px] font-black text-slate-500 uppercase">Formato de Fecha</label>
-                       <select className="w-full bg-slate-800 border-none rounded-xl p-3 text-sm font-bold text-slate-200 outline-none">
-                          <option>DD / MM / YYYY</option>
-                          <option>MM / DD / YYYY</option>
-                       </select>
-                    </div>
-                 </div>
-                 <div className="mt-6 flex justify-end">
-                    <button onClick={handleSaveConfig} className="px-6 py-2 bg-white text-slate-900 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-sky-50 transition-all">
-                        Guardar Cambios
-                    </button>
-                 </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'integrations' && (
-            <div className="space-y-8">
-               <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-8">
-                  <div className="flex items-center justify-between">
-                     <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Conexiones de Terceros</h3>
-                     <button className="flex items-center gap-2 px-6 py-2 bg-slate-50 text-slate-400 rounded-xl font-black text-[9px] uppercase tracking-widest border border-slate-100 hover:text-sky-600 transition-all">
-                        <RefreshCw size={14} /> Refrescar Todas
-                     </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                     {/* n8n */}
-                     <div className="p-8 bg-orange-50/30 border border-orange-100 rounded-[2.5rem] group hover:border-orange-500 transition-all">
-                        <div className="flex items-center justify-between mb-6">
-                           <div className="p-3 bg-white shadow-sm rounded-2xl text-orange-600"><Workflow size={24}/></div>
-                           <div className="flex items-center gap-2 bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
-                              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> Activo
-                           </div>
+                            </div>
                         </div>
-                        <h5 className="font-black text-slate-900 uppercase tracking-tight text-lg">Workflows n8n</h5>
-                        <p className="text-xs text-slate-500 font-medium mb-6">Automatizaciones de CRM y Chatwoot activas.</p>
-                        <button className="w-full py-3 bg-white border border-orange-200 text-orange-600 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-orange-600 hover:text-white transition-all shadow-sm">Configurar Webhooks</button>
-                     </div>
-
-                     {/* Chatwoot */}
-                     <div className="p-8 bg-indigo-50/30 border border-indigo-100 rounded-[2.5rem] group hover:border-indigo-500 transition-all">
-                        <div className="flex items-center justify-between mb-6">
-                           <div className="p-3 bg-white shadow-sm rounded-2xl text-indigo-600"><MessageSquare size={24}/></div>
-                           <div className="flex items-center gap-2 bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
-                              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> Conectado
-                           </div>
+                    ) : (
+                        <div className="flex-1 flex items-center justify-center text-slate-300 flex-col">
+                            <LayoutTemplate size={48} className="mb-4"/>
+                            <p className="text-xs font-bold uppercase">Selecciona una plantilla</p>
                         </div>
-                        <h5 className="font-black text-slate-900 uppercase tracking-tight text-lg">Chatwoot Omni</h5>
-                        <p className="text-xs text-slate-500 font-medium mb-6">WhatsApp y LiveChat sincronizados.</p>
-                        <button className="w-full py-3 bg-white border border-indigo-200 text-indigo-600 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all shadow-sm">Ver API Keys</button>
-                     </div>
-                  </div>
-               </div>
-            </div>
-          )}
+                    )}
+                </div>
+            )}
 
-          {activeTab === 'seguridad' && (
-            <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-10">
-              <div className="flex items-center justify-between">
-                 <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Seguridad del Sistema</h3>
-                 <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl"><Lock size={24}/></div>
-              </div>
-
-              <div className="space-y-8">
-                 <div className="p-8 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                       <div className="p-3 bg-white rounded-2xl text-slate-400"><Clock size={24}/></div>
-                       <div>
-                          <h5 className="font-black text-slate-800 uppercase tracking-tight">Sesión Automática</h5>
-                          <p className="text-xs text-slate-500 font-medium">Cerrar sesión tras inactividad.</p>
-                       </div>
+            {/* INTEGRATIONS TAB */}
+            {activeTab === 'integrations' && (
+                <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in zoom-in duration-300 p-10">
+                    <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-8">Conectores y Apps</h3>
+                    <div className="grid grid-cols-2 gap-6">
+                        {[
+                            { name: 'n8n Workflow', desc: 'Automatización de procesos y webhooks.', icon: Workflow, color: 'text-orange-500', connected: true },
+                            { name: 'Google Workspace', desc: 'Sync con Calendar y Drive.', icon: Globe, color: 'text-blue-500', connected: true },
+                            { name: 'Chatwoot', desc: 'Omnicanalidad para soporte.', icon: Zap, color: 'text-indigo-500', connected: false },
+                            { name: 'Stripe Payments', desc: 'Pasarela de pagos en línea.', icon: CreditCard, color: 'text-violet-500', connected: false },
+                        ].map((app, idx) => (
+                            <div key={idx} className="p-6 rounded-3xl border border-slate-100 hover:shadow-lg transition-all group bg-white">
+                                <div className="flex justify-between items-start mb-4">
+                                    <div className={`p-3 rounded-2xl bg-slate-50 ${app.color} group-hover:scale-110 transition-transform`}>
+                                        <app.icon size={24} />
+                                    </div>
+                                    <div className={`w-3 h-3 rounded-full ${app.connected ? 'bg-emerald-500 shadow-lg shadow-emerald-500/30' : 'bg-slate-200'}`} />
+                                </div>
+                                <h4 className="font-black text-slate-900 text-sm uppercase tracking-wide">{app.name}</h4>
+                                <p className="text-xs text-slate-400 mt-1 mb-6 leading-relaxed">{app.desc}</p>
+                                <button className={`w-full py-3 rounded-xl font-black text-[9px] uppercase tracking-widest border transition-all ${
+                                    app.connected 
+                                    ? 'border-slate-200 text-slate-400 hover:bg-slate-50' 
+                                    : 'bg-slate-900 text-white border-transparent hover:bg-slate-800'
+                                }`}>
+                                    {app.connected ? 'Configurar' : 'Conectar'}
+                                </button>
+                            </div>
+                        ))}
                     </div>
-                    <select className="bg-white border border-slate-200 rounded-xl p-3 font-black text-xs outline-none">
-                       <option>30 minutos</option>
-                       <option>2 horas</option>
-                       <option>Nunca</option>
-                    </select>
-                 </div>
-              </div>
-            </div>
-          )}
+                </div>
+            )}
+
+            {/* SYSTEM TAB */}
+            {activeTab === 'system' && (
+                <div className="space-y-6 animate-in fade-in zoom-in duration-300">
+                    <div className="bg-slate-900 text-white rounded-[3rem] shadow-2xl p-10 relative overflow-hidden">
+                        <div className="relative z-10 flex justify-between items-center">
+                            <div>
+                                <h3 className="text-2xl font-black uppercase tracking-tight">Centro de Respaldos</h3>
+                                <p className="text-slate-400 text-sm mt-1">Snapshots de la base de datos PostgreSQL.</p>
+                            </div>
+                            <Database size={48} className="text-slate-700" />
+                        </div>
+                        <div className="mt-8 grid grid-cols-3 gap-4 relative z-10">
+                            {[1, 2, 3].map(i => (
+                                <div key={i} className="bg-slate-800/50 p-4 rounded-2xl border border-slate-700/50 flex flex-col gap-2">
+                                    <div className="flex justify-between text-[10px] font-mono text-sky-400">
+                                        <span>BACKUP_{1000+i}.SQL</span>
+                                        <span>24MB</span>
+                                    </div>
+                                    <div className="h-1 bg-slate-700 rounded-full overflow-hidden">
+                                        <div className="h-full bg-emerald-500 w-full" />
+                                    </div>
+                                    <p className="text-[9px] text-slate-500 uppercase font-black tracking-widest mt-1">Hace {i*12} Horas</p>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="mt-8 pt-8 border-t border-slate-800 flex justify-end gap-4 relative z-10">
+                            <button className="px-6 py-3 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-[10px] font-black uppercase tracking-widest transition-all">
+                                Restaurar Versión
+                            </button>
+                            <button className="px-6 py-3 rounded-xl bg-sky-600 text-white hover:bg-sky-500 text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2">
+                                <Download size={14}/> Crear Backup Manual
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm p-10 flex items-center justify-between">
+                        <div>
+                            <h4 className="font-black text-slate-900 uppercase tracking-tighter text-lg">Modo Mantenimiento</h4>
+                            <p className="text-xs text-slate-500 mt-1 max-w-md">Si se activa, la Landing Page mostrará una pantalla de "En Construcción" y solo el staff podrá acceder al login.</p>
+                        </div>
+                        <button 
+                            onClick={toggleMaintenance}
+                            className={`px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center gap-3 ${
+                                isMaintenanceMode 
+                                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' 
+                                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                            }`}
+                        >
+                            <PowerSwitch active={isMaintenanceMode} />
+                            {isMaintenanceMode ? 'Mantenimiento Activo' : 'Sitio Operativo'}
+                        </button>
+                    </div>
+                </div>
+            )}
+
         </div>
 
-        {/* Sidebar Status & Quick Toggles */}
+        {/* Sidebar */}
         <div className="space-y-6">
-          <div className="bg-slate-900 p-8 rounded-[3rem] text-white shadow-2xl relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:rotate-12 transition-transform">
-               <AlertTriangle size={120} />
+            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm text-center">
+                <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 relative">
+                    <Smartphone size={32} className="text-slate-400" />
+                    {isInstallable && <span className="absolute top-0 right-0 w-4 h-4 bg-sky-500 rounded-full animate-ping" />}
+                </div>
+                <h4 className="font-black text-slate-900 uppercase tracking-tight">App Instalable</h4>
+                <p className="text-xs text-slate-400 mt-2 mb-6 px-4">Instala SuperAir en tu dispositivo para acceso rápido y offline.</p>
+                {isInstallable ? (
+                    <button onClick={handleInstallClick} className="w-full py-4 bg-sky-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-sky-700 transition-all shadow-lg shadow-sky-600/20">
+                        Instalar Ahora
+                    </button>
+                ) : (
+                    <button disabled className="w-full py-4 bg-slate-100 text-slate-400 rounded-xl font-black text-[10px] uppercase tracking-widest cursor-default">
+                        Ya Instalada / No Disponible
+                    </button>
+                )}
             </div>
-            <div className="relative z-10">
-               <div className="flex items-center justify-between mb-6">
-                  <h4 className="font-black text-lg uppercase tracking-tight">Status Público</h4>
-                  <div className={`w-3 h-3 rounded-full ${isMaintenanceMode ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'}`} />
-               </div>
-               <p className="text-xs text-slate-400 mb-8 leading-relaxed font-medium">
-                 El sitio web de SuperAir está actualmente <strong>{isMaintenanceMode ? 'en Mantenimiento' : 'Público y Operativo'}</strong>.
-               </p>
-               <button 
-                onClick={handleMaintenanceToggle}
-                className={`w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${
-                  isMaintenanceMode 
-                  ? 'bg-emerald-600 text-white hover:bg-emerald-700' 
-                  : 'bg-white text-slate-900 hover:bg-sky-50'
-                }`}
-               >
-                  {isMaintenanceMode ? 'Habilitar Sitio Web' : 'Activar Mantenimiento'}
-               </button>
-            </div>
-          </div>
 
-          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
-             <h4 className="font-black text-slate-900 uppercase tracking-tighter text-lg">Salud del ERP</h4>
-             <div className="space-y-4">
-                {[
-                  { label: 'Base de Datos', status: 'Excelente', color: 'text-emerald-500' },
-                  { label: 'Almacenamiento (Cloud)', status: '85% Libre', color: 'text-sky-500' },
-                  { label: 'Uptime Sistema', status: '99.9%', color: 'text-emerald-500' },
-                ].map((item, i) => (
-                  <div key={i} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
-                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{item.label}</span>
-                     <span className={`text-[10px] font-black uppercase ${item.color}`}>{item.status}</span>
-                  </div>
-                ))}
-             </div>
-             
-             {isInstallable && (
-                <button 
-                  onClick={handleInstallClick}
-                  className="w-full py-3 bg-sky-600 text-white rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-sky-700 transition-all flex items-center justify-center gap-2 animate-pulse"
-                >
-                  <Download size={14} /> Instalar Aplicación
-                </button>
-             )}
-          </div>
+            <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-8 rounded-[2.5rem] text-white shadow-xl">
+                <h4 className="font-black uppercase tracking-tight text-lg mb-6">Salud del Sistema</h4>
+                <div className="space-y-4">
+                    {[
+                        { label: 'Base de Datos', val: 'Conectada', color: 'text-emerald-400' },
+                        { label: 'Latencia API', val: '24ms', color: 'text-sky-400' },
+                        { label: 'Almacenamiento', val: '45% Libre', color: 'text-amber-400' },
+                        { label: 'Versión', val: 'v3.2.0 (Prod)', color: 'text-slate-400' },
+                    ].map((m, i) => (
+                        <div key={i} className="flex justify-between items-center py-2 border-b border-white/10 last:border-0">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{m.label}</span>
+                            <span className={`text-xs font-black uppercase ${m.color}`}>{m.val}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
         </div>
+
       </div>
     </div>
   );
 };
+
+// Subcomponent for the switch visual
+const PowerSwitch: React.FC<{active: boolean}> = ({ active }) => (
+    <div className={`w-8 h-4 rounded-full relative transition-colors ${active ? 'bg-amber-500' : 'bg-slate-300'}`}>
+        <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all shadow-sm ${active ? 'left-4.5' : 'left-0.5'}`} style={{ left: active ? 'calc(100% - 14px)' : '2px' }} />
+    </div>
+);
 
 export default Settings;

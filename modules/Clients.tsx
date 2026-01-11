@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, UserPlus, Mail, Phone, MapPin, MoreHorizontal, Workflow, 
   History as HistoryIcon, Calendar, X, TrendingUp, CheckCircle2, Clock, 
-  ClipboardList, Users, Loader2, FileUp, FileText, ScanLine, Building2, Sparkles, Trash2
+  ClipboardList, Users, Loader2, FileUp, FileText, ScanLine, Building2, Sparkles, Trash2,
+  Wrench, Truck
 } from 'lucide-react';
 import { Client } from '../types';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -11,18 +12,34 @@ const Clients: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilter, setActiveFilter] = useState<'Todos' | 'Residencial' | 'Comercial'>('Todos');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  
+  // Modals State
   const [showForm, setShowForm] = useState(false);
+  const [showAppointmentModal, setShowAppointmentModal] = useState(false);
+  
   const [triggeringId, setTriggeringId] = useState<string | null>(null);
   
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   
+  // New Client Form
   const [newClient, setNewClient] = useState({
     name: '', email: '', phone: '', address: '', rfc: '', type: 'Residencial', status: 'Prospecto', notes: ''
   });
   const [isSaving, setIsSaving] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+
+  // New Appointment Form
+  const [schedulingClientId, setSchedulingClientId] = useState<string | null>(null);
+  const [appointmentForm, setAppointmentForm] = useState({
+    date: new Date().toISOString().split('T')[0],
+    time: '10:00',
+    technician: 'Carlos Rodríguez',
+    type: 'Mantenimiento',
+    status: 'Programada'
+  });
+  const [isBooking, setIsBooking] = useState(false);
 
   useEffect(() => {
     fetch('/api/clients')
@@ -71,6 +88,48 @@ const Clients: React.FC = () => {
         if (selectedClient?.id === id) setSelectedClient(null);
     } catch(e) {
         alert("Error al eliminar cliente.");
+    }
+  };
+
+  // --- Appointment Logic ---
+  const handleOpenAppointment = (clientId: string) => {
+    setSchedulingClientId(clientId);
+    setAppointmentForm({
+        date: new Date().toISOString().split('T')[0],
+        time: '10:00',
+        technician: 'Carlos Rodríguez',
+        type: 'Mantenimiento',
+        status: 'Programada'
+    });
+    setShowAppointmentModal(true);
+  };
+
+  const handleSaveAppointment = async () => {
+    if (!schedulingClientId) return;
+    setIsBooking(true);
+    try {
+        const payload = {
+            client_id: schedulingClientId,
+            ...appointmentForm
+        };
+
+        const res = await fetch('/api/appointments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            alert('Cita programada exitosamente.');
+            setShowAppointmentModal(false);
+            setSchedulingClientId(null);
+        } else {
+            throw new Error("Error booking");
+        }
+    } catch (e) {
+        alert('Error al guardar la cita.');
+    } finally {
+        setIsBooking(false);
     }
   };
 
@@ -330,7 +389,10 @@ const Clients: React.FC = () => {
                 <HistoryIcon size={14} />
                 Historial
               </button>
-              <button className="flex-1 py-3 bg-sky-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-sky-700 shadow-lg shadow-sky-600/10 transition-all flex items-center justify-center gap-2">
+              <button 
+                onClick={(e) => { e.stopPropagation(); handleOpenAppointment(client.id); }}
+                className="flex-1 py-3 bg-sky-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-sky-700 shadow-lg shadow-sky-600/10 transition-all flex items-center justify-center gap-2"
+              >
                 <Calendar size={14} />
                 Cita
               </button>
@@ -511,6 +573,87 @@ const Clients: React.FC = () => {
                     {isSaving ? 'Guardando...' : 'Registrar Cliente'}
                  </button>
                  <button onClick={() => setShowForm(false)} className="px-10 py-4 bg-white text-slate-500 rounded-2xl font-black uppercase tracking-widest text-[10px] border border-slate-200">Cancelar</button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* Appointment Modal */}
+      {showAppointmentModal && schedulingClientId && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[120] flex items-center justify-center p-6">
+           <div className="bg-white w-full max-w-xl rounded-[3.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+              <div className="p-10 border-b border-slate-100 flex items-center justify-between">
+                 <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-sky-600 rounded-2xl flex items-center justify-center text-white shadow-lg"><Calendar size={24}/></div>
+                    <div>
+                        <h3 className="text-2xl font-black text-slate-900 tracking-tighter uppercase">Agendar Cita</h3>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                            Cliente: {clients.find(c => c.id === schedulingClientId)?.name}
+                        </p>
+                    </div>
+                 </div>
+                 <button onClick={() => setShowAppointmentModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all"><X size={20}/></button>
+              </div>
+              <div className="p-10 space-y-6">
+                 <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-1">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fecha</label>
+                       <input 
+                            type="date" 
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                            value={appointmentForm.date}
+                            onChange={(e) => setAppointmentForm({...appointmentForm, date: e.target.value})}
+                       />
+                    </div>
+                    <div className="space-y-1">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Hora</label>
+                       <input 
+                            type="time" 
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                            value={appointmentForm.time}
+                            onChange={(e) => setAppointmentForm({...appointmentForm, time: e.target.value})}
+                        />
+                    </div>
+                 </div>
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tipo de Servicio</label>
+                    <select 
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                        value={appointmentForm.type}
+                        onChange={(e) => setAppointmentForm({...appointmentForm, type: e.target.value})}
+                    >
+                       <option value="Instalación">Instalación</option>
+                       <option value="Mantenimiento">Mantenimiento</option>
+                       <option value="Reparación">Reparación</option>
+                       <option value="Visita Técnica">Visita Técnica</option>
+                    </select>
+                 </div>
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Técnico Responsable</label>
+                    <select 
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                        value={appointmentForm.technician}
+                        onChange={(e) => setAppointmentForm({...appointmentForm, technician: e.target.value})}
+                    >
+                       <option value="Carlos Rodríguez">Carlos Rodríguez</option>
+                       <option value="Miguel Acevedo">Miguel Acevedo</option>
+                       <option value="Juan Pérez">Juan Pérez</option>
+                    </select>
+                 </div>
+              </div>
+              <div className="p-10 border-t border-slate-100 flex gap-4 bg-slate-50/50">
+                 <button 
+                  onClick={handleSaveAppointment}
+                  disabled={isBooking}
+                  className="flex-1 py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-sky-600/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                 >
+                    {isBooking ? <Loader2 className="animate-spin" size={16}/> : <CheckCircle2 size={16}/>}
+                    Confirmar Agendamiento
+                 </button>
+                 <button 
+                  onClick={() => setShowAppointmentModal(false)}
+                  className="px-10 py-4 bg-white text-slate-500 border border-slate-200 rounded-2xl font-black uppercase tracking-widest text-[10px]"
+                 >Cancelar</button>
               </div>
            </div>
         </div>

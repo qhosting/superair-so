@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import * as db from './db.js';
 import redis from './redis.js';
 import bcrypt from 'bcryptjs';
+import { sendWhatsApp, sendChatwootMessage } from './services.js';
 
 // Global Error Handlers to prevent silent crashes
 process.on('uncaughtException', (err) => {
@@ -171,12 +172,19 @@ const initDB = async () => {
 
     // 3. Productos
     await db.query(`CREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, name TEXT NOT NULL, description TEXT, price NUMERIC, stock INTEGER DEFAULT 0, category TEXT, min_stock INTEGER DEFAULT 5, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
+    
+    // Migrations
+    try { await db.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS cost NUMERIC DEFAULT 0`); } catch (e) {}
+    try { await db.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'product'`); } catch (e) {}
+    try { await db.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS price_wholesale NUMERIC DEFAULT 0`); } catch (e) {}
+    try { await db.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS price_vip NUMERIC DEFAULT 0`); } catch (e) {}
 
     // 4. CMS
     await db.query(`CREATE TABLE IF NOT EXISTS cms_content (id SERIAL PRIMARY KEY, section_id TEXT UNIQUE, content JSONB, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     
     // 5. Citas
     await db.query(`CREATE TABLE IF NOT EXISTS appointments (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id), technician TEXT, date DATE, time TIME, type TEXT, status TEXT, google_event_link TEXT)`);
+    try { await db.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS duration INTEGER DEFAULT 60`); } catch (e) {}
 
     // 6. Cotizaciones
     await db.query(`CREATE TABLE IF NOT EXISTS quotes (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id), client_name TEXT, total NUMERIC, status TEXT DEFAULT 'Borrador', items JSONB, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
@@ -207,6 +215,18 @@ const initDB = async () => {
       )
     `);
 
+    // 10. Notificaciones (NEW)
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id SERIAL PRIMARY KEY,
+        title TEXT,
+        message TEXT,
+        type TEXT DEFAULT 'info',
+        is_read BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     console.log('✅ Tablas del Sistema Verificadas en Producción');
 
     // Run Seeds
@@ -230,8 +250,6 @@ db.checkConnection().then(connected => {
 // --- API ENDPOINTS ---
 
 app.get('/api/health', async (req, res) => {
-  // Simple health check that doesn't depend on DB to be fully ready immediately,
-  // to prevent container restart during slow startups.
   res.json({ status: 'ok', timestamp: new Date() });
 });
 
@@ -289,7 +307,16 @@ app.post('/api/cms/content', async (req, res) => {
 
 // Products
 app.get('/api/products', async (req, res) => { try { const result = await db.query('SELECT * FROM products ORDER BY name ASC'); res.json(result.rows); } catch (err) { res.status(500).json({ error: err.message }); } });
-app.post('/api/products', async (req, res) => { const { name, description, price, stock, category } = req.body; try { const result = await db.query('INSERT INTO products (name, description, price, stock, category) VALUES ($1, $2, $3, $4, $5) RETURNING *', [name, description, price, stock, category]); res.json(result.rows[0]); } catch (err) { res.status(500).json({ error: err.message }); } });
+app.post('/api/products', async (req, res) => { 
+    const { name, description, price, stock, category, cost, type, price_wholesale, price_vip } = req.body; 
+    try { 
+        const result = await db.query(
+            'INSERT INTO products (name, description, price, stock, category, cost, type, price_wholesale, price_vip) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *', 
+            [name, description, price, stock, category, cost || 0, type || 'product', price_wholesale || 0, price_vip || 0]
+        ); 
+        res.json(result.rows[0]); 
+    } catch (err) { res.status(500).json({ error: err.message }); } 
+});
 app.delete('/api/products/:id', async (req, res) => { try { await db.query('DELETE FROM products WHERE id = $1', [req.params.id]); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
 
 // Clients
@@ -299,11 +326,40 @@ app.delete('/api/clients/:id', async (req, res) => { try { await db.query('DELET
 
 // Appointments
 app.get('/api/appointments', async (req, res) => { try { const r = await db.query('SELECT a.*, c.name as client_name FROM appointments a LEFT JOIN clients c ON a.client_id = c.id ORDER BY a.date ASC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
-app.post('/api/appointments', async (req, res) => { const { client_id, technician, date, time, type, status } = req.body; try { const r = await db.query('INSERT INTO appointments (client_id, technician, date, time, type, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *', [client_id, technician, date, time, type, status]); res.json(r.rows[0]); } catch (e) { res.status(500).json({ error: e.message }); } });
+app.post('/api/appointments', async (req, res) => { 
+    const { client_id, technician, date, time, type, status, duration } = req.body; 
+    try { 
+        const r = await db.query(
+            'INSERT INTO appointments (client_id, technician, date, time, type, status, duration) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *', 
+            [client_id, technician, date, time, type, status, duration || 60]
+        ); 
+        res.json(r.rows[0]); 
+    } catch (e) { res.status(500).json({ error: e.message }); } 
+});
 
 // Quotes & Orders
 app.get('/api/quotes', async (req, res) => { try { const r = await db.query('SELECT * FROM quotes ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
 app.post('/api/quotes', async (req, res) => { const { client_name, total, items } = req.body; try { const r = await db.query('INSERT INTO quotes (client_name, total, items, status) VALUES ($1, $2, $3, $4) RETURNING *', [client_name, total, JSON.stringify(items), 'Borrador']); res.json(r.rows[0]); } catch (e) { res.status(500).json({ error: e.message }); } });
+
+app.put('/api/quotes/:id', async (req, res) => {
+    const { id } = req.params;
+    const { client_name, total, items, status } = req.body;
+    try {
+        const r = await db.query(
+            'UPDATE quotes SET client_name = $1, total = $2, items = $3, status = COALESCE($4, status) WHERE id = $5 RETURNING *', 
+            [client_name, total, JSON.stringify(items), status, id]
+        );
+        res.json(r.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/quotes/:id', async (req, res) => {
+    try { 
+        await db.query('DELETE FROM quotes WHERE id = $1', [req.params.id]); 
+        res.json({ success: true }); 
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/quotes/:id/approve', async (req, res) => {
     const { id } = req.params;
     try {
@@ -312,6 +368,12 @@ app.post('/api/quotes/:id/approve', async (req, res) => {
         if (quoteRes.rows.length === 0) throw new Error('Quote not found');
         const quote = quoteRes.rows[0];
         const orderRes = await db.query(`INSERT INTO orders (quote_id, client_name, total, status) VALUES ($1, $2, $3, 'Pendiente') RETURNING *`, [quote.id, quote.client_name, quote.total]);
+        
+        // Notify Internal System
+        await db.query("INSERT INTO notifications (title, message, type) VALUES ($1, $2, 'success')", [
+            'Nueva Venta', `Cotización #${quote.id} aprobada por ${quote.total}`
+        ]);
+
         await db.query('COMMIT');
         res.json({ success: true, order: orderRes.rows[0], quote: quote });
     } catch (e) { await db.query('ROLLBACK'); res.status(500).json({ error: e.message }); }
@@ -320,46 +382,63 @@ app.post('/api/quotes/:id/approve', async (req, res) => {
 app.get('/api/orders', async (req, res) => { try { const r = await db.query('SELECT id::text, client_name as "clientName", total, paid_amount as "paidAmount", status, cfdi_status as "cfdiStatus", installation_date as "installationDate", fiscal_data as "fiscalData" FROM orders ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
 app.post('/api/orders', async (req, res) => { const { id, paidAmount, status, cfdiStatus, fiscalData } = req.body; try { if (id) { await db.query(`UPDATE orders SET paid_amount = COALESCE($2, paid_amount), status = COALESCE($3, status), cfdi_status = COALESCE($4, cfdi_status), fiscal_data = COALESCE($5, fiscal_data) WHERE id = $1`, [id, paidAmount, status, cfdiStatus, fiscalData ? JSON.stringify(fiscalData) : null]); res.json({ success: true }); } else { res.status(400).json({ error: 'ID required' }); } } catch (e) { res.status(500).json({ error: e.message }); } });
 
-// --- TEMPLATES & SETTINGS ENDPOINTS ---
+// Templates & Settings
 app.get('/api/templates', async (req, res) => {
+    try { const r = await db.query('SELECT * FROM templates ORDER BY name ASC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/templates/:code', async (req, res) => {
+    const { code } = req.params; const { subject, content } = req.body;
+    try { await db.query('UPDATE templates SET subject = $1, content = $2, updated_at = NOW() WHERE code = $3', [subject, content, code]); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/settings', async (req, res) => {
+    try { const result = await db.query('SELECT * FROM app_settings'); const settings = {}; result.rows.forEach(row => { settings[row.category] = row.data; }); res.json(settings); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/settings', async (req, res) => {
+    const { category, data } = req.body;
+    try { await db.query('INSERT INTO app_settings (category, data) VALUES ($1, $2) ON CONFLICT (category) DO UPDATE SET data = $2, updated_at = NOW()', [category, JSON.stringify(data)]); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/trigger-n8n', (req, res) => res.json({ success: true }));
+
+// --- NEW NOTIFICATION ENDPOINTS ---
+
+// Get User Notifications
+app.get('/api/notifications', async (req, res) => {
     try {
-        const r = await db.query('SELECT * FROM templates ORDER BY name ASC');
+        const r = await db.query('SELECT id, title, message, type, is_read as "isRead", created_at as "createdAt" FROM notifications ORDER BY created_at DESC LIMIT 50');
         res.json(r.rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.put('/api/templates/:code', async (req, res) => {
-    const { code } = req.params;
-    const { subject, content } = req.body;
+// Mark as Read
+app.post('/api/notifications/mark-read', async (req, res) => {
     try {
-        await db.query('UPDATE templates SET subject = $1, content = $2, updated_at = NOW() WHERE code = $3', [subject, content, code]);
+        await db.query('UPDATE notifications SET is_read = TRUE');
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/settings', async (req, res) => {
+// External Notification Trigger (WAHA / Chatwoot)
+app.post('/api/notify/external', async (req, res) => {
+    const { channel, recipient, message, name } = req.body; 
+    // channel: 'whatsapp' | 'chatwoot'
+    // recipient: phone number or email
+    
     try {
-        const result = await db.query('SELECT * FROM app_settings');
-        const settings = {};
-        result.rows.forEach(row => {
-            settings[row.category] = row.data;
-        });
-        res.json(settings);
-    } catch (e) { res.status(500).json({ error: e.message }); }
+        let result;
+        if (channel === 'whatsapp') {
+            result = await sendWhatsApp(recipient, message);
+        } else if (channel === 'chatwoot') {
+            result = await sendChatwootMessage(recipient, name || 'Cliente', message);
+        } else {
+            return res.status(400).json({ error: 'Canal no soportado' });
+        }
+        res.json({ success: true, provider_response: result });
+    } catch (e) {
+        console.error("External Notify Error:", e);
+        res.status(500).json({ error: e.message });
+    }
 });
-
-app.post('/api/settings', async (req, res) => {
-    const { category, data } = req.body;
-    try {
-        await db.query(
-            'INSERT INTO app_settings (category, data) VALUES ($1, $2) ON CONFLICT (category) DO UPDATE SET data = $2, updated_at = NOW()',
-            [category, JSON.stringify(data)]
-        );
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/trigger-n8n', (req, res) => res.json({ success: true }));
 
 // Static Files (Prod)
 if (isProduction) {

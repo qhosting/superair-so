@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { HashRouter, Routes, Route, Navigate, useLocation } from './context/AuthContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { NotificationProvider } from './context/NotificationContext';
 import { Loader2 } from 'lucide-react';
+import ChatwootWidget from './components/ChatwootWidget';
 
 // Public Modules
 import LandingPage from './modules/LandingPage';
@@ -61,36 +63,41 @@ const AppRoutes: React.FC = () => {
   }, []);
 
   return (
-    <Routes>
-      {/* Public Routes */}
-      <Route path="/" element={isMaintenance ? <Maintenance /> : <LandingPage />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/maintenance" element={<Maintenance />} />
+    <>
+      <ChatwootWidget />
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/" element={isMaintenance ? <Maintenance /> : <LandingPage />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/maintenance" element={<Maintenance />} />
 
-      {/* Protected Dashboard Routes - Wrapped individually for granular security */}
-      <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-      <Route path="/clients" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
-      <Route path="/quotes" element={<ProtectedRoute><Quotes /></ProtectedRoute>} />
-      <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
-      <Route path="/sales" element={<ProtectedRoute><Sales /></ProtectedRoute>} />
-      <Route path="/appointments" element={<ProtectedRoute><Appointments /></ProtectedRoute>} />
-      <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
-      <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
-      <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-      <Route path="/builder" element={<ProtectedRoute><LandingBuilder /></ProtectedRoute>} />
+        {/* Protected Dashboard Routes - Wrapped individually for granular security */}
+        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/clients" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
+        <Route path="/quotes" element={<ProtectedRoute><Quotes /></ProtectedRoute>} />
+        <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
+        <Route path="/sales" element={<ProtectedRoute><Sales /></ProtectedRoute>} />
+        <Route path="/appointments" element={<ProtectedRoute><Appointments /></ProtectedRoute>} />
+        <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+        <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+        <Route path="/builder" element={<ProtectedRoute><LandingBuilder /></ProtectedRoute>} />
 
-      {/* Fallback - Redirect to root */}
-      <Route path="*" element={<Navigate to="/" />} />
-    </Routes>
+        {/* Fallback - Redirect to root */}
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </>
   );
 };
 
 const App: React.FC = () => {
   return (
     <AuthProvider>
-      <HashRouter>
-        <AppRoutes />
-      </HashRouter>
+      <NotificationProvider>
+        <HashRouter>
+          <AppRoutes />
+        </HashRouter>
+      </NotificationProvider>
     </AuthProvider>
   );
 };

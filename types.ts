@@ -17,10 +17,15 @@ export interface Product {
   id: string;
   name: string;
   description: string;
-  price: number;
+  price: number; // Precio Público Base
+  cost?: number; // Nuevo: Costo Unitario
+  price_wholesale?: number; // Nuevo: Precio Mayoreo
+  price_vip?: number; // Nuevo: Precio VIP/Distribuidor
   stock: number;
   category: 'Unidad AC' | 'Refacción' | 'Servicio' | 'Insumo' | 'Herramienta';
+  type?: 'product' | 'service'; // Nuevo: Diferenciador
   btu?: number;
+  min_stock?: number;
 }
 
 export enum PaymentTerms {
@@ -68,7 +73,8 @@ export interface Appointment {
   technician: string;
   date: string;
   time: string;
-  type: 'Instalación' | 'Mantenimiento' | 'Reparación';
+  duration?: number; // Duración en minutos
+  type: 'Instalación' | 'Mantenimiento' | 'Reparación' | 'Visita Técnica';
   status: 'Programada' | 'En Proceso' | 'Completada' | 'Cancelada';
 }
 
@@ -95,6 +101,16 @@ export interface Template {
   subject?: string;
   content: string; // HTML allowed
   variables: string[]; // List of available vars e.g. {{client_name}}
+}
+
+// --- NOTIFICATIONS ---
+export interface AppNotification {
+  id: number;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  isRead: boolean;
+  createdAt: string;
 }
 
 export enum AppRoute {

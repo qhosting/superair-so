@@ -30,9 +30,12 @@ import {
   Share2,
   History,
   Layout as LayoutIcon,
-  Palette
+  Palette,
+  Pencil,
+  Eye,
+  User as UserIcon
 } from 'lucide-react';
-import { PaymentTerms, Product, Quote, Template } from '../types';
+import { PaymentTerms, Product, Quote, Template, Client } from '../types';
 import { GoogleGenAI } from "@google/genai";
 
 interface QuoteItem {
@@ -55,18 +58,20 @@ const Quotes: React.FC = () => {
   // Data State
   const [quotes, setQuotes] = useState<any[]>([]);
   const [availableProducts, setAvailableProducts] = useState<Product[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [loadingQuotes, setLoadingQuotes] = useState(true);
 
   // Email Template State
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
 
-  const [selectedTerms, setSelectedTerms] = useState<PaymentTerms>(PaymentTerms.FIFTY_FIFTY);
+  // Editing State
+  const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
+  
   const [addedItems, setAddedItems] = useState<QuoteItem[]>([]);
   const [productSearch, setProductSearch] = useState('');
-  const [discount, setDiscount] = useState(0);
-  const [clientName, setClientName] = useState('Residencial Lomas');
-  const [clientEmail, setClientEmail] = useState('cliente@ejemplo.com');
+  const [clientName, setClientName] = useState('');
+  const [clientEmail, setClientEmail] = useState('');
 
   const fetchQuotes = async () => {
     try {
@@ -93,10 +98,32 @@ const Quotes: React.FC = () => {
       } catch (e) { console.error(e); }
   }
 
+  const fetchClients = async () => {
+      try {
+          const res = await fetch('/api/clients');
+          if (res.ok) {
+              const data = await res.json();
+              if(Array.isArray(data)) setClients(data);
+          }
+      } catch(e) { console.error(e); }
+  }
+
   useEffect(() => {
     fetchQuotes();
     fetchProducts();
+    fetchClients();
   }, []);
+
+  const handleClientSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const selectedId = e.target.value;
+      if (!selectedId) return;
+      
+      const client = clients.find(c => c.id.toString() === selectedId);
+      if (client) {
+          setClientName(client.name);
+          setClientEmail(client.email || '');
+      }
+  };
 
   // --- LOGIC: Cargar Plantilla de Email ---
   const prepareEmailModal = async () => {
@@ -113,7 +140,7 @@ const Quotes: React.FC = () => {
               // Replace Variables
               const replaceMap: any = {
                   '{{client_name}}': clientName,
-                  '{{quote_id}}': 'BORRADOR', // Or actual ID if saved
+                  '{{quote_id}}': editingQuoteId || 'BORRADOR', 
                   '{{total}}': formatCurrency(totalAmount)
               };
 
@@ -131,9 +158,8 @@ const Quotes: React.FC = () => {
   };
 
   const subtotal = useMemo(() => addedItems.reduce((acc, item) => acc + (item.product.price * item.quantity), 0), [addedItems]);
-  const discountAmount = (subtotal * discount) / 100;
-  const iva = (subtotal - discountAmount) * 0.16;
-  const totalAmount = subtotal - discountAmount + iva;
+  const iva = subtotal * 0.16;
+  const totalAmount = subtotal + iva;
 
   const addItem = (product: Product) => {
     const existing = addedItems.find(item => item.product.id === product.id);
@@ -153,22 +179,69 @@ const Quotes: React.FC = () => {
   const formatCurrency = (amount: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(amount);
   const filteredProducts = availableProducts.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.category.toLowerCase().includes(productSearch.toLowerCase()));
 
+  // --- CRUD ACTIONS ---
+  const handleOpenNewQuote = () => {
+      setEditingQuoteId(null);
+      setClientName('');
+      setClientEmail('');
+      setAddedItems([]);
+      setShowNewQuote(true);
+  }
+
+  const handleEditQuote = (quote: any) => {
+      setEditingQuoteId(quote.id);
+      setClientName(quote.client_name);
+      // Try to find email from clients if not stored in quote
+      const client = clients.find(c => c.name === quote.client_name);
+      setClientEmail(client?.email || '');
+      
+      if (quote.items) {
+          setAddedItems(Array.isArray(quote.items) ? quote.items : []);
+      }
+      setShowNewQuote(true);
+  };
+
+  const handleDeleteQuote = async (id: string) => {
+      if(!confirm("¿Estás seguro de eliminar esta cotización?")) return;
+      try {
+          await fetch(`/api/quotes/${id}`, { method: 'DELETE' });
+          setQuotes(quotes.filter(q => q.id !== id));
+      } catch(e) {
+          alert("Error al eliminar.");
+      }
+  };
+
   const handleSaveQuote = async () => {
-    try {
-      const res = await fetch('/api/quotes', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
+    const payload = {
           client_name: clientName,
           total: totalAmount,
           items: addedItems
-        })
-      });
+    };
+
+    try {
+      let res;
+      if (editingQuoteId) {
+          // UPDATE
+          res = await fetch(`/api/quotes/${editingQuoteId}`, {
+             method: 'PUT',
+             headers: {'Content-Type': 'application/json'},
+             body: JSON.stringify(payload)
+          });
+      } else {
+          // CREATE
+          res = await fetch('/api/quotes', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+          });
+      }
+
       if (res.ok) {
         setShowNewQuote(false);
         setAddedItems([]);
+        setEditingQuoteId(null);
         fetchQuotes();
-        alert("Cotización creada exitosamente.");
+        alert(editingQuoteId ? "Cotización actualizada." : "Cotización creada exitosamente.");
       }
     } catch(e) {
       alert("Error guardando cotización.");
@@ -226,6 +299,88 @@ const Quotes: React.FC = () => {
     }, 2500);
   };
 
+  const handlePrintQuote = (quote: any) => {
+     // Generate items HTML
+     const itemsHtml = (quote.items || []).map((item: any) => `
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+           <td style="padding: 12px; font-weight: 600; color: #1e293b;">${item.product.name}</td>
+           <td style="padding: 12px; text-align: center; color: #475569;">${item.quantity}</td>
+           <td style="padding: 12px; text-align: right; color: #475569;">${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.product.price)}</td>
+           <td style="padding: 12px; text-align: right; font-weight: 700; color: #0f172a;">${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(item.product.price * item.quantity)}</td>
+        </tr>
+     `).join('');
+
+     const printWindow = window.open('', '_blank');
+     if (!printWindow) return alert("Habilita los pop-ups para imprimir.");
+
+     printWindow.document.write(`
+        <html>
+        <head>
+          <title>Cotización #${quote.id}</title>
+          <style>
+             body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 40px; color: #0f172a; }
+             .header { display: flex; justify-content: space-between; border-bottom: 2px solid #0f172a; padding-bottom: 20px; margin-bottom: 40px; }
+             table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+             th { text-align: left; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; color: #94a3b8; padding: 10px; border-bottom: 2px solid #e2e8f0; }
+             .totals { margin-top: 40px; display: flex; justify-content: flex-end; }
+             .totals-box { width: 300px; }
+             .row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 0.875rem; color: #475569; }
+             .total-row { display: flex; justify-content: space-between; padding-top: 10px; border-top: 2px solid #0f172a; font-weight: 900; font-size: 1.25rem; margin-top: 10px; }
+          </style>
+        </head>
+        <body>
+           <div class="header">
+              <div>
+                 <h1 style="font-size: 2rem; font-weight: 900; margin: 0; line-height: 1;">COTIZACIÓN</h1>
+                 <p style="margin: 5px 0 0 0; color: #64748b; font-weight: 600;">FOLIO #${quote.id}</p>
+              </div>
+              <div style="text-align: right;">
+                 <h2 style="font-size: 1.25rem; font-weight: 800; margin: 0;">SuperAir de México</h2>
+                 <p style="margin: 5px 0 0 0; font-size: 0.875rem; color: #64748b;">Av. de la Luz 402, Juriquilla<br>Querétaro, Qro.</p>
+              </div>
+           </div>
+
+           <div style="margin-bottom: 40px;">
+              <p style="font-size: 0.75rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 5px;">Cliente</p>
+              <h3 style="font-size: 1.5rem; font-weight: 700; margin: 0;">${quote.client_name}</h3>
+           </div>
+
+           <table>
+              <thead>
+                 <tr>
+                    <th>Descripción</th>
+                    <th style="text-align: center;">Cant.</th>
+                    <th style="text-align: right;">Precio Unit.</th>
+                    <th style="text-align: right;">Total</th>
+                 </tr>
+              </thead>
+              <tbody>
+                 ${itemsHtml}
+              </tbody>
+           </table>
+
+           <div class="totals">
+              <div class="totals-box">
+                 <div class="row"><span>Subtotal</span><span>${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(quote.total) / 1.16)}</span></div>
+                 <div class="row"><span>IVA (16%)</span><span>${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(quote.total) - (Number(quote.total) / 1.16))}</span></div>
+                 <div class="total-row"><span>TOTAL</span><span>${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(quote.total))}</span></div>
+              </div>
+           </div>
+
+           <div style="margin-top: 80px; text-align: center; font-size: 0.75rem; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 20px;">
+              <p>Precios sujetos a cambio sin previo aviso. Validez de la oferta: 15 días.</p>
+              <p>SuperAir de México S.A. de C.V.</p>
+           </div>
+           
+           <script>
+              window.onload = function() { window.print(); }
+           </script>
+        </body>
+        </html>
+     `);
+     printWindow.document.close();
+  };
+
   const calculateWithGemini = async () => {
     setLoadingAI(true);
     setRecommendation(null);
@@ -273,7 +428,7 @@ const Quotes: React.FC = () => {
             Asistente IA Gemini
           </button>
           <button 
-            onClick={() => { setAddedItems([]); setShowNewQuote(true); }}
+            onClick={handleOpenNewQuote}
             className="flex items-center gap-2 px-6 py-3 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-sky-700 shadow-xl shadow-sky-600/20 transition-all"
           >
             <Plus size={18} />
@@ -357,7 +512,7 @@ const Quotes: React.FC = () => {
                        <h5 className="font-black text-slate-900 mb-2">{recommendation.suggestedUnit.name}</h5>
                        <p className="text-2xl font-black text-sky-600 mb-6">{formatCurrency(recommendation.suggestedUnit.price)}</p>
                        <button 
-                        onClick={() => {addItem(recommendation.suggestedUnit!); setShowSmartCalc(false); setShowNewQuote(true);}}
+                        onClick={() => {addItem(recommendation.suggestedUnit!); setShowSmartCalc(false); handleOpenNewQuote();}}
                         className="w-full py-3 bg-sky-600 text-white rounded-xl font-black uppercase tracking-widest text-[10px] hover:bg-sky-700 transition-all shadow-lg"
                        >
                          Cotizar Ahora
@@ -370,7 +525,7 @@ const Quotes: React.FC = () => {
         </div>
       )}
 
-      {/* Modal Nueva Cotización */}
+      {/* Modal Nueva/Editar Cotización */}
       {showNewQuote && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[110] flex items-center justify-center p-6">
           <div className="bg-slate-50 w-full max-w-7xl max-h-[90vh] rounded-[3.5rem] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-300">
@@ -379,8 +534,8 @@ const Quotes: React.FC = () => {
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-sky-600 rounded-2xl flex items-center justify-center text-white"><FileText size={24}/></div>
                   <div>
-                    <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Editor de Cotización</h3>
-                    <p className="text-slate-400 text-xs font-bold">Nueva Propuesta Comercial</p>
+                    <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">{editingQuoteId ? 'Editar Cotización' : 'Editor de Cotización'}</h3>
+                    <p className="text-slate-400 text-xs font-bold">{editingQuoteId ? `ID: #${editingQuoteId}` : 'Nueva Propuesta Comercial'}</p>
                   </div>
                 </div>
                 <button onClick={() => setShowNewQuote(false)} className="p-3 hover:bg-slate-100 rounded-2xl transition-all text-slate-400"><X size={24} /></button>
@@ -391,8 +546,22 @@ const Quotes: React.FC = () => {
                 <div className="flex-1 p-8 overflow-y-auto border-r border-slate-200 bg-white">
                    <div className="space-y-8">
                       <div className="grid grid-cols-2 gap-6">
+                         <div className="space-y-2 col-span-2">
+                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                               <UserIcon size={12}/> Seleccionar Cliente Existente
+                           </label>
+                           <select 
+                                onChange={handleClientSelect}
+                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                           >
+                               <option value="">-- Buscar Cliente --</option>
+                               {clients.map(c => (
+                                   <option key={c.id} value={c.id}>{c.name}</option>
+                               ))}
+                           </select>
+                         </div>
                          <div className="space-y-2">
-                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Cliente</label>
+                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Cliente (Manual)</label>
                            <input value={clientName} onChange={(e) => setClientName(e.target.value)} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" />
                          </div>
                          <div className="space-y-2">
@@ -468,7 +637,7 @@ const Quotes: React.FC = () => {
                         className="col-span-2 py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-emerald-700 flex items-center justify-center gap-3 disabled:opacity-50"
                       >
                          <CheckCircle2 size={18} />
-                         Guardar Cotización
+                         {editingQuoteId ? 'Actualizar Cotización' : 'Guardar Cotización'}
                       </button>
                       <button 
                         onClick={handleChatwootSync}
@@ -480,7 +649,8 @@ const Quotes: React.FC = () => {
                       </button>
                       <button 
                         onClick={prepareEmailModal}
-                        className="py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-sky-700 flex items-center justify-center gap-2"
+                        disabled={!clientEmail}
+                        className="py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-sky-700 flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                          <Mail size={16} /> Enviar Email
                       </button>
@@ -491,53 +661,92 @@ const Quotes: React.FC = () => {
         </div>
       )}
 
-      {/* Email Sending Modal */}
+      {/* Email Sending Modal (Split View) */}
       {showEmailModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[130] flex items-center justify-center p-6">
-           <div className="bg-white w-full max-w-lg max-h-[90vh] flex flex-col rounded-[3.5rem] shadow-2xl animate-in zoom-in duration-300">
-              <div className="p-10 border-b border-slate-100 flex items-center justify-between shrink-0">
-                 <h3 className="text-2xl font-black text-slate-900 tracking-tighter uppercase">Enviar Cotización</h3>
-                 <button onClick={() => setShowEmailModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all"><X size={20}/></button>
+           <div className="bg-white w-full max-w-5xl h-[80vh] flex rounded-[3.5rem] shadow-2xl animate-in zoom-in duration-300 overflow-hidden">
+              
+              {/* Left Panel: Editor */}
+              <div className="w-1/2 p-10 border-r border-slate-100 flex flex-col bg-white">
+                <div className="flex items-center justify-between mb-8">
+                     <h3 className="text-2xl font-black text-slate-900 tracking-tighter uppercase">Redactar Correo</h3>
+                </div>
+                
+                <div className="flex-1 space-y-6 overflow-y-auto pr-2 custom-scrollbar">
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Destinatario</label>
+                        <input value={clientEmail} disabled className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold opacity-60" />
+                     </div>
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Asunto</label>
+                        <input 
+                            value={emailSubject}
+                            onChange={e => setEmailSubject(e.target.value)}
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-sky-500" 
+                        />
+                     </div>
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mensaje (Editable)</label>
+                        <textarea 
+                          value={emailBody}
+                          onChange={e => setEmailBody(e.target.value)}
+                          className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none h-64 resize-none font-medium leading-relaxed focus:ring-2 focus:ring-sky-500"
+                        />
+                     </div>
+                </div>
+
+                <div className="pt-8 mt-auto border-t border-slate-100">
+                     <button 
+                      onClick={handleSendEmail}
+                      disabled={isSendingEmail}
+                      className="w-full py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-sky-600/20 flex items-center justify-center gap-3"
+                     >
+                        {isSendingEmail ? <Loader2 className="animate-spin" size={18}/> : <Send size={18} />}
+                        Enviar Ahora
+                     </button>
+                </div>
               </div>
-              <div className="p-10 space-y-6 overflow-y-auto custom-scrollbar">
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Destinatario</label>
-                    <input value={clientEmail} disabled className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold opacity-60" />
+
+              {/* Right Panel: Preview */}
+              <div className="w-1/2 bg-slate-50 flex flex-col relative">
+                 <button onClick={() => setShowEmailModal(false)} className="absolute top-6 right-6 p-2 hover:bg-slate-200 rounded-xl transition-all z-10"><X size={20}/></button>
+                 
+                 <div className="p-10 pb-4 border-b border-slate-200 flex items-center gap-2">
+                    <Eye size={18} className="text-slate-400"/>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Vista Previa Cliente</span>
                  </div>
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Asunto</label>
-                    <input 
-                        value={emailSubject}
-                        onChange={e => setEmailSubject(e.target.value)}
-                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-sky-500" 
-                    />
-                 </div>
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mensaje (Editable)</label>
-                    <textarea 
-                      value={emailBody}
-                      onChange={e => setEmailBody(e.target.value)}
-                      className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none h-64 resize-none font-medium leading-relaxed"
-                    />
-                 </div>
-                 <div className="flex items-center gap-3 p-4 bg-sky-50 border border-sky-100 rounded-2xl">
-                    <FileText className="text-sky-600" size={24} />
-                    <div>
-                       <p className="text-[10px] font-black text-sky-900 uppercase tracking-widest leading-none mb-1">Archivo Adjunto</p>
-                       <p className="text-xs font-bold text-sky-600">Cotización_PDF_Generado.pdf</p>
+
+                 <div className="flex-1 overflow-y-auto p-10 custom-scrollbar">
+                    <div className="bg-white shadow-xl rounded-xl overflow-hidden border border-slate-200 min-h-[500px]">
+                        {/* Simulated Email Header */}
+                        <div className="bg-slate-900 text-white p-6">
+                            <h2 className="font-bold text-lg">SuperAir</h2>
+                        </div>
+                        <div className="p-8 space-y-6">
+                            <div className="whitespace-pre-wrap text-slate-600 text-sm font-medium leading-relaxed">
+                                {emailBody}
+                            </div>
+                            
+                            {/* Simulated Quote Attachment Card */}
+                            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 flex items-center gap-4">
+                                <div className="p-3 bg-red-100 text-red-600 rounded-lg">
+                                    <FileText size={24} />
+                                </div>
+                                <div>
+                                    <p className="font-bold text-slate-800 text-sm">Cotización_SuperAir.pdf</p>
+                                    <p className="text-xs text-slate-400">125 KB</p>
+                                </div>
+                            </div>
+
+                            <div className="pt-6 border-t border-slate-100 text-xs text-slate-400">
+                                <p>SuperAir de México S.A. de C.V.</p>
+                                <p>Av. de la Luz 402, Juriquilla, Qro.</p>
+                            </div>
+                        </div>
                     </div>
                  </div>
               </div>
-              <div className="p-10 border-t border-slate-100 flex gap-4 bg-slate-50/50 shrink-0">
-                 <button 
-                  onClick={handleSendEmail}
-                  disabled={isSendingEmail}
-                  className="flex-1 py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-sky-600/20 flex items-center justify-center gap-3"
-                 >
-                    {isSendingEmail ? <Loader2 className="animate-spin" size={18}/> : <Send size={18} />}
-                    Enviar Ahora
-                 </button>
-              </div>
+
            </div>
         </div>
       )}
@@ -583,17 +792,37 @@ const Quotes: React.FC = () => {
                     <td className="px-8 py-6 text-right">
                        <div className="flex items-center justify-end gap-2">
                             {row.status !== 'Aceptada' && (
-                                <button 
-                                    onClick={() => handleApproveQuote(row.id)}
-                                    disabled={isApproving === row.id}
-                                    className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white border border-emerald-100 rounded-xl transition-all font-black text-[9px] uppercase tracking-widest disabled:opacity-50"
-                                >
-                                    {isApproving === row.id ? <Loader2 size={12} className="animate-spin"/> : <CheckCircle2 size={12} />}
-                                    Aprobar
-                                </button>
+                                <>
+                                    <button 
+                                        onClick={() => handleApproveQuote(row.id)}
+                                        disabled={isApproving === row.id}
+                                        className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white border border-emerald-100 rounded-xl transition-all font-black text-[9px] uppercase tracking-widest disabled:opacity-50"
+                                        title="Aprobar y Crear Orden"
+                                    >
+                                        {isApproving === row.id ? <Loader2 size={12} className="animate-spin"/> : <CheckCircle2 size={12} />}
+                                    </button>
+                                    <button 
+                                        onClick={() => handleEditQuote(row)}
+                                        className="p-2 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition-all"
+                                        title="Editar"
+                                    >
+                                        <Pencil size={16}/>
+                                    </button>
+                                </>
                             )}
-                            <button className="p-2 hover:bg-white rounded-lg border border-slate-200 opacity-50 group-hover:opacity-100 transition-all">
+                            <button 
+                                onClick={() => handlePrintQuote(row)}
+                                className="p-2 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-all"
+                                title="Imprimir PDF Web"
+                            >
                                 <Printer size={16}/>
+                            </button>
+                            <button 
+                                onClick={() => handleDeleteQuote(row.id)}
+                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                title="Eliminar"
+                            >
+                                <Trash2 size={16}/>
                             </button>
                        </div>
                     </td>

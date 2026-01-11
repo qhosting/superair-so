@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        - API_KEY=${API_KEY} # Pass build-time arg for Vite env vars
+    image: superair-erp:latest
+    container_name: superair_app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgres://superair:secure_pass@db:5432/superair_db
+      - REDIS_URL=redis://redis:6379
+      - WAHA_URL=http://waha:3000
+      # Chatwoot Config (Optional)
+      - CHATWOOT_URL=${CHATWOOT_URL}
+      - CHATWOOT_TOKEN=${CHATWOOT_TOKEN}
+      - CHATWOOT_ACCOUNT_ID=${CHATWOOT_ACCOUNT_ID}
+      - CHATWOOT_INBOX_ID=${CHATWOOT_INBOX_ID}
+    depends_on:
+      - db
+      - redis
+      - waha
+    networks:
+      - superair_net
+
+  db:
+    image: postgres:15-alpine
+    container_name: superair_db
+    restart: always
+    environment:
+      - POSTGRES_USER=superair
+      - POSTGRES_PASSWORD=secure_pass
+      - POSTGRES_DB=superair_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - superair_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U superair -d superair_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+    container_name: superair_redis
+    restart: always
+    volumes:
+      - redisdata:/data
+    networks:
+      - superair_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  waha:
+    image: devlikeapro/waha
+    container_name: superair_waha
+    restart: always
+    environment:
+      - WHATSAPP_DEFAULT_ENGINE=WEBJS
+      - WHATSAPP_SWAGGER_ENABLED=true
+    volumes:
+      - waha_sessions:/app/sessions
+    networks:
+      - superair_net
+    ports:
+      - "3001:3000" # Expose WAHA dashboard on port 3001
+
+volumes:
+  pgdata:
+  redisdata:
+  waha_sessions:
+
+networks:
+  superair_net:
+    driver: bridge

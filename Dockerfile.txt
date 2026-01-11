@@ -3,18 +3,18 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Force development environment for build tools
-ENV NODE_ENV=development
-
-# Argument for Gemini API Key (Required at build time for Vite env injection)
+# Define build arguments
 ARG API_KEY
+# Set environment variable for Vite build
 ENV API_KEY=$API_KEY
+# Force development environment for build tools installation
+ENV NODE_ENV=development
 
 # Copy package files first to leverage Docker cache
 COPY package*.json ./
 
-# Install dependencies (force include dev dependencies for build tools like Vite)
-RUN npm install --include=dev
+# Install dependencies (include devDependencies for Vite/Build tools)
+RUN npm install
 
 # Copy the rest of the application code
 COPY . .
@@ -29,12 +29,13 @@ WORKDIR /app
 
 # Production environment
 ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOST=0.0.0.0
 
 # Copy package files
 COPY package*.json ./
 
-# Install only production dependencies (Backend only: Express, PG, Redis, etc.)
-# This omits frontend libraries like @google/genai which are not needed for the server
+# Install only production dependencies
 RUN npm install --omit=dev
 
 # Copy the server code
@@ -43,14 +44,10 @@ COPY server ./server
 # Copy the built static files from the builder stage
 COPY --from=builder /app/dist ./dist
 
-# Environment variables
-ENV PORT=3000
-ENV HOST=0.0.0.0
-
 # Expose the port
 EXPOSE 3000
 
-# Health check using Node.js native fetch (more reliable than wget in Alpine)
+# Health check using Node.js native fetch
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/api/health').then((r) => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
 

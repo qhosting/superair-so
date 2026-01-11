@@ -1,20 +1,32 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, Plus, Package, AlertTriangle, ArrowUpRight, ArrowDownLeft, 
-  Edit3, Filter, X, Warehouse, Boxes, Tag, Loader2, Trash2
+  Edit3, Filter, X, Warehouse, Boxes, Tag, Loader2, Trash2, Printer, 
+  Calculator, FileSpreadsheet, Wrench, Briefcase
 } from 'lucide-react';
 import { Product } from '../types';
 
 const Inventory: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'stock' | 'movements'>('stock');
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  
+  // State for Print Mode
+  const [showPrintModal, setShowPrintModal] = useState(false);
 
   const [products, setProducts] = useState<Product[]>([]);
   
-  const [newProduct, setNewProduct] = useState({
-    name: '', description: '', price: '', stock: '', category: 'Refacción', min_stock: 5
+  const [newProduct, setNewProduct] = useState<Partial<Product>>({
+    name: '', 
+    description: '', 
+    price: 0, 
+    cost: 0,
+    price_wholesale: 0,
+    price_vip: 0,
+    stock: 0, 
+    category: 'Refacción', 
+    type: 'product',
+    min_stock: 5
   });
 
   const fetchProducts = async () => {
@@ -35,15 +47,18 @@ const Inventory: React.FC = () => {
 
   const handleSaveProduct = async () => {
     if (!newProduct.name || !newProduct.price) {
-        alert("El nombre y precio son obligatorios");
+        alert("El nombre y precio público son obligatorios");
         return;
     }
 
     try {
         const payload = {
             ...newProduct,
-            price: parseFloat(newProduct.price) || 0,
-            stock: parseInt(newProduct.stock) || 0
+            price: Number(newProduct.price) || 0,
+            cost: Number(newProduct.cost) || 0,
+            stock: newProduct.type === 'service' ? 0 : (Number(newProduct.stock) || 0),
+            price_wholesale: Number(newProduct.price_wholesale) || 0,
+            price_vip: Number(newProduct.price_vip) || 0
         };
 
         const res = await fetch('/api/products', {
@@ -53,7 +68,12 @@ const Inventory: React.FC = () => {
         });
         if(res.ok) {
             setShowAddModal(false);
-            setNewProduct({ name: '', description: '', price: '', stock: '', category: 'Refacción', min_stock: 5 });
+            // Reset Form
+            setNewProduct({ 
+                name: '', description: '', price: 0, cost: 0, 
+                stock: 0, category: 'Refacción', type: 'product', min_stock: 5,
+                price_wholesale: 0, price_vip: 0
+            });
             fetchProducts(); 
         } else {
             throw new Error("Save Failed");
@@ -64,7 +84,7 @@ const Inventory: React.FC = () => {
   };
 
   const handleDeleteProduct = async (id: string) => {
-    if (!confirm("¿Eliminar este producto permanentemente?")) return;
+    if (!confirm("¿Eliminar este ítem permanentemente?")) return;
     try {
         await fetch(`/api/products/${id}`, { method: 'DELETE' });
         setProducts(products.filter(p => p.id !== id));
@@ -73,14 +93,84 @@ const Inventory: React.FC = () => {
     }
   };
 
+  const calculatePrices = () => {
+      const base = Number(newProduct.price) || 0;
+      if (base <= 0) return;
+      
+      setNewProduct(prev => ({
+          ...prev,
+          price_wholesale: Number((base * 0.90).toFixed(2)), // 10% descuento
+          price_vip: Number((base * 0.85).toFixed(2)) // 15% descuento
+      }));
+  };
+
+  const calculateMargin = (price: number, cost: number) => {
+      if (!price || price === 0) return 0;
+      return ((price - cost) / price) * 100;
+  };
+
+  const handlePrintInventory = (mode: 'blind' | 'audit') => {
+      const itemsToPrint = products.filter(p => p.type === 'product');
+      
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) return alert("Permite pop-ups para imprimir.");
+
+      const rows = itemsToPrint.map(p => `
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 10px;">${p.name}</td>
+            <td style="padding: 10px; font-size: 12px;">${p.category}</td>
+            <td style="padding: 10px; text-align: center;">${mode === 'audit' ? p.stock : '____'}</td>
+            <td style="padding: 10px; text-align: center;">${mode === 'audit' ? '____' : '____'}</td>
+        </tr>
+      `).join('');
+
+      printWindow.document.write(`
+        <html>
+        <head>
+            <title>Inventario Físico - SuperAir</title>
+            <style>
+                body { font-family: sans-serif; padding: 40px; }
+                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                th { text-align: left; border-bottom: 2px solid #000; padding: 10px; }
+                .header { display: flex; justify-content: space-between; margin-bottom: 30px; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div>
+                    <h1>HOJA DE CONTEO FÍSICO</h1>
+                    <p>Fecha: ${new Date().toLocaleDateString()}</p>
+                    <p>Modo: ${mode === 'blind' ? 'Ciego (Sin Cantidades)' : 'Auditoría (Con Cantidades)'}</p>
+                </div>
+                <div><h2>SuperAir</h2></div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Producto / Descripción</th>
+                        <th>Categoría</th>
+                        <th style="text-align: center;">${mode === 'audit' ? 'Sistema' : 'Conteo 1'}</th>
+                        <th style="text-align: center;">${mode === 'audit' ? 'Físico' : 'Conteo 2'}</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+            <script>window.onload = function() { window.print(); }</script>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+      setShowPrintModal(false);
+  };
+
   const filteredProducts = useMemo(() => {
     return products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [products, searchTerm]);
 
   const stats = {
-    totalValue: products.reduce((acc, p) => acc + (Number(p.price) * Number(p.stock)), 0),
-    lowStock: products.filter(p => Number(p.stock) < 5).length,
-    totalItems: products.reduce((acc, p) => acc + Number(p.stock), 0)
+    totalValue: products.filter(p => p.type === 'product').reduce((acc, p) => acc + (Number(p.cost || 0) * Number(p.stock)), 0),
+    potentialProfit: products.filter(p => p.type === 'product').reduce((acc, p) => acc + ((Number(p.price) - Number(p.cost || 0)) * Number(p.stock)), 0),
+    lowStock: products.filter(p => p.type === 'product' && Number(p.stock) < 5).length
   };
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
@@ -90,16 +180,23 @@ const Inventory: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">Inventario Central</h2>
-          <p className="text-slate-500 text-sm font-medium">Control de activos en Base de Datos en Tiempo Real.</p>
+          <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">Inventario y Servicios</h2>
+          <p className="text-slate-500 text-sm font-medium">Gestión de activos, costos y listas de precios.</p>
         </div>
         <div className="flex gap-3">
+          <button 
+            onClick={() => setShowPrintModal(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-white text-slate-700 border border-slate-200 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 transition-all shadow-sm"
+          >
+            <Printer size={18} />
+            Hojas de Conteo
+          </button>
           <button 
             onClick={() => setShowAddModal(true)}
             className="flex items-center gap-2 px-6 py-3 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-sky-700 shadow-xl shadow-sky-600/20 transition-all"
           >
             <Plus size={18} />
-            Nuevo Producto
+            Nuevo Ítem
           </button>
         </div>
       </div>
@@ -110,24 +207,24 @@ const Inventory: React.FC = () => {
            <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform">
               <Boxes size={80} className="text-sky-600" />
            </div>
-           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Valor Total Activos</p>
+           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Costo Inventario Actual</p>
            <h3 className="text-3xl font-black text-slate-900">{formatCurrency(stats.totalValue)}</h3>
         </div>
         
+        <div className="bg-emerald-50 p-8 rounded-[2.5rem] border border-emerald-100 shadow-sm relative overflow-hidden group">
+           <div className="absolute top-0 right-0 p-6 opacity-10">
+              <ArrowUpRight size={80} className="text-emerald-600" />
+           </div>
+           <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Utilidad Potencial Est.</p>
+           <h3 className="text-3xl font-black text-emerald-900">{formatCurrency(stats.potentialProfit)}</h3>
+        </div>
+
         <div className="bg-rose-50 p-8 rounded-[2.5rem] border border-rose-100 shadow-sm relative overflow-hidden group">
            <div className="absolute top-0 right-0 p-6 opacity-10">
               <AlertTriangle size={80} className="text-rose-600" />
            </div>
            <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-2">Stock Bajo / Crítico</p>
            <h3 className="text-3xl font-black text-rose-900">{stats.lowStock} Ítems</h3>
-        </div>
-
-        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm relative overflow-hidden group">
-           <div className="absolute top-0 right-0 p-6 opacity-5">
-              <Warehouse size={80} className="text-slate-600" />
-           </div>
-           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Unidades Totales</p>
-           <h3 className="text-3xl font-black text-slate-900">{stats.totalItems}</h3>
         </div>
       </div>
 
@@ -136,7 +233,7 @@ const Inventory: React.FC = () => {
         <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="flex bg-slate-100 p-1.5 rounded-2xl">
             <button className="flex items-center gap-3 px-8 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest bg-white shadow-lg text-sky-600">
-              <Package size={16} /> Stock Actual
+              <Package size={16} /> Todo
             </button>
           </div>
 
@@ -161,53 +258,72 @@ const Inventory: React.FC = () => {
             <table className="w-full text-left">
               <thead className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest">
                 <tr>
-                  <th className="px-8 py-5">Producto</th>
-                  <th className="px-8 py-5">Categoría</th>
+                  <th className="px-8 py-5">Ítem</th>
+                  <th className="px-8 py-5">Tipo</th>
                   <th className="px-8 py-5">Existencia</th>
-                  <th className="px-8 py-5">Precio Unit.</th>
+                  <th className="px-8 py-5">Costo Unit.</th>
+                  <th className="px-8 py-5">Precio Público</th>
+                  <th className="px-8 py-5">Margen</th>
                   <th className="px-8 py-5 text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredProducts.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
-                    <td className="px-8 py-6">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-slate-100 text-slate-400 rounded-xl flex items-center justify-center font-black">
-                          <Tag size={18} />
-                        </div>
-                        <div>
-                          <p className="font-black text-slate-900">{p.name}</p>
-                          <p className="text-[10px] font-mono text-slate-400 uppercase">{p.description || 'Sin descripción'}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-8 py-6">
-                       <span className="px-3 py-1 bg-slate-100 text-slate-500 rounded-full text-[9px] font-black uppercase tracking-widest border border-slate-200">
-                         {p.category}
-                       </span>
-                    </td>
-                    <td className="px-8 py-6">
-                       <span className={`text-lg font-black ${Number(p.stock) < 5 ? 'text-rose-600' : 'text-slate-900'}`}>{p.stock}</span>
-                    </td>
-                    <td className="px-8 py-6 font-black text-slate-900">
-                      {formatCurrency(Number(p.price))}
-                    </td>
-                    <td className="px-8 py-6 text-right">
-                       <div className="flex justify-end gap-2">
-                          <button 
-                            onClick={() => handleDeleteProduct(p.id)}
-                            className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                          >
-                             <Trash2 size={18} />
-                          </button>
-                       </div>
-                    </td>
-                  </tr>
-                ))}
+                {filteredProducts.map((p) => {
+                    const margin = calculateMargin(Number(p.price), Number(p.cost || 0));
+                    return (
+                      <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
+                        <td className="px-8 py-6">
+                          <div className="flex items-center gap-4">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black ${p.type === 'service' ? 'bg-purple-50 text-purple-500' : 'bg-slate-100 text-slate-400'}`}>
+                              {p.type === 'service' ? <Wrench size={18}/> : <Tag size={18} />}
+                            </div>
+                            <div>
+                              <p className="font-black text-slate-900">{p.name}</p>
+                              <p className="text-[10px] font-mono text-slate-400 uppercase">{p.category}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-8 py-6">
+                           <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
+                               p.type === 'service' ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-sky-50 text-sky-600 border-sky-100'
+                           }`}>
+                             {p.type === 'service' ? 'Servicio' : 'Físico'}
+                           </span>
+                        </td>
+                        <td className="px-8 py-6">
+                           {p.type === 'service' ? (
+                               <span className="text-slate-300 font-bold">-</span>
+                           ) : (
+                               <span className={`text-lg font-black ${Number(p.stock) < (p.min_stock || 5) ? 'text-rose-600' : 'text-slate-900'}`}>{p.stock}</span>
+                           )}
+                        </td>
+                        <td className="px-8 py-6 font-medium text-slate-500 text-xs">
+                          {formatCurrency(Number(p.cost || 0))}
+                        </td>
+                        <td className="px-8 py-6 font-black text-slate-900">
+                          {formatCurrency(Number(p.price))}
+                        </td>
+                        <td className="px-8 py-6">
+                            <span className={`text-xs font-black ${margin < 20 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                {margin.toFixed(1)}%
+                            </span>
+                        </td>
+                        <td className="px-8 py-6 text-right">
+                           <div className="flex justify-end gap-2">
+                              <button 
+                                onClick={() => handleDeleteProduct(p.id)}
+                                className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                              >
+                                 <Trash2 size={18} />
+                              </button>
+                           </div>
+                        </td>
+                      </tr>
+                    );
+                })}
                 {filteredProducts.length === 0 && (
                     <tr>
-                        <td colSpan={5} className="text-center p-10 text-slate-400">No hay productos en inventario.</td>
+                        <td colSpan={7} className="text-center p-10 text-slate-400">No hay productos en inventario.</td>
                     </tr>
                 )}
               </tbody>
@@ -221,39 +337,104 @@ const Inventory: React.FC = () => {
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[120] flex items-center justify-center p-6">
            <div className="bg-white w-full max-w-2xl rounded-[3.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
               <div className="p-10 border-b border-slate-100 flex items-center justify-between">
-                 <h3 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Nuevo Producto</h3>
+                 <h3 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Nuevo Ítem</h3>
                  <button onClick={() => setShowAddModal(false)} className="p-3 hover:bg-slate-100 rounded-2xl transition-all"><X size={24}/></button>
               </div>
-              <div className="p-10 grid grid-cols-2 gap-6">
-                 <div className="col-span-2 space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nombre</label>
-                    <input 
-                        value={newProduct.name}
-                        onChange={e => setNewProduct({...newProduct, name: e.target.value})}
-                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 font-bold" 
-                    />
+              <div className="p-10 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                 {/* Row 1: Basic Info */}
+                 <div className="grid grid-cols-3 gap-6">
+                     <div className="col-span-2 space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nombre del Producto / Servicio</label>
+                        <input 
+                            value={newProduct.name}
+                            onChange={e => setNewProduct({...newProduct, name: e.target.value})}
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 font-bold" 
+                        />
+                     </div>
+                     <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo</label>
+                        <select 
+                            value={newProduct.type}
+                            onChange={e => setNewProduct({...newProduct, type: e.target.value as any})}
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                        >
+                           <option value="product">Producto Físico</option>
+                           <option value="service">Servicio</option>
+                        </select>
+                     </div>
                  </div>
-                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Categoría</label>
-                    <select 
-                        value={newProduct.category}
-                        onChange={e => setNewProduct({...newProduct, category: e.target.value})}
-                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
-                    >
-                       <option>Unidad AC</option>
-                       <option>Refacción</option>
-                       <option>Insumo</option>
-                       <option>Herramienta</option>
-                    </select>
+
+                 {/* Row 2: Category & Costs */}
+                 <div className="grid grid-cols-3 gap-6">
+                     <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Categoría</label>
+                        <select 
+                            value={newProduct.category}
+                            onChange={e => setNewProduct({...newProduct, category: e.target.value as any})}
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                        >
+                           <option>Unidad AC</option>
+                           <option>Refacción</option>
+                           <option>Insumo</option>
+                           <option>Herramienta</option>
+                           <option>Servicio</option>
+                        </select>
+                     </div>
+                     <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Costo Unitario ($)</label>
+                        <input type="number" value={newProduct.cost} onChange={e => setNewProduct({...newProduct, cost: parseFloat(e.target.value)})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-medium" />
+                     </div>
+                     <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Precio Público ($)</label>
+                        <input type="number" value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: parseFloat(e.target.value)})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-sky-600" />
+                     </div>
                  </div>
-                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Precio</label>
-                    <input type="number" value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none" />
+
+                 {/* Margin Display */}
+                 <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <span className="text-xs font-bold text-slate-500">Margen Esperado:</span>
+                    <span className="font-black text-lg text-emerald-600">
+                        {calculateMargin(Number(newProduct.price), Number(newProduct.cost)).toFixed(1)}%
+                    </span>
                  </div>
-                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Stock Inicial</label>
-                    <input type="number" value={newProduct.stock} onChange={e => setNewProduct({...newProduct, stock: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none" />
+
+                 {/* Row 3: Price Lists */}
+                 <div className="space-y-4 pt-4 border-t border-slate-100">
+                    <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">Listas de Precios</h4>
+                        <button 
+                            onClick={calculatePrices}
+                            type="button"
+                            className="flex items-center gap-2 text-[10px] font-black text-sky-600 uppercase tracking-widest hover:bg-sky-50 px-3 py-1 rounded-lg transition-all"
+                        >
+                            <Calculator size={14}/> Calcular Automático
+                        </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-6">
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Precio Mayoreo (-10%)</label>
+                            <input type="number" value={newProduct.price_wholesale} onChange={e => setNewProduct({...newProduct, price_wholesale: parseFloat(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none text-sm" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Precio VIP (-15%)</label>
+                            <input type="number" value={newProduct.price_vip} onChange={e => setNewProduct({...newProduct, price_vip: parseFloat(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none text-sm" />
+                        </div>
+                    </div>
                  </div>
+
+                 {/* Row 4: Stock (Conditional) */}
+                 {newProduct.type === 'product' && (
+                     <div className="grid grid-cols-2 gap-6 pt-4 border-t border-slate-100">
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Stock Inicial</label>
+                            <input type="number" value={newProduct.stock} onChange={e => setNewProduct({...newProduct, stock: parseFloat(e.target.value)})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Alerta Mínimo</label>
+                            <input type="number" value={newProduct.min_stock} onChange={e => setNewProduct({...newProduct, min_stock: parseFloat(e.target.value)})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none" />
+                        </div>
+                     </div>
+                 )}
               </div>
               <div className="p-10 border-t border-slate-100 flex gap-4 bg-slate-50/50">
                  <button onClick={handleSaveProduct} className="flex-1 py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-sky-600/20">Guardar en Base de Datos</button>
@@ -261,6 +442,30 @@ const Inventory: React.FC = () => {
               </div>
            </div>
         </div>
+      )}
+
+      {/* Print Modal Selector */}
+      {showPrintModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[130] flex items-center justify-center p-6">
+            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl max-w-sm w-full text-center space-y-6">
+                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-500">
+                    <Printer size={32} />
+                </div>
+                <div>
+                    <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Imprimir Hojas</h3>
+                    <p className="text-slate-400 text-xs font-medium mt-2">Selecciona el formato de impresión para el almacén.</p>
+                </div>
+                <div className="grid gap-3">
+                    <button onClick={() => handlePrintInventory('blind')} className="py-4 border border-slate-200 rounded-xl font-bold text-xs hover:bg-sky-50 hover:text-sky-600 hover:border-sky-200 transition-all">
+                        Ciego (Sin Cantidades)
+                    </button>
+                    <button onClick={() => handlePrintInventory('audit')} className="py-4 border border-slate-200 rounded-xl font-bold text-xs hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-all">
+                        Auditoría (Con Cantidades)
+                    </button>
+                </div>
+                <button onClick={() => setShowPrintModal(false)} className="text-slate-400 text-xs font-bold uppercase tracking-widest hover:text-slate-600">Cancelar</button>
+            </div>
+          </div>
       )}
     </div>
   );

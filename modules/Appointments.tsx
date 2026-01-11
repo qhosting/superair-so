@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Clock, 
   MapPin, User, ExternalLink, X, Truck, Wrench, Camera, ClipboardList, 
-  Phone, MessageSquare, Loader2
+  Phone, MessageSquare, Loader2, CheckCircle2, AlertTriangle, CalendarCheck
 } from 'lucide-react';
 import { Appointment } from '../types';
 
@@ -13,12 +13,15 @@ const Appointments: React.FC = () => {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState<any[]>([]);
+  const [isGoogleConnected, setIsGoogleConnected] = useState(false);
+  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
 
   const [newApt, setNewApt] = useState({
       client_id: '',
       technician: 'Carlos Rodríguez',
       date: new Date().toISOString().split('T')[0],
       time: '10:00',
+      duration: 60,
       type: 'Instalación',
       status: 'Programada'
   });
@@ -50,6 +53,8 @@ const Appointments: React.FC = () => {
               savedApt.client_name = client ? client.name : 'Cliente';
               setAppointments([...appointments, savedApt]);
               setShowNewAptModal(false);
+              // Reset duration to default
+              setNewApt(prev => ({...prev, duration: 60})); 
           } else {
               throw new Error("Save Failed");
           }
@@ -58,7 +63,13 @@ const Appointments: React.FC = () => {
       }
   };
 
-  // ... (Rest of UI and Calendar Logic remains same)
+  const handleConnectGoogle = () => {
+      setIsConnectingGoogle(true);
+      setTimeout(() => {
+          setIsGoogleConnected(true);
+          setIsConnectingGoogle(false);
+      }, 2000);
+  };
 
   // Lógica de Calendario
   const year = currentDate.getFullYear();
@@ -142,7 +153,7 @@ const Appointments: React.FC = () => {
                         <span className={`text-sm font-black transition-all ${isToday ? 'bg-sky-600 text-white w-8 h-8 flex items-center justify-center rounded-xl shadow-lg' : 'text-slate-300 group-hover:text-slate-900'}`}>
                             {day}
                         </span>
-                        <div className="mt-3 space-y-1.5">
+                        <div className="mt-3 space-y-1.5 overflow-y-auto max-h-[100px] custom-scrollbar">
                             {dayApts.map(apt => (
                             <div 
                                 key={apt.id} 
@@ -168,20 +179,48 @@ const Appointments: React.FC = () => {
 
       {/* Lateral: Agenda y Google Sync */}
       <div className="space-y-6">
-        <div className="bg-slate-900 p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:rotate-12 transition-transform">
-             <CalendarIcon size={120} />
+        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:rotate-12 transition-transform">
+             <CalendarCheck size={120} />
           </div>
           <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-6">
-               <div className="p-3 bg-white/10 rounded-2xl">
-                  <ExternalLink size={24} className="text-sky-400" />
-               </div>
-               <h4 className="font-black text-lg uppercase tracking-tighter leading-none">Google<br/>Calendar</h4>
+            <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                    <div className="p-3 bg-white border border-slate-100 shadow-sm rounded-2xl">
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/a/a5/Google_Calendar_icon_%282020%29.svg" alt="GCal" className="w-6 h-6" />
+                    </div>
+                    <h4 className="font-black text-lg uppercase tracking-tighter leading-none text-slate-900">Google<br/>Calendar</h4>
+                </div>
+                {isGoogleConnected && (
+                    <div className="flex items-center gap-1 text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        ONLINE
+                    </div>
+                )}
             </div>
-            <p className="text-xs text-slate-400 mb-8 leading-relaxed font-medium">Sincroniza automáticamente las rutas de tus técnicos con sus calendarios móviles.</p>
-            <button className="w-full py-4 bg-white text-slate-900 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-sky-50 transition-all shadow-xl">
-               Conectar Cuenta 
+            
+            {isGoogleConnected ? (
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 mb-4">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">Cuenta Vinculada</p>
+                    <p className="text-sm font-bold text-slate-700 truncate">agenda.tecnicos@superair.com.mx</p>
+                    <div className="mt-3 text-[10px] text-slate-500 flex items-center gap-1">
+                        <CheckCircle2 size={12} className="text-emerald-500"/> Sincronizando eventos bidireccionalmente.
+                    </div>
+                </div>
+            ) : (
+                <p className="text-xs text-slate-400 mb-8 leading-relaxed font-medium">Sincroniza automáticamente las rutas de tus técnicos con sus calendarios móviles.</p>
+            )}
+
+            <button 
+                onClick={handleConnectGoogle}
+                disabled={isGoogleConnected || isConnectingGoogle}
+                className={`w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-md ${
+                    isGoogleConnected 
+                    ? 'bg-slate-100 text-slate-400 cursor-default' 
+                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-sky-50 hover:text-sky-700 hover:border-sky-200'
+                }`}
+            >
+               {isConnectingGoogle ? <Loader2 className="animate-spin" size={16}/> : isGoogleConnected ? 'Sincronización Activa' : 'Conectar Cuenta Google'}
             </button>
           </div>
         </div>
@@ -212,6 +251,13 @@ const Appointments: React.FC = () => {
                        <span className={`px-4 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${getStatusColor(selectedApt.status)}`}>
                          {selectedApt.status}
                        </span>
+                    </div>
+                    <div className="flex items-center justify-between border-t border-slate-200 pt-4 mt-4">
+                        <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo & Duración</h5>
+                        <div className="text-right">
+                            <p className="font-black text-slate-800 text-sm">{selectedApt.type}</p>
+                            <p className="text-xs text-slate-500 font-medium">Est. {selectedApt.duration || 60} minutos</p>
+                        </div>
                     </div>
                     
                     {/* Google Calendar Link Button */}
@@ -271,6 +317,8 @@ const Appointments: React.FC = () => {
                        ))}
                     </select>
                  </div>
+                 
+                 {/* Grid para Fecha y Hora */}
                  <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-1">
                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fecha</label>
@@ -282,7 +330,7 @@ const Appointments: React.FC = () => {
                        />
                     </div>
                     <div className="space-y-1">
-                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Hora</label>
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Hora Inicio</label>
                        <input 
                             type="time" 
                             className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
@@ -291,6 +339,39 @@ const Appointments: React.FC = () => {
                         />
                     </div>
                  </div>
+
+                 {/* Grid para Tipo y Duración */}
+                 <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tipo de Servicio</label>
+                        <select 
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                            value={newApt.type}
+                            onChange={(e) => setNewApt({...newApt, type: e.target.value})}
+                        >
+                        <option value="Instalación">Instalación</option>
+                        <option value="Mantenimiento">Mantenimiento</option>
+                        <option value="Reparación">Reparación</option>
+                        <option value="Visita Técnica">Visita Técnica</option>
+                        </select>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tiempo Estimado</label>
+                        <select 
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                            value={newApt.duration}
+                            onChange={(e) => setNewApt({...newApt, duration: parseInt(e.target.value)})}
+                        >
+                            <option value="30">30 min (Rápida)</option>
+                            <option value="60">1 Hora (Estándar)</option>
+                            <option value="90">1.5 Horas</option>
+                            <option value="120">2 Horas (Completa)</option>
+                            <option value="240">4 Horas (Medio día)</option>
+                            <option value="480">8 Horas (Día completo)</option>
+                        </select>
+                    </div>
+                 </div>
+
                  <div className="space-y-1">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Técnico Responsable</label>
                     <select 

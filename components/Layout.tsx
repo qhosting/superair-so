@@ -14,10 +14,15 @@ import {
   ShieldCheck,
   ShoppingBag,
   BarChart3,
-  LogOut
+  LogOut,
+  Bell,
+  CheckCircle2,
+  AlertTriangle,
+  Info
 } from 'lucide-react';
 import { AppRoute } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { useNotification } from '../context/NotificationContext';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -25,7 +30,9 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { user, logout } = useAuth();
+  const { notifications, unreadCount, markAllAsRead, toasts, removeToast } = useNotification();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const location = useLocation();
 
   const menuItems = [
@@ -44,13 +51,40 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const currentPath = location.pathname.split('/').filter(Boolean)[0];
   const activeRoute = currentPath || AppRoute.DASHBOARD;
 
-  // Obtener iniciales del usuario
   const userInitials = user?.name 
     ? user.name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()
     : 'SA';
 
+  const handleNotifClick = () => {
+    setShowNotifDropdown(!showNotifDropdown);
+    if (!showNotifDropdown && unreadCount > 0) {
+      markAllAsRead();
+    }
+  };
+
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900">
+    <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900 relative">
+      
+      {/* TOAST CONTAINER */}
+      <div className="fixed bottom-6 right-6 z-[60] flex flex-col gap-3">
+        {toasts.map(t => (
+          <div 
+            key={t.id} 
+            onClick={() => removeToast(t.id)}
+            className={`flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl animate-in slide-in-from-right-10 cursor-pointer ${
+                t.type === 'success' ? 'bg-slate-900 text-white' : 
+                t.type === 'error' ? 'bg-rose-600 text-white' : 
+                'bg-white text-slate-800 border border-slate-200'
+            }`}
+          >
+            {t.type === 'success' && <CheckCircle2 size={20} className="text-emerald-400" />}
+            {t.type === 'error' && <AlertTriangle size={20} />}
+            {t.type === 'info' && <Info size={20} className="text-sky-500" />}
+            <span className="font-bold text-xs uppercase tracking-widest">{t.message}</span>
+          </div>
+        ))}
+      </div>
+
       <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 text-white transition-all duration-300 flex flex-col h-full z-20`}>
         <div className="p-4 flex items-center justify-between border-b border-slate-800 h-16 shrink-0">
           {isSidebarOpen && (
@@ -82,7 +116,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           })}
         </nav>
 
-        {/* Footer Sidebar (Logout) */}
         <div className="p-4 border-t border-slate-800 shrink-0">
             <button 
                 onClick={logout}
@@ -103,6 +136,46 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <span className="hidden md:inline">
                 Status: <span className="text-emerald-500 animate-pulse">Online</span>
             </span>
+            
+            {/* Notification Bell */}
+            <div className="relative">
+              <button 
+                onClick={handleNotifClick}
+                className="p-2 relative hover:bg-slate-100 rounded-xl transition-colors text-slate-400 hover:text-slate-600"
+              >
+                <Bell size={20} />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white" />
+                )}
+              </button>
+
+              {/* Notification Dropdown */}
+              {showNotifDropdown && (
+                <>
+                  <div className="fixed inset-0 z-10 cursor-default" onClick={() => setShowNotifDropdown(false)} />
+                  <div className="absolute right-0 top-12 w-80 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-20 animate-in slide-in-from-top-2 fade-in duration-200">
+                    <div className="p-4 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center">
+                      <h4 className="font-black text-xs uppercase tracking-widest text-slate-500">Notificaciones</h4>
+                      {unreadCount > 0 && <span className="text-[10px] font-bold text-sky-600">{unreadCount} Nuevas</span>}
+                    </div>
+                    <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                      {notifications.length === 0 ? (
+                        <div className="p-8 text-center text-slate-400 text-xs">Sin notificaciones recientes</div>
+                      ) : (
+                        notifications.map(n => (
+                          <div key={n.id} className={`p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors ${!n.isRead ? 'bg-sky-50/30' : ''}`}>
+                            <p className="text-xs font-bold text-slate-800 mb-1">{n.title}</p>
+                            <p className="text-[10px] text-slate-500 leading-relaxed">{n.message}</p>
+                            <p className="text-[9px] text-slate-300 mt-2 text-right">{new Date(n.createdAt).toLocaleTimeString()}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
             <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
                 <div className="text-right hidden sm:block">
                     <p className="text-xs font-black text-slate-900 leading-none">{user?.name || 'Usuario'}</p>
