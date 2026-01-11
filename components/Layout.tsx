@@ -18,7 +18,8 @@ import {
   Bell,
   CheckCircle2,
   AlertTriangle,
-  Info
+  Info,
+  Magnet
 } from 'lucide-react';
 import { AppRoute } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -37,6 +38,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const menuItems = [
     { name: 'Dashboard', icon: LayoutDashboard, route: AppRoute.DASHBOARD },
+    { name: 'Leads y Prospectos', icon: Magnet, route: AppRoute.LEADS },
     { name: 'Reportes e Insights', icon: BarChart3, route: AppRoute.REPORTS },
     { name: 'Constructor Web', icon: Construction, route: AppRoute.BUILDER },
     { name: 'Clientes', icon: Users, route: AppRoute.CLIENTS },

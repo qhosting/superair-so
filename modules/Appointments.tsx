@@ -4,21 +4,25 @@ import {
   MapPin, User, ExternalLink, X, Truck, Wrench, Camera, ClipboardList, 
   Phone, MessageSquare, Loader2, CheckCircle2, AlertTriangle, CalendarCheck
 } from 'lucide-react';
-import { Appointment } from '../types';
+import { Appointment, User as UserType } from '../types';
 
 const Appointments: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedApt, setSelectedApt] = useState<any | null>(null);
   const [showNewAptModal, setShowNewAptModal] = useState(false);
+  
+  // Data State
   const [appointments, setAppointments] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState<any[]>([]);
+  const [installers, setInstallers] = useState<UserType[]>([]);
+  
+  const [loading, setLoading] = useState(true);
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
 
   const [newApt, setNewApt] = useState({
       client_id: '',
-      technician: 'Carlos Rodríguez',
+      technician: '',
       date: new Date().toISOString().split('T')[0],
       time: '10:00',
       duration: 60,
@@ -27,17 +31,41 @@ const Appointments: React.FC = () => {
   });
 
   useEffect(() => {
-    Promise.all([
-        fetch('/api/appointments').then(r => r.json()),
-        fetch('/api/clients').then(r => r.json())
-    ]).then(([aptsData, clientsData]) => {
-        setAppointments(Array.isArray(aptsData) ? aptsData : []);
-        setClients(Array.isArray(clientsData) ? clientsData : []);
-        setLoading(false);
-    }).catch(e => {
-        console.error("Failed to fetch calendar data", e);
-        setLoading(false);
-    });
+    const fetchData = async () => {
+        try {
+            // Fetch Appointments
+            const aptsRes = await fetch('/api/appointments');
+            const aptsData = await aptsRes.json();
+            
+            // Fetch Clients
+            const clientsRes = await fetch('/api/clients');
+            const clientsData = await clientsRes.json();
+
+            // Fetch Users (Installers)
+            const usersRes = await fetch('/api/users');
+            const usersData = await usersRes.json();
+
+            if (Array.isArray(aptsData)) setAppointments(aptsData);
+            if (Array.isArray(clientsData)) setClients(clientsData);
+            
+            if (Array.isArray(usersData)) {
+                // Filter users who are active and have the role 'Instalador' or 'Admin' (in case admins do field work)
+                const techList = usersData.filter(u => (u.role === 'Instalador' || u.role === 'Admin') && u.status === 'Activo');
+                setInstallers(techList);
+                
+                // Set default technician if list not empty
+                if (techList.length > 0 && !newApt.technician) {
+                    setNewApt(prev => ({ ...prev, technician: techList[0].name }));
+                }
+            }
+        } catch (e) {
+            console.error("Failed to fetch calendar data", e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    fetchData();
   }, []);
 
   const handleSaveAppointment = async () => {
@@ -53,8 +81,8 @@ const Appointments: React.FC = () => {
               savedApt.client_name = client ? client.name : 'Cliente';
               setAppointments([...appointments, savedApt]);
               setShowNewAptModal(false);
-              // Reset duration to default
-              setNewApt(prev => ({...prev, duration: 60})); 
+              // Reset duration/time but keep technician
+              setNewApt(prev => ({...prev, duration: 60, time: '10:00'})); 
           } else {
               throw new Error("Save Failed");
           }
@@ -379,16 +407,25 @@ const Appointments: React.FC = () => {
                         value={newApt.technician}
                         onChange={(e) => setNewApt({...newApt, technician: e.target.value})}
                     >
-                       <option value="Carlos Rodríguez">Carlos Rodríguez</option>
-                       <option value="Miguel Acevedo">Miguel Acevedo</option>
-                       <option value="Juan Pérez">Juan Pérez</option>
+                       {installers.length === 0 ? (
+                           <option value="">No hay instaladores activos</option>
+                       ) : (
+                           installers.map(u => (
+                               <option key={u.id} value={u.name}>{u.name}</option>
+                           ))
+                       )}
                     </select>
+                    {installers.length === 0 && (
+                        <p className="text-[9px] text-amber-600 font-bold ml-1 mt-1">
+                            ⚠ Registra usuarios con rol 'Instalador' en el módulo de Usuarios.
+                        </p>
+                    )}
                  </div>
               </div>
               <div className="p-10 border-t border-slate-100 flex gap-4 bg-slate-50/50">
                  <button 
                   onClick={handleSaveAppointment}
-                  disabled={!newApt.client_id}
+                  disabled={!newApt.client_id || !newApt.technician}
                   className="flex-1 py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-sky-600/20 disabled:opacity-50"
                  >Confirmar Agendamiento</button>
                  <button 

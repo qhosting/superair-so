@@ -19,12 +19,10 @@ const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // Recovery Modal State
   const [showRecovery, setShowRecovery] = useState(false);
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [isRecovering, setIsRecovering] = useState(false);
 
-  // 1. Efecto de Navegación: Fuente única de verdad
   useEffect(() => {
     if (isAuthenticated) {
       navigate('/dashboard');
@@ -47,14 +45,11 @@ const Login: React.FC = () => {
 
       const data = await response.json();
 
-      // 2. Validación Robusta: Verificar response.ok Y existencia de user
       if (response.ok && data.user) {
         setSuccess(true);
-        // 3. UX Delay: Mostrar éxito y luego actualizar estado
         setTimeout(() => {
-            // Actualiza el contexto. Esto disparará el useEffect de arriba para navegar.
-            // No navegamos aquí directamente para evitar condiciones de carrera.
-            login(data.user, rememberMe); 
+            // Updated: Pass the whole data object (contains token)
+            login(data, rememberMe); 
         }, 800);
       } else {
         setError(data.error || 'Credenciales incorrectas');
@@ -70,7 +65,6 @@ const Login: React.FC = () => {
   const handleRecovery = (e: React.FormEvent) => {
     e.preventDefault();
     setIsRecovering(true);
-    // En producción, esto debería conectar con un endpoint real de email
     setTimeout(() => {
         setIsRecovering(false);
         alert(`Solicitud enviada. Si ${recoveryEmail} existe, recibirás instrucciones.`);

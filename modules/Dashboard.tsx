@@ -16,7 +16,9 @@ import {
   UserPlus,
   BrainCircuit,
   ArrowRight,
-  Briefcase
+  Briefcase,
+  Magnet,
+  BarChart3
 } from 'lucide-react';
 import { 
   XAxis, 
@@ -29,7 +31,7 @@ import {
 } from 'recharts';
 import { GoogleGenAI } from "@google/genai";
 import { useNavigate } from '../context/AuthContext';
-import { User, Appointment, Quote } from '../types';
+import { User, Appointment, Quote, Lead } from '../types';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -38,6 +40,7 @@ const Dashboard: React.FC = () => {
   // Real Data State
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [staff, setStaff] = useState<User[]>([]);
   
   // AI & Weather State
@@ -50,14 +53,16 @@ const Dashboard: React.FC = () => {
     try {
       setLoading(true);
       
-      const [aptsRes, quotesRes, usersRes] = await Promise.all([
+      const [aptsRes, quotesRes, usersRes, leadsRes] = await Promise.all([
         fetch('/api/appointments').then(r => r.ok ? r.json() : []),
         fetch('/api/quotes').then(r => r.ok ? r.json() : []),
-        fetch('/api/users').then(r => r.ok ? r.json() : [])
+        fetch('/api/users').then(r => r.ok ? r.json() : []),
+        fetch('/api/leads').then(r => r.ok ? r.json() : [])
       ]);
 
       setAppointments(Array.isArray(aptsRes) ? aptsRes : []);
       setQuotes(Array.isArray(quotesRes) ? quotesRes : []);
+      setLeads(Array.isArray(leadsRes) ? leadsRes : []);
       // Filter users to find technicians/installers/admins who might have tasks
       setStaff(Array.isArray(usersRes) ? usersRes : []);
 
@@ -119,6 +124,7 @@ const Dashboard: React.FC = () => {
       const todaysApts = appointments.filter(a => a.date?.startsWith(todayStr));
       const pendingQuotes = quotes.filter(q => q.status === 'Enviada' || q.status === 'Borrador');
       const pendingAmount = pendingQuotes.reduce((acc, q) => acc + Number(q.total), 0);
+      const newLeadsCount = leads.filter(l => l.status === 'Nuevo').length;
       
       // If absolutely no data, don't ask AI to hallucinate
       if (todaysApts.length === 0 && pendingQuotes.length === 0 && !weather.temp) {
@@ -132,11 +138,13 @@ const Dashboard: React.FC = () => {
         Analiza estos DATOS REALES:
         - Citas para HOY: ${todaysApts.length} ${todaysApts.length > 0 ? `(${todaysApts.map(a => a.type).join(', ')})` : ''}.
         - Pipeline Ventas (Pendiente): $${pendingAmount} MXN en ${pendingQuotes.length} cotizaciones.
+        - Nuevos Prospectos (Leads): ${newLeadsCount} pendientes de contacto.
         - Temperatura Actual Exterior: ${weather.temp ? weather.temp + '°C' : 'No disponible'}.
         
         Genera un resumen operativo de 2 frases.
         Si hace calor (>25°C) y hay pocas citas, sugiere contactar clientes para mantenimiento.
         Si hay mucho dinero pendiente, sugiere seguimiento de ventas.
+        Si hay leads nuevos, sugiere llamar urgente.
         Usa emojis.
       `;
 
@@ -176,13 +184,20 @@ const Dashboard: React.FC = () => {
     if (weather.temp > 30) demandIndex = 'Alta';
     if (weather.temp > 35) demandIndex = 'Crítica';
 
+    // Lead Stats
+    const newLeads = leads.filter(l => l.status === 'Nuevo').length;
+    const wonLeads = leads.filter(l => l.status === 'Ganado').length;
+    const conversionRate = leads.length > 0 ? (wonLeads / leads.length) * 100 : 0;
+
     return { 
         revenue: monthlyRevenue, 
         pipeline: pipelineValue, 
         appointmentsToday,
-        demandIndex
+        demandIndex,
+        newLeads,
+        conversionRate
     };
-  }, [quotes, appointments, weather]);
+  }, [quotes, appointments, weather, leads]);
 
   // --- 5. REAL TECHNICIAN STATUS ---
   const technicianStatus = useMemo(() => {
@@ -309,36 +324,53 @@ const Dashboard: React.FC = () => {
       {/* MIDDLE SECTION: ACTIONS & TECH STATUS */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           
-          {/* Quick Actions */}
-          <div className="xl:col-span-1 space-y-6">
-              <h3 className="font-black text-slate-900 text-lg uppercase tracking-tight flex items-center gap-2">
-                  <Zap size={20} className="text-amber-500" /> Accesos Rápidos
-              </h3>
+          {/* Quick Actions & Leads Preview */}
+          <div className="xl:col-span-1 flex flex-col gap-6">
+              {/* Quick Actions */}
               <div className="grid grid-cols-2 gap-4">
-                  <button onClick={() => navigate('/quotes')} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-sky-300 transition-all group text-left">
+                  <button onClick={() => navigate('/leads')} className="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-indigo-300 transition-all group text-left relative overflow-hidden">
+                      <div className="absolute top-0 right-0 p-4 opacity-5"><Magnet size={64}/></div>
+                      <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                          <Magnet size={20} />
+                      </div>
+                      <p className="font-black text-slate-800 text-sm">Leads</p>
+                      <div className="flex items-baseline gap-1 mt-1">
+                          <span className="text-2xl font-black text-indigo-600">{stats.newLeads}</span>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Nuevos</span>
+                      </div>
+                  </button>
+                  <button onClick={() => navigate('/quotes')} className="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-sky-300 transition-all group text-left">
                       <div className="w-10 h-10 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
                           <FileText size={20} />
                       </div>
-                      <p className="font-black text-slate-800 text-sm">Nueva Cotización</p>
+                      <p className="font-black text-slate-800 text-sm">Cotizar</p>
+                      <div className="flex items-baseline gap-1 mt-1">
+                          <span className="text-xs font-bold text-slate-400 uppercase">Ver pendientes</span>
+                      </div>
                   </button>
-                  <button onClick={() => navigate('/clients')} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-emerald-300 transition-all group text-left">
+                  <button onClick={() => navigate('/clients')} className="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-emerald-300 transition-all group text-left">
                       <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
                           <UserPlus size={20} />
                       </div>
-                      <p className="font-black text-slate-800 text-sm">Registrar Cliente</p>
+                      <p className="font-black text-slate-800 text-sm">Clientes</p>
                   </button>
-                  <button onClick={() => navigate('/appointments')} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-indigo-300 transition-all group text-left">
-                      <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                  <button onClick={() => navigate('/appointments')} className="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-amber-300 transition-all group text-left">
+                      <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
                           <Calendar size={20} />
                       </div>
-                      <p className="font-black text-slate-800 text-sm">Agendar Cita</p>
+                      <p className="font-black text-slate-800 text-sm">Agenda</p>
                   </button>
-                  <button onClick={() => navigate('/inventory')} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-amber-300 transition-all group text-left">
-                      <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                          <PlusCircle size={20} />
-                      </div>
-                      <p className="font-black text-slate-800 text-sm">Stock Rápido</p>
-                  </button>
+              </div>
+
+              {/* Conversion Rate Card */}
+              <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex items-center justify-between">
+                  <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Conversión Leads</p>
+                      <h4 className="text-2xl font-black text-slate-900">{stats.conversionRate.toFixed(1)}%</h4>
+                  </div>
+                  <div className="w-12 h-12 rounded-full border-4 border-slate-100 border-t-emerald-500 flex items-center justify-center">
+                      <BarChart3 size={16} className="text-emerald-500" />
+                  </div>
               </div>
           </div>
 
@@ -448,6 +480,15 @@ const Dashboard: React.FC = () => {
                   <AlertTriangle size={20} className="text-rose-500" /> Atención Requerida
               </h3>
               <div className="flex-1 space-y-4 overflow-y-auto pr-2 custom-scrollbar max-h-64">
+                  {stats.newLeads > 0 && (
+                      <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-2xl flex gap-3">
+                          <div className="mt-1"><Magnet size={16} className="text-indigo-600" /></div>
+                          <div>
+                              <p className="text-xs font-bold text-slate-800">Nuevos Leads</p>
+                              <p className="text-[10px] text-slate-500 mt-1">Tienes {stats.newLeads} prospectos sin contactar. ¡Llama ahora!</p>
+                          </div>
+                      </div>
+                  )}
                   {stats.appointmentsToday.length > 0 && (
                       <div className="p-4 bg-sky-50 border border-sky-100 rounded-2xl flex gap-3">
                           <div className="mt-1"><Clock size={16} className="text-sky-600" /></div>
@@ -475,7 +516,7 @@ const Dashboard: React.FC = () => {
                           </div>
                       </div>
                   )}
-                  {stats.appointmentsToday.length === 0 && stats.pipeline === 0 && (
+                  {stats.appointmentsToday.length === 0 && stats.pipeline === 0 && stats.newLeads === 0 && (
                       <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl text-center text-slate-400 text-xs">
                           Sin alertas críticas por el momento.
                       </div>

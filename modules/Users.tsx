@@ -1,3 +1,5 @@
+
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   UserPlus, Search, Shield, MoreVertical, Key, UserCheck, UserX, Settings2, 
@@ -77,7 +79,13 @@ const Users: React.FC = () => {
           // Mock Update (In real implementation, add PUT endpoint)
           // For now, we delete and re-create locally or handle via existing API logic limitations
           // Assuming API supports update or we simulate it:
-          const updatedUsers = users.map(u => u.id === formData.id ? { ...u, ...formData, password: u.password } : u);
+          const updatedUsers = users.map(u => u.id === formData.id ? { 
+            ...u, 
+            name: formData.name, 
+            email: formData.email, 
+            role: formData.role as UserRole, 
+            status: formData.status as 'Activo' | 'Inactivo'
+          } : u);
           setUsers(updatedUsers); // Optimistic update
           alert('Usuario actualizado correctamente');
       } else {

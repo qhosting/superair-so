@@ -1,4 +1,5 @@
 
+
 export interface Client {
   id: string;
   name: string;
@@ -49,6 +50,7 @@ export interface FiscalData {
   uuid: string;
   rfc: string;
   legalName?: string;
+  amount?: number;
   xmlUrl?: string;
   pdfUrl?: string;
   issuedAt?: string;
@@ -103,6 +105,21 @@ export interface Template {
   variables: string[]; // List of available vars e.g. {{client_name}}
 }
 
+// --- LEADS ---
+export type LeadStatus = 'Nuevo' | 'Contactado' | 'Calificado' | 'Cotizado' | 'Ganado' | 'Perdido';
+
+export interface Lead {
+  id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  source: 'Facebook' | 'Google' | 'Instagram' | 'Manual' | 'Web';
+  campaign?: string; // Nombre de la campaña de Ads
+  status: LeadStatus;
+  notes?: string;
+  createdAt: string;
+}
+
 // --- NOTIFICATIONS ---
 export interface AppNotification {
   id: number;
@@ -116,6 +133,7 @@ export interface AppNotification {
 export enum AppRoute {
   DASHBOARD = 'dashboard',
   BUILDER = 'builder',
+  LEADS = 'leads', // Nuevo
   CLIENTS = 'clients',
   QUOTES = 'quotes',
   SALES = 'sales',

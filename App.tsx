@@ -22,6 +22,7 @@ import Settings from './modules/Settings';
 import Users from './modules/Users';
 import LandingBuilder from './modules/LandingBuilder';
 import Reports from './modules/Reports';
+import Leads from './modules/Leads';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isAuthenticated, isLoading } = useAuth();
@@ -73,6 +74,7 @@ const AppRoutes: React.FC = () => {
 
         {/* Protected Dashboard Routes - Wrapped individually for granular security */}
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
         <Route path="/clients" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
         <Route path="/quotes" element={<ProtectedRoute><Quotes /></ProtectedRoute>} />
         <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
