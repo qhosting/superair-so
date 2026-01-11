@@ -8,6 +8,7 @@ import jwt from 'jsonwebtoken';
 import fs from 'fs';
 import multer from 'multer';
 import nodemailer from 'nodemailer';
+import cron from 'node-cron';
 import { google } from 'googleapis';
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from 'openai';
@@ -60,6 +61,26 @@ const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_SECRET,
   process.env.GOOGLE_REDIRECT_URI 
 );
+
+// --- CRON JOBS ---
+// Ejecutar cada 15 minutos: */15 * * * *
+// Objetivo: Despertar flujo de N8N para procesar correos/facturas
+cron.schedule('*/15 * * * *', async () => {
+  console.log('⏰ Running Cron: Trigger N8N CFDI Processing');
+  // URL interna de docker o pública
+  const webhookUrl = process.env.N8N_WEBHOOK_URL || 'http://n8n:5678/webhook/process-cfdi';
+  
+  try {
+    const res = await fetch(webhookUrl, { method: 'POST' });
+    if (res.ok) {
+      console.log('✅ N8N Triggered Successfully');
+    } else {
+      console.error('⚠️ N8N Trigger Failed:', await res.text());
+    }
+  } catch (e) {
+    console.error('❌ Cron Connection Error:', e.message);
+  }
+});
 
 // --- MIDDLEWARES ---
 const authenticateToken = (req, res, next) => {
