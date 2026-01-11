@@ -23,10 +23,30 @@ const LandingBuilder: React.FC = () => {
         if (data && Array.isArray(data) && data.length > 0) {
           setSections(data);
         } else {
-          // Default data if DB is empty
+          // Default SuperAir Template if DB is empty
           setSections([
-            { id: 'hero-1', type: 'hero', title: 'Expertos en Climatización', subtitle: 'Servicio técnico especializado en Querétaro y Bajío.', buttonText: 'Cotizar Ahora', imageUrl: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e' },
-            { id: 'serv-1', type: 'services', title: 'Nuestros Servicios', subtitle: 'Instalación, mantenimiento y reparación.', buttonText: 'Ver Detalles' }
+            { 
+                id: 'hero-def', 
+                type: 'hero', 
+                title: 'Climatización Profesional en México', 
+                subtitle: 'Instalación y mantenimiento de aire acondicionado residencial y comercial. Técnicos certificados y garantía por escrito.', 
+                buttonText: 'Solicitar Cotización', 
+                imageUrl: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e' 
+            },
+            { 
+                id: 'serv-def', 
+                type: 'services', 
+                title: 'Soluciones Integrales', 
+                subtitle: 'Desde Mini Splits hasta sistemas VRF industriales.', 
+                buttonText: 'Ver Servicios' 
+            },
+            { 
+                id: 'cta-def', 
+                type: 'cta', 
+                title: '¿Tu equipo falla?', 
+                subtitle: 'Servicio de emergencia 24/7 disponible en zona metropolitana.', 
+                buttonText: 'Llamar al Técnico' 
+            }
           ]);
         }
         setLoading(false);
@@ -214,4 +234,3 @@ const LandingBuilder: React.FC = () => {
 };
 
 export default LandingBuilder;
-    

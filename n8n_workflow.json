@@ -1,0 +1,312 @@
+{
+  "name": "SuperAir ERP Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "leads",
+        "options": {}
+      },
+      "id": "7d9f8a1b-2e3c-4d5e-9f0a-1b2c3d4e5f6g",
+      "name": "Webhook Leads",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -380,
+        240
+      ],
+      "webhookId": "7d9f8a1b-2e3c-4d5e-9f0a-1b2c3d4e5f6g"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list",
+          "cachedResultName": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "leads",
+          "mode": "list",
+          "cachedResultName": "leads"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "={{ $json.body.name }}",
+            "email": "={{ $json.body.email }}",
+            "phone": "={{ $json.body.phone }}",
+            "source": "={{ $json.body.source || 'Webhook' }}",
+            "notes": "={{ $json.body.notes }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "name": "Insert Lead Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        -160,
+        240
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PostgresSuperAir",
+          "name": "Postgres SuperAir"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "process-cfdi",
+        "options": {}
+      },
+      "id": "webhook-cfdi",
+      "name": "Webhook Cron CFDI",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -380,
+        500
+      ],
+      "webhookId": "process-cfdi"
+    },
+    {
+      "parameters": {
+        "jsCode": "// SIMULACIÓN DE LECTURA DE XML (CFDI)\n// En producción, aquí conectarías el nodo IMAP para leer correos reales.\n// Este código genera un XML falso para probar el flujo.\n\nconst mockXML = `\n<cfdi:Comprobante xmlns:cfdi=\"http://www.sat.gob.mx/cfd/4\" Total=\"15000.00\" SubTotal=\"12931.03\" Fecha=\"2024-03-20T12:00:00\" Folio=\"${Math.floor(Math.random() * 1000)}\">\n  <cfdi:Emisor Rfc=\"XAXX010101000\" Nombre=\"PROVEEDOR DE AIRE AC S.A. DE C.V.\"/>\n  <cfdi:Receptor Rfc=\"SUP230101XYZ\" Nombre=\"SUPERAIR ERP\"/>\n  <cfdi:Complemento>\n      <tfd:TimbreFiscalDigital UUID=\"${crypto.randomUUID()}\" />\n  </cfdi:Complemento>\n</cfdi:Comprobante>\n`;\n\nreturn [\n  {\n    json: {\n      xml_content: mockXML,\n      origin_email: \"facturacion@proveedor.com\",\n      received_at: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "id": "mock-email",
+      "name": "Simulate XML Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "json",
+        "json": "={{ $json.xml_content }}",
+        "options": {}
+      },
+      "id": "xml-parser",
+      "name": "XML Parser",
+      "type": "n8n-nodes-base.xml",
+      "typeVersion": 1,
+      "position": [
+        60,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list",
+          "cachedResultName": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "fiscal_inbox",
+          "mode": "list",
+          "cachedResultName": "fiscal_inbox"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "uuid": "={{ $json['cfdi:Comprobante']['cfdi:Complemento']['tfd:TimbreFiscalDigital']['$']['UUID'] }}",
+            "rfc_emitter": "={{ $json['cfdi:Comprobante']['cfdi:Emisor']['$']['Rfc'] }}",
+            "rfc_receiver": "={{ $json['cfdi:Comprobante']['cfdi:Receptor']['$']['Rfc'] }}",
+            "legal_name": "={{ $json['cfdi:Comprobante']['cfdi:Emisor']['$']['Nombre'] }}",
+            "amount": "={{ $json['cfdi:Comprobante']['$']['Total'] }}",
+            "xml_url": "https://superair.com.mx/uploads/xml/mock.xml",
+            "origin_email": "={{ $('Simulate XML Email').item.json.origin_email }}",
+            "status": "Unlinked"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "uuid",
+              "displayName": "uuid",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "rfc_emitter",
+              "displayName": "rfc_emitter",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "legal_name",
+              "displayName": "legal_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "amount",
+              "displayName": "amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "origin_email",
+              "displayName": "origin_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ]
+        }
+      },
+      "id": "insert-fiscal",
+      "name": "Save to Fiscal Vault",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        280,
+        500
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PostgresSuperAir",
+          "name": "Postgres SuperAir"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Leads": {
+      "main": [
+        [
+          {
+            "node": "Insert Lead Postgres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Cron CFDI": {
+      "main": [
+        [
+          {
+            "node": "Simulate XML Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simulate XML Email": {
+      "main": [
+        [
+          {
+            "node": "XML Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "XML Parser": {
+      "main": [
+        [
+          {
+            "node": "Save to Fiscal Vault",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

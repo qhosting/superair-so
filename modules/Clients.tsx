@@ -1,7 +1,8 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   User, Search, Plus, MapPin, Phone, Mail, FileText, Trash2, 
-  Loader2, UploadCloud, CheckCircle2, AlertCircle, X, BrainCircuit 
+  Loader2, UploadCloud, CheckCircle2, AlertCircle, X, BrainCircuit, ExternalLink
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { Client } from '../types';
@@ -93,20 +94,15 @@ const Clients: React.FC = () => {
         console.log("File saved at:", uploadData.url);
 
         // 2. Procesar con IA
-        // Note: For PDF/Images, we need base64. 
-        // Warning: Browser FileReader works for images. For PDF text extraction, simple base64 might not be enough for Gemini Multimodal 
-        // unless it's an image-based PDF or Gemini supports PDF mime type directly (it does in some versions).
-        // Let's assume image for simplicity or that Gemini handles application/pdf.
-        
         const reader = new FileReader();
         reader.readAsDataURL(file);
         reader.onloadend = async () => {
             const base64Data = (reader.result as string).split(',')[1];
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             
+            // Usamos Gemini 3 Flash Preview para mayor precisión en extracción de datos
             const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash-latest', // Using latest flash as per guidelines if applicable, or fallback to text if user requested logic. 
-                // The snippet in prompt used 'gemini-2.5-flash-latest'.
+                model: 'gemini-3-flash-preview',
                 contents: {
                     parts: [
                         { inlineData: { mimeType: file.type, data: base64Data } },
@@ -193,7 +189,19 @@ const Clients: React.FC = () => {
                          <tr key={client.id} className="hover:bg-slate-50/50">
                              <td className="px-8 py-5">
                                  <div className="font-bold text-slate-900">{client.name}</div>
-                                 <div className="text-xs text-slate-400">{client.address}</div>
+                                 <div className="text-xs text-slate-400 flex items-center gap-1 mt-1">
+                                    <MapPin size={10} /> 
+                                    {client.address ? (
+                                        <a 
+                                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(client.address)}`} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer"
+                                            className="hover:text-sky-600 hover:underline"
+                                        >
+                                            {client.address}
+                                        </a>
+                                    ) : 'Sin dirección'}
+                                 </div>
                              </td>
                              <td className="px-8 py-5">
                                  <div className="flex items-center gap-2 text-xs font-medium text-slate-600"><Mail size={12}/> {client.email}</div>
@@ -254,7 +262,7 @@ const Clients: React.FC = () => {
                                {isAnalyzing ? (
                                    <div className="flex flex-col items-center gap-2">
                                        <Loader2 className="animate-spin text-sky-600" size={32} />
-                                       <span className="text-xs font-bold text-sky-700">Analizando con Gemini...</span>
+                                       <span className="text-xs font-bold text-sky-700">Analizando con Gemini 3...</span>
                                    </div>
                                ) : (
                                    <>

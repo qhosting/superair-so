@@ -1,3 +1,4 @@
+
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -204,15 +205,15 @@ app.post('/api/ai/chat', async (req, res) => {
             reply = completion.choices[0].message.content;
         } else {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            // Corrected SDK v1+ Usage
+            // UPDATED: Use Gemini 3 Flash Preview for better reasoning
             const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash-latest',
+                model: 'gemini-3-flash-preview',
                 contents: message,
                 config: {
                     systemInstruction: systemPrompt
                 }
             });
-            reply = response.text; // Access property directly, not method
+            reply = response.text; 
         }
         res.json({ reply, provider });
     } catch (e) {
