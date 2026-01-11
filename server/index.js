@@ -146,7 +146,6 @@ app.post('/api/send-email', upload.single('attachment'), async (req, res) => {
 
         const info = await transporter.sendMail(mailOptions);
         
-        // Limpiar archivo temporal
         if (file) fs.unlinkSync(file.path);
 
         res.json({ success: true, messageId: info.messageId });
@@ -159,7 +158,6 @@ app.post('/api/send-email', upload.single('attachment'), async (req, res) => {
 
 // --- 🧠 AI CHAT AGENT ---
 app.post('/api/ai/chat', async (req, res) => {
-    // ... (Existing AI Logic)
     const { message } = req.body;
     try {
         const settingsRes = await db.query("SELECT data FROM app_settings WHERE category = 'marketing_info'");
@@ -195,7 +193,6 @@ app.post('/api/orders/pay', authorize(['Admin', 'Super Admin']), async (req, res
     try {
         await db.query('BEGIN');
         
-        // Verificar Orden
         const orderCheck = await db.query("SELECT total, paid_amount FROM orders WHERE id = $1", [orderId]);
         if (orderCheck.rows.length === 0) throw new Error("Orden no encontrada");
         
@@ -203,12 +200,8 @@ app.post('/api/orders/pay', authorize(['Admin', 'Super Admin']), async (req, res
         const newPaidAmount = Number(order.paid_amount) + Number(amount);
         const newStatus = newPaidAmount >= Number(order.total) ? 'Completado' : 'Pendiente';
 
-        // Actualizar Orden
         await db.query("UPDATE orders SET paid_amount = $1, status = $2 WHERE id = $3", [newPaidAmount, newStatus, orderId]);
         
-        // Registrar Movimiento Financiero (Opcional, si tuviéramos tabla de tesorería)
-        // await db.query("INSERT INTO transactions ...");
-
         await db.query('COMMIT');
         res.json({ success: true, newPaidAmount, status: newStatus });
     } catch (e) {
@@ -217,7 +210,6 @@ app.post('/api/orders/pay', authorize(['Admin', 'Super Admin']), async (req, res
     }
 });
 
-// Complete Order & Deduct Stock
 app.post('/api/orders/complete', authorize(['Admin', 'Super Admin']), async (req, res) => {
     const { orderId } = req.body;
     try {
@@ -235,7 +227,6 @@ app.post('/api/orders/complete', authorize(['Admin', 'Super Admin']), async (req
                     const newStock = product.stock - item.quantity;
                     await db.query("UPDATE products SET stock = $1 WHERE id = $2", [newStock, item.productId]);
                     
-                    // LOG KARDEX
                     await db.query("INSERT INTO inventory_movements (product_id, user_name, type, quantity, reason) VALUES ($1, $2, 'Salida', $3, $4)", 
                         [item.productId, req.user.name, item.quantity, `Venta Orden #${orderId}`]
                     );
@@ -255,25 +246,150 @@ app.post('/api/orders/complete', authorize(['Admin', 'Super Admin']), async (req
     }
 });
 
-
-// --- 🏭 INVENTORY MOVEMENTS ---
-app.get('/api/inventory/movements', async (req, res) => {
-    try {
-        const r = await db.query(`
-            SELECT m.*, p.name as product_name 
-            FROM inventory_movements m 
-            JOIN products p ON m.product_id = p.id 
-            ORDER BY m.created_at DESC LIMIT 100
-        `);
-        res.json(r.rows);
-    } catch (e) { res.status(500).json({ error: e.message }); }
+// --- CMS ROUTES ---
+app.get('/api/cms/content', async (req, res) => { 
+    try { 
+        const r = await db.query("SELECT content FROM cms_content WHERE section_id = 'main'"); 
+        res.json(r.rows[0]?.content || []); 
+    } catch (e) { res.status(500).json([]); } 
 });
 
-// Update Product with Kardex Logging
+app.post('/api/cms/content', authorize(['Admin', 'Super Admin']), async (req, res) => { 
+    try { 
+        await db.query("INSERT INTO cms_content (section_id, content) VALUES ('main', $1) ON CONFLICT (section_id) DO UPDATE SET content = $1", [JSON.stringify(req.body.content)]); 
+        res.json({success:true}); 
+    } catch (e) { res.status(500).json({error:e.message}); } 
+});
+
+
+// --- LEADS MANAGEMENT ---
+app.get('/api/leads', async (req, res) => { try { const r = await db.query('SELECT * FROM leads ORDER BY created_at DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
+
+app.post('/api/leads', async (req, res) => { 
+    const l = req.body; 
+    try { 
+        const r = await db.query("INSERT INTO leads (name, email, phone, source, status, notes) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *", [l.name, l.email, l.phone, l.source || 'Manual', l.status || 'Nuevo', l.notes]); 
+        res.json(r.rows[0]); 
+    } catch(e){res.status(500).json({error:e.message});} 
+});
+
+app.put('/api/leads/:id', async (req, res) => { 
+    const l = req.body; 
+    try { 
+        await db.query("UPDATE leads SET status=$1, notes=$2 WHERE id=$3", [l.status, l.notes, req.params.id]); 
+        res.json({success:true}); 
+    } catch(e){res.status(500).json({error:e.message});} 
+});
+
+app.delete('/api/leads/:id', authorize(['Admin', 'Super Admin']), async (req, res) => { 
+    try { 
+        await db.query("DELETE FROM leads WHERE id=$1", [req.params.id]); 
+        res.json({success:true}); 
+    } catch(e){res.status(500).json({error:e.message});} 
+});
+
+app.post('/api/leads/:id/convert', authorize(['Admin', 'Super Admin']), async (req, res) => { 
+    try { 
+        await db.query('BEGIN'); 
+        const leadRes = await db.query("SELECT * FROM leads WHERE id=$1", [req.params.id]); 
+        const lead = leadRes.rows[0]; 
+        const clientRes = await db.query("INSERT INTO clients (name, email, phone, status, notes, type) VALUES ($1,$2,$3,'Activo', $4, 'Residencial') RETURNING *", [lead.name, lead.email, lead.phone, `Convertido de Lead #${lead.id}`]); 
+        await db.query("UPDATE leads SET status='Ganado' WHERE id=$1", [req.params.id]); 
+        await db.query('COMMIT'); 
+        res.json({success:true, client: clientRes.rows[0]}); 
+    } catch(e){ 
+        await db.query('ROLLBACK'); 
+        res.status(500).json({error:e.message}); 
+    } 
+});
+
+
+// --- CLIENTS MANAGEMENT ---
+app.get('/api/clients', async (req, res) => { try { const r = await db.query('SELECT * FROM clients ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
+
+app.post('/api/clients', authorize(['Admin', 'Super Admin']), async (req, res) => { 
+    const c = req.body; 
+    try { 
+        await db.query("INSERT INTO clients (name, email, phone, address, rfc, type, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)", [c.name, c.email, c.phone, c.address, c.rfc, c.type, c.status, c.notes]); 
+        res.json({success:true}); 
+    } catch(e){res.status(500).json({error:e.message});} 
+});
+
+app.delete('/api/clients/:id', authorize(['Admin', 'Super Admin']), async (req, res) => { 
+    try { 
+        await db.query("DELETE FROM clients WHERE id=$1", [req.params.id]); 
+        res.json({success:true}); 
+    } catch(e){res.status(500).json({error:e.message});} 
+});
+
+
+// --- NOTIFICATIONS ---
+app.get('/api/notifications', async (req, res) => { 
+    try { 
+        const r = await db.query("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 20"); 
+        res.json(r.rows); 
+    } catch(e){res.status(500).json([]);} 
+});
+
+app.post('/api/notifications/mark-read', async (req, res) => { 
+    try { 
+        await db.query("UPDATE notifications SET is_read = TRUE"); 
+        res.json({success:true}); 
+    } catch(e){res.status(500).json({error:e.message});} 
+});
+
+
+// --- FISCAL & INVOICING ---
+app.get('/api/fiscal/inbox', async (req, res) => { 
+    try { 
+        const r = await db.query("SELECT * FROM fiscal_inbox WHERE status = 'Unlinked'"); 
+        res.json(r.rows); 
+    } catch(e){res.status(500).json([]);} 
+});
+
+app.post('/api/orders/:id/link-fiscal', authorize(['Admin', 'Super Admin']), async (req, res) => { 
+    try { 
+        const { fiscalUuid } = req.body; 
+        await db.query('BEGIN'); 
+        const fiscalRes = await db.query("SELECT * FROM fiscal_inbox WHERE uuid=$1", [fiscalUuid]); 
+        const fiscal = fiscalRes.rows[0]; 
+        await db.query("UPDATE orders SET fiscal_data = $1, cfdi_status = 'Timbrado' WHERE id=$2", [JSON.stringify(fiscal), req.params.id]); 
+        await db.query("UPDATE fiscal_inbox SET status='Linked', linked_order_id=$1 WHERE uuid=$2", [req.params.id, fiscalUuid]); 
+        await db.query('COMMIT'); 
+        res.json({success:true}); 
+    } catch(e){ 
+        await db.query('ROLLBACK'); 
+        res.status(500).json({error:e.message}); 
+    } 
+});
+
+
+// --- USERS MANAGEMENT ---
+app.get('/api/users', authorize(['Super Admin', 'Admin']), async (req, res) => { try { const r = await db.query('SELECT id, name, email, role, status, last_login as "lastLogin" FROM users ORDER BY id ASC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
+
+app.post('/api/users', authorize(['Super Admin', 'Admin']), async (req, res) => {
+    const { name, email, password, role, status } = req.body;
+    try {
+        const hashedPassword = await bcrypt.hash(password || 'temp1234', 10);
+        await db.query("INSERT INTO users (name, email, password, role, status) VALUES ($1, $2, $3, $4, $5)", [name, email, hashedPassword, role, status]);
+        res.json({success:true});
+    } catch(e) { res.status(500).json({error:e.message}); }
+});
+
+app.delete('/api/users/:id', authorize(['Super Admin', 'Admin']), async (req, res) => {
+    try {
+        await db.query("DELETE FROM users WHERE id=$1", [req.params.id]);
+        res.json({success:true});
+    } catch(e) { res.status(500).json({error:e.message}); }
+});
+
+
+// --- 🏭 INVENTORY & PRODUCTS ---
+app.get('/api/products', async (req, res) => { try { const r = await db.query('SELECT * FROM products ORDER BY name ASC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
+
 app.post('/api/products', authorize(['Admin', 'Super Admin']), async (req, res) => {
     const p = req.body;
     try {
-        // Si es actualización de stock manual
         if (p.id) {
             const oldProd = await db.query("SELECT stock FROM products WHERE id = $1", [p.id]);
             if (oldProd.rows.length > 0) {
@@ -284,12 +400,10 @@ app.post('/api/products', authorize(['Admin', 'Super Admin']), async (req, res) 
                     );
                 }
             }
-            // Update logic...
             await db.query(`UPDATE products SET name=$1, description=$2, price=$3, stock=$4, category=$5, min_stock=$6, cost=$7, type=$8, price_wholesale=$9, price_vip=$10 WHERE id=$11`,
                 [p.name, p.description, p.price, p.stock, p.category, p.min_stock, p.cost, p.type, p.price_wholesale, p.price_vip, p.id]
             );
         } else {
-            // Insert logic...
             const r = await db.query(`INSERT INTO products (name, description, price, stock, category, min_stock, cost, type, price_wholesale, price_vip) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
                 [p.name, p.description, p.price, p.stock, p.category, p.min_stock, p.cost, p.type, p.price_wholesale, p.price_vip]
             );
@@ -301,13 +415,18 @@ app.post('/api/products', authorize(['Admin', 'Super Admin']), async (req, res) 
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-
-// ... Resto de Endpoints (Settings, Uploads, Login, etc) ...
-app.post('/api/upload', upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  res.json({ url: `/uploads/${req.file.filename}` });
+app.delete('/api/products/:id', authorize(['Admin', 'Super Admin']), async (req, res) => {
+    try {
+        await db.query("DELETE FROM products WHERE id=$1", [req.params.id]);
+        res.json({success:true});
+    } catch(e) { res.status(500).json({error:e.message}); }
 });
 
+// --- BASIC GETS ---
+app.get('/api/quotes', async (req, res) => { try { const r = await db.query('SELECT id, client_id, client_name, total, status, items, created_at, payment_terms as "paymentTerms" FROM quotes ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
+app.get('/api/orders', async (req, res) => { try { const r = await db.query('SELECT id::text, quote_id, client_name as "clientName", total, paid_amount as "paidAmount", status, cfdi_status as "cfdiStatus", installation_date as "installationDate", fiscal_data as "fiscalData" FROM orders ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
+
+// --- SETTINGS ---
 app.post('/api/settings', async (req, res) => { 
     const { category, data } = req.body; 
     try { 
@@ -316,8 +435,6 @@ app.post('/api/settings', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); } 
 });
 app.get('/api/settings', async (req, res) => { try { const r = await db.query('SELECT * FROM app_settings'); const settings = {}; r.rows.forEach(row => { settings[row.category] = row.data; }); res.json(settings); } catch (e) { res.status(500).json({ error: e.message }); } });
-
-// NEW: Public Settings Endpoint for Landing Page (Logo, Company Name)
 app.get('/api/settings/public', async (req, res) => {
     try {
         const r = await db.query("SELECT data FROM app_settings WHERE category = 'general_info'");
@@ -325,11 +442,18 @@ app.get('/api/settings/public', async (req, res) => {
     } catch (e) { res.status(500).json({}); }
 });
 
-// Basic GETs
-app.get('/api/users', authorize(['Super Admin', 'Admin']), async (req, res) => { try { const r = await db.query('SELECT id, name, email, role, status, last_login as "lastLogin" FROM users ORDER BY id ASC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
+
+// --- APPOINTMENTS ---
 app.get('/api/appointments', async (req, res) => { try { const r = await db.query('SELECT a.id, a.client_id, c.name as client_name, a.technician, a.date, a.time, a.type, a.status, a.duration, a.google_event_link FROM appointments a LEFT JOIN clients c ON a.client_id = c.id'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
 
-// UPDATE APPOINTMENT STATUS & NOTIFY
+app.post('/api/appointments', authorize(['Admin', 'Super Admin']), async (req, res) => {
+    const { client_id, technician, date, time, type, status, duration } = req.body;
+    try {
+        const r = await db.query("INSERT INTO appointments (client_id, technician, date, time, type, status, duration) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *", [client_id, technician, date, time, type, status, duration]);
+        res.json(r.rows[0]);
+    } catch (e) { res.status(500).json({error:e.message}); }
+});
+
 app.put('/api/appointments/:id', authorize(['Admin', 'Super Admin', 'Instalador']), async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
@@ -342,7 +466,6 @@ app.put('/api/appointments/:id', authorize(['Admin', 'Super Admin', 'Instalador'
         
         await db.query('UPDATE appointments SET status = $1 WHERE id = $2', [status, id]);
         
-        // WhatsApp Logic: Trigger when moving to 'En Proceso' (En Camino)
         if (status === 'En Proceso' && oldApt.status !== 'En Proceso') {
             const clientRes = await db.query('SELECT phone, name FROM clients WHERE id = $1', [oldApt.client_id]);
             if (clientRes.rows.length > 0) {
@@ -350,7 +473,6 @@ app.put('/api/appointments/:id', authorize(['Admin', 'Super Admin', 'Instalador'
                 if (client.phone) {
                     const msg = `🚗 Hola ${client.name}, tu técnico de SuperAir (${oldApt.technician}) va en camino para tu servicio de ${oldApt.type}. Nos vemos pronto.`;
                     console.log(`Sending WhatsApp to ${client.phone}: ${msg}`);
-                    // Fire and forget to not block response
                     sendWhatsApp(client.phone, msg).catch(err => console.error("WhatsApp Error:", err.message));
                 }
             }
@@ -363,13 +485,13 @@ app.put('/api/appointments/:id', authorize(['Admin', 'Super Admin', 'Instalador'
     }
 });
 
-app.get('/api/clients', async (req, res) => { try { const r = await db.query('SELECT * FROM clients ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
-app.get('/api/products', async (req, res) => { try { const r = await db.query('SELECT * FROM products ORDER BY name ASC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
-app.get('/api/quotes', async (req, res) => { try { const r = await db.query('SELECT id, client_id, client_name, total, status, items, created_at, payment_terms as "paymentTerms" FROM quotes ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
-app.get('/api/orders', async (req, res) => { try { const r = await db.query('SELECT id::text, quote_id, client_name as "clientName", total, paid_amount as "paidAmount", status, cfdi_status as "cfdiStatus", installation_date as "installationDate", fiscal_data as "fiscalData" FROM orders ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
-app.get('/api/leads', async (req, res) => { try { const r = await db.query('SELECT * FROM leads ORDER BY created_at DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
 
-// Login
+// --- AUTH & MISC ---
+app.post('/api/upload', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  res.json({ url: `/uploads/${req.file.filename}` });
+});
+
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {
@@ -389,13 +511,10 @@ app.post('/api/auth/login', async (req, res) => {
 if (isProduction) {
   const distPath = path.join(__dirname, '../dist');
   
-  // Serve static files
   app.use(express.static(distPath));
 
-  // Health Check Endpoint
   app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok' }));
 
-  // Handle SPA routing: return index.html for any unknown non-API route
   app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) {
       return res.status(404).json({ error: 'Not Found' });
