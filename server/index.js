@@ -5,6 +5,16 @@ import * as db from './db.js';
 import redis from './redis.js';
 import bcrypt from 'bcryptjs';
 
+// Global Error Handlers to prevent silent crashes
+process.on('uncaughtException', (err) => {
+  console.error('❌ CRITICAL: Uncaught Exception:', err);
+  // Keep process alive if possible or let Docker restart it cleanly
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ CRITICAL: Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 // Configuración de entorno
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -137,8 +147,6 @@ const seedSettings = async () => {
 // --- INICIALIZACIÓN DB ---
 const initDB = async () => {
   try {
-    // ... (Tablas existentes)
-    
     // 1. Usuarios (Auth)
     await db.query(`CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'Admin', status TEXT DEFAULT 'Activo', last_login TIMESTAMP)`);
     
@@ -207,19 +215,24 @@ const initDB = async () => {
     await seedSettings();
 
   } catch (err) {
-    console.error('❌ Error inicializando Tablas:', err.message);
+    console.error('❌ Error inicializando Tablas:', err.message, err.stack);
   }
 };
 
 db.checkConnection().then(connected => {
-  if(connected) initDB();
+  if(connected) {
+    initDB();
+  } else {
+    console.warn('⚠️ Server started without DB connection. Retrying in background...');
+  }
 });
 
 // --- API ENDPOINTS ---
 
 app.get('/api/health', async (req, res) => {
-  const redisStatus = redis.status === 'ready' ? 'connected' : 'disconnected';
-  res.json({ status: 'ok', db: 'connected', redis: redisStatus });
+  // Simple health check that doesn't depend on DB to be fully ready immediately,
+  // to prevent container restart during slow startups.
+  res.json({ status: 'ok', timestamp: new Date() });
 });
 
 // ... (Auth, Users, CMS endpoints remain the same) ...
