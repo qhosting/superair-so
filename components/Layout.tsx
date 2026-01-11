@@ -29,14 +29,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const menuItems = [
     { name: 'Dashboard', icon: LayoutDashboard, route: AppRoute.DASHBOARD },
-    { name: 'Leads y Prospectos', icon: Magnet, route: AppRoute.LEADS }, // Asegurado aquí
-    { name: 'Reportes e Insights', icon: BarChart3, route: AppRoute.REPORTS },
-    { name: 'Constructor Web', icon: Construction, route: AppRoute.BUILDER },
+    { name: 'Leads y Prospectos', icon: Magnet, route: AppRoute.LEADS }, // Menu Item Priority 2
     { name: 'Clientes', icon: Users, route: AppRoute.CLIENTS },
     { name: 'Cotizaciones', icon: FileText, route: AppRoute.QUOTES },
     { name: 'Ventas y Órdenes', icon: ShoppingBag, route: AppRoute.SALES },
     { name: 'Inventario', icon: Package, route: AppRoute.INVENTORY },
     { name: 'Citas e Instalación', icon: Calendar, route: AppRoute.APPOINTMENTS },
+    { name: 'Reportes e Insights', icon: BarChart3, route: AppRoute.REPORTS },
+    { name: 'Constructor Web', icon: Construction, route: AppRoute.BUILDER },
     { name: 'Usuarios y Roles', icon: ShieldCheck, route: AppRoute.USERS },
     { name: 'Configuración', icon: Settings, route: AppRoute.SETTINGS },
   ];

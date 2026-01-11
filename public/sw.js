@@ -1,6 +1,6 @@
 
-const CACHE_NAME = 'superair-erp-v3'; // Bumped version
-const DYNAMIC_CACHE = 'superair-assets-v3'; // Bumped version
+const CACHE_NAME = 'superair-erp-v4'; // Version Bumped to fix Menu Cache
+const DYNAMIC_CACHE = 'superair-assets-v4'; // Version Bumped
 
 // App Shell: Archivos mínimos para que la app arranque
 const STATIC_ASSETS = [
