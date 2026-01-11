@@ -4,7 +4,7 @@ import {
   Workflow, Zap, CheckCircle2, Image as ImageIcon, Palette, FileText, 
   Lock, Clock, Save, AlertTriangle, RefreshCw, Eye, Trash2, 
   Languages, DollarSign, Percent, Download, LayoutTemplate, 
-  Edit, UploadCloud, Database, Server, Smartphone, Key, X
+  Edit, UploadCloud, Database, Server, Smartphone, Key, X, Link as LinkIcon
 } from 'lucide-react';
 import { Template } from '../types';
 
@@ -41,6 +41,12 @@ const Settings: React.FC = () => {
   const [billingInfo, setBillingInfo] = useState({
     taxRate: 16, quotePrefix: 'COT', nextQuoteNumber: 1000, csdUploaded: false
   });
+  const [integrationsInfo, setIntegrationsInfo] = useState({
+      n8n_sync_client: '',
+      n8n_new_quote: '',
+      n8n_order_paid: ''
+  });
+  const [showN8nConfig, setShowN8nConfig] = useState(false);
 
   // PWA
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -67,6 +73,7 @@ const Settings: React.FC = () => {
             }
             if (setData.company_info) setCompanyInfo(prev => ({ ...prev, ...setData.company_info }));
             if (setData.billing_info) setBillingInfo(prev => ({ ...prev, ...setData.billing_info }));
+            if (setData.integrations) setIntegrationsInfo(prev => ({ ...prev, ...setData.integrations }));
         } catch (e) { console.error("Error init settings", e); }
     };
     loadData();
@@ -92,6 +99,23 @@ const Settings: React.FC = () => {
           showToast('Configuración guardada correctamente');
       } catch(e) {
           showToast('Error al guardar cambios', 'error');
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
+  const handleSaveIntegrations = async () => {
+      setIsSaving(true);
+      try {
+          await fetch('/api/settings', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ category: 'integrations', data: integrationsInfo })
+          });
+          showToast('Integraciones actualizadas correctamente');
+          setShowN8nConfig(false);
+      } catch(e) {
+          showToast('Error guardando integraciones', 'error');
       } finally {
           setIsSaving(false);
       }
@@ -397,8 +421,24 @@ const Settings: React.FC = () => {
                 <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in zoom-in duration-300 p-10">
                     <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-8">Conectores y Apps</h3>
                     <div className="grid grid-cols-2 gap-6">
+                        <div className="p-6 rounded-3xl border border-orange-200 hover:shadow-lg transition-all group bg-orange-50/20">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="p-3 rounded-2xl bg-orange-100 text-orange-600">
+                                    <Workflow size={24} />
+                                </div>
+                                <div className={`w-3 h-3 rounded-full ${integrationsInfo.n8n_sync_client ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                            </div>
+                            <h4 className="font-black text-slate-900 text-sm uppercase tracking-wide">n8n Workflow</h4>
+                            <p className="text-xs text-slate-400 mt-1 mb-6 leading-relaxed">Automatización de procesos y webhooks para CRM, cotizaciones y más.</p>
+                            <button 
+                                onClick={() => setShowN8nConfig(true)}
+                                className="w-full py-3 rounded-xl font-black text-[9px] uppercase tracking-widest bg-orange-600 text-white hover:bg-orange-700 transition-all"
+                            >
+                                Configurar Webhooks
+                            </button>
+                        </div>
+
                         {[
-                            { name: 'n8n Workflow', desc: 'Automatización de procesos y webhooks.', icon: Workflow, color: 'text-orange-500', connected: true },
                             { name: 'Google Workspace', desc: 'Sync con Calendar y Drive.', icon: Globe, color: 'text-blue-500', connected: true },
                             { name: 'Chatwoot', desc: 'Omnicanalidad para soporte.', icon: Zap, color: 'text-indigo-500', connected: false },
                             { name: 'Stripe Payments', desc: 'Pasarela de pagos en línea.', icon: CreditCard, color: 'text-violet-500', connected: false },
@@ -521,6 +561,67 @@ const Settings: React.FC = () => {
         </div>
 
       </div>
+
+      {/* N8N Config Modal */}
+      {showN8nConfig && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[150] flex items-center justify-center p-6">
+              <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+                  <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-orange-50">
+                      <div className="flex items-center gap-4">
+                          <div className="p-3 bg-orange-500 text-white rounded-2xl"><Workflow size={24}/></div>
+                          <div>
+                              <h3 className="text-xl font-black text-slate-900 tracking-tighter uppercase">Configurar n8n</h3>
+                              <p className="text-orange-600 text-[10px] font-bold uppercase tracking-widest">Webhooks de Automatización</p>
+                          </div>
+                      </div>
+                      <button onClick={() => setShowN8nConfig(false)} className="p-2 hover:bg-orange-100 rounded-xl transition-all"><X size={20}/></button>
+                  </div>
+                  <div className="p-8 space-y-6">
+                      <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                             <LinkIcon size={12}/> Webhook: Sincronizar Cliente
+                          </label>
+                          <input 
+                              value={integrationsInfo.n8n_sync_client}
+                              onChange={(e) => setIntegrationsInfo({...integrationsInfo, n8n_sync_client: e.target.value})}
+                              placeholder="https://n8n.tu-server.com/webhook/client-sync"
+                              className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-xs"
+                          />
+                      </div>
+                      <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                             <LinkIcon size={12}/> Webhook: Nueva Cotización
+                          </label>
+                          <input 
+                              value={integrationsInfo.n8n_new_quote}
+                              onChange={(e) => setIntegrationsInfo({...integrationsInfo, n8n_new_quote: e.target.value})}
+                              placeholder="https://n8n.tu-server.com/webhook/new-quote"
+                              className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-xs"
+                          />
+                      </div>
+                      <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                             <LinkIcon size={12}/> Webhook: Orden Pagada
+                          </label>
+                          <input 
+                              value={integrationsInfo.n8n_order_paid}
+                              onChange={(e) => setIntegrationsInfo({...integrationsInfo, n8n_order_paid: e.target.value})}
+                              placeholder="https://n8n.tu-server.com/webhook/order-paid"
+                              className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-xs"
+                          />
+                      </div>
+                  </div>
+                  <div className="p-8 border-t border-slate-100 flex gap-4 bg-slate-50/50">
+                      <button onClick={handleSaveIntegrations} className="flex-1 py-4 bg-orange-600 text-white rounded-xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-orange-600/20 hover:bg-orange-700 transition-all">
+                          Guardar Webhooks
+                      </button>
+                      <button onClick={() => setShowN8nConfig(false)} className="px-8 py-4 bg-white text-slate-500 rounded-xl font-black uppercase tracking-widest text-[10px] border border-slate-200">
+                          Cancelar
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
     </div>
   );
 };

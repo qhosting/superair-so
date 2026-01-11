@@ -137,9 +137,15 @@ const seedSettings = async () => {
       defaultTerms: '50/50'
     };
 
+    const integrationsInfo = {
+        n8n_sync_client: '',
+        n8n_new_quote: '',
+        n8n_order_paid: ''
+    };
+
     await db.query(
-      "INSERT INTO app_settings (category, data) VALUES ($1, $2), ($3, $4)",
-      ['company_info', JSON.stringify(companyInfo), 'billing_info', JSON.stringify(billingInfo)]
+      "INSERT INTO app_settings (category, data) VALUES ($1, $2), ($3, $4), ($5, $6)",
+      ['company_info', JSON.stringify(companyInfo), 'billing_info', JSON.stringify(billingInfo), 'integrations', JSON.stringify(integrationsInfo)]
     );
 
   } catch (e) { console.error("Error seeding settings", e); }
@@ -398,7 +404,45 @@ app.post('/api/settings', async (req, res) => {
     try { await db.query('INSERT INTO app_settings (category, data) VALUES ($1, $2) ON CONFLICT (category) DO UPDATE SET data = $2, updated_at = NOW()', [category, JSON.stringify(data)]); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/trigger-n8n', (req, res) => res.json({ success: true }));
+// N8N PROXY TRIGGER
+app.post('/api/trigger-n8n', async (req, res) => {
+    const { action, payload } = req.body;
+    try {
+        // 1. Fetch Integration Settings
+        const settingsRes = await db.query("SELECT data FROM app_settings WHERE category = 'integrations'");
+        if (settingsRes.rows.length === 0) return res.status(404).json({ error: "N8N not configured" });
+        
+        const integrations = settingsRes.rows[0].data;
+        let webhookUrl = '';
+
+        // 2. Determine Webhook URL based on Action
+        switch (action) {
+            case 'SYNC_CLIENT': webhookUrl = integrations.n8n_sync_client; break;
+            case 'NEW_QUOTE': webhookUrl = integrations.n8n_new_quote; break;
+            case 'ORDER_PAID': webhookUrl = integrations.n8n_order_paid; break;
+            default: break;
+        }
+
+        if (!webhookUrl) {
+            console.log(`⚠️ No Webhook configured for action: ${action}`);
+            return res.json({ success: false, message: 'Webhook not configured' });
+        }
+
+        // 3. Send Data to N8N
+        console.log(`🚀 Triggering N8N Webhook: ${action} -> ${webhookUrl}`);
+        // We do not await this heavily to not block UI, or we can await if we want confirmation
+        fetch(webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }).catch(err => console.error("N8N Trigger Error:", err));
+
+        res.json({ success: true });
+    } catch (e) {
+        console.error("Trigger N8N API Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
 
 // --- NEW NOTIFICATION ENDPOINTS ---
 

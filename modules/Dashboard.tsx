@@ -3,317 +3,490 @@ import {
   TrendingUp, 
   Users, 
   ShoppingCart, 
-  CheckCircle2,
   Clock,
-  ExternalLink,
-  Workflow,
   Loader2,
   Calendar,
   AlertTriangle,
-  RefreshCw
+  Zap,
+  MapPin,
+  ThermometerSun,
+  Wrench,
+  PlusCircle,
+  FileText,
+  UserPlus,
+  BrainCircuit,
+  ArrowRight,
+  Briefcase
 } from 'lucide-react';
 import { 
-  AreaChart, 
-  Area, 
   XAxis, 
   YAxis, 
-  CartesianGrid, 
   Tooltip, 
-  ResponsiveContainer 
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  Cell
 } from 'recharts';
-
-// Fallback data for development or offline/error states
-const MOCK_DATA = {
-    clients: [
-        { id: 1, name: 'Cliente Demo Residencial', created_at: new Date().toISOString() },
-        { id: 2, name: 'Comercial del Centro', created_at: new Date(Date.now() - 86400000).toISOString() }
-    ],
-    appointments: [
-        { id: 1, client_name: 'Residencial Lomas', type: 'Mantenimiento', technician: 'Carlos R.', status: 'Programada', date: new Date().toISOString(), time: '10:00' },
-        { id: 2, client_name: 'Oficinas Norte', type: 'Instalación', technician: 'Miguel A.', status: 'En Proceso', date: new Date().toISOString(), time: '12:00' }
-    ],
-    quotes: [
-        { id: 1, total: 12500, status: 'Aceptada', created_at: new Date().toISOString() },
-        { id: 2, total: 8400, status: 'Borrador', created_at: new Date().toISOString() }
-    ]
-};
+import { GoogleGenAI } from "@google/genai";
+import { useNavigate } from '../context/AuthContext';
+import { User, Appointment, Quote } from '../types';
 
 const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   
-  // Data State
-  const [clients, setClients] = useState<any[]>([]);
-  const [appointments, setAppointments] = useState<any[]>([]);
-  const [quotes, setQuotes] = useState<any[]>([]);
-  const [usingMockData, setUsingMockData] = useState(false);
+  // Real Data State
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [staff, setStaff] = useState<User[]>([]);
+  
+  // AI & Weather State
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiBriefing, setAiBriefing] = useState<string | null>(null);
+  const [weather, setWeather] = useState<{ temp: number; code: number; loading: boolean }>({ temp: 0, code: 0, loading: true });
 
+  // --- 1. FETCH REAL DATA ---
   const fetchData = async () => {
     try {
       setLoading(true);
       
-      const [clientsRes, aptsRes, quotesRes] = await Promise.all([
-        fetch('/api/clients'),
-        fetch('/api/appointments'),
-        fetch('/api/quotes')
+      const [aptsRes, quotesRes, usersRes] = await Promise.all([
+        fetch('/api/appointments').then(r => r.ok ? r.json() : []),
+        fetch('/api/quotes').then(r => r.ok ? r.json() : []),
+        fetch('/api/users').then(r => r.ok ? r.json() : [])
       ]);
 
-      if (!clientsRes.ok || !aptsRes.ok || !quotesRes.ok) {
-          throw new Error("Failed to fetch dashboard data");
-      }
-
-      const clientsData = await clientsRes.json();
-      const aptsData = await aptsRes.json();
-      const quotesData = await quotesRes.json();
-
-      setClients(Array.isArray(clientsData) ? clientsData : []);
-      setAppointments(Array.isArray(aptsData) ? aptsData : []);
-      setQuotes(Array.isArray(quotesData) ? quotesData : []);
-      setUsingMockData(false);
+      setAppointments(Array.isArray(aptsRes) ? aptsRes : []);
+      setQuotes(Array.isArray(quotesRes) ? quotesRes : []);
+      // Filter users to find technicians/installers/admins who might have tasks
+      setStaff(Array.isArray(usersRes) ? usersRes : []);
 
     } catch (err: any) {
-      console.warn("Dashboard API Error (Using Fallback Data):", err);
-      // Fallback data
-      setClients(MOCK_DATA.clients);
-      setAppointments(MOCK_DATA.appointments);
-      setQuotes(MOCK_DATA.quotes);
-      setUsingMockData(true);
+      console.error("Dashboard API Error:", err);
     } finally {
       setLoading(false);
     }
   };
 
+  // --- 2. FETCH REAL WEATHER (Open-Meteo) ---
+  const fetchWeather = () => {
+    if (!navigator.geolocation) {
+        setWeather(prev => ({ ...prev, loading: false }));
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(async (position) => {
+        try {
+            const { latitude, longitude } = position.coords;
+            const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&timezone=auto`);
+            const data = await res.json();
+            
+            if (data.current) {
+                setWeather({
+                    temp: data.current.temperature_2m,
+                    code: data.current.weather_code,
+                    loading: false
+                });
+            }
+        } catch (e) {
+            console.error("Weather fetch failed", e);
+            setWeather(prev => ({ ...prev, loading: false }));
+        }
+    }, (err) => {
+        console.warn("Geolocation denied", err);
+        setWeather(prev => ({ ...prev, loading: false }));
+    });
+  };
+
   useEffect(() => {
     fetchData();
+    fetchWeather();
   }, []);
 
-  // --- KPI CALCULATIONS ---
+  // --- 3. GENERATE AI BRIEFING (Only with real data) ---
+  useEffect(() => {
+    if (!loading && !aiLoading && !aiBriefing) {
+      generateDailyBriefing();
+    }
+  }, [loading, weather.loading]);
+
+  const generateDailyBriefing = async () => {
+    setAiLoading(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      
+      const todayStr = new Date().toISOString().split('T')[0];
+      const todaysApts = appointments.filter(a => a.date?.startsWith(todayStr));
+      const pendingQuotes = quotes.filter(q => q.status === 'Enviada' || q.status === 'Borrador');
+      const pendingAmount = pendingQuotes.reduce((acc, q) => acc + Number(q.total), 0);
+      
+      // If absolutely no data, don't ask AI to hallucinate
+      if (todaysApts.length === 0 && pendingQuotes.length === 0 && !weather.temp) {
+          setAiBriefing("Sin actividad reciente registrada. ¡Buen momento para prospectar clientes!");
+          setAiLoading(false);
+          return;
+      }
+
+      const prompt = `
+        Eres el jefe de operaciones de "SuperAir" (Aire Acondicionado).
+        Analiza estos DATOS REALES:
+        - Citas para HOY: ${todaysApts.length} ${todaysApts.length > 0 ? `(${todaysApts.map(a => a.type).join(', ')})` : ''}.
+        - Pipeline Ventas (Pendiente): $${pendingAmount} MXN en ${pendingQuotes.length} cotizaciones.
+        - Temperatura Actual Exterior: ${weather.temp ? weather.temp + '°C' : 'No disponible'}.
+        
+        Genera un resumen operativo de 2 frases.
+        Si hace calor (>25°C) y hay pocas citas, sugiere contactar clientes para mantenimiento.
+        Si hay mucho dinero pendiente, sugiere seguimiento de ventas.
+        Usa emojis.
+      `;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+      });
+
+      setAiBriefing(response.text);
+    } catch (e) {
+      // Fail silently or show generic msg
+      setAiBriefing(null); 
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  // --- 4. CALCULATIONS ---
   const stats = useMemo(() => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    // 1. Ventas Mensuales
     const monthlyRevenue = quotes
-      .filter(q => {
-        const qDate = new Date(q.created_at || now);
-        return q.status === 'Aceptada' && qDate >= startOfMonth;
-      })
+      .filter(q => q.status === 'Aceptada' && new Date(q.createdAt || new Date()) >= startOfMonth)
       .reduce((acc, curr) => acc + Number(curr.total || 0), 0);
 
-    // 2. Clientes Nuevos
-    const newClients = clients.filter(c => {
-      const cDate = new Date(c.created_at || now);
-      return cDate >= startOfMonth;
-    }).length;
-
-    // 3. Cotizaciones Pendientes
-    const pendingQuotes = quotes.filter(q => q.status === 'Borrador' || q.status === 'Enviada').length;
-
-    // 4. Citas Hoy
-    const todayStr = now.toISOString().split('T')[0];
-    const appointmentsToday = appointments.filter(a => {
-        const aDate = typeof a.date === 'string' ? a.date.substring(0, 10) : '';
-        return aDate === todayStr;
-    }).length;
-
-    return {
-      revenue: monthlyRevenue,
-      newClients,
-      pendingQuotes,
-      appointmentsToday
-    };
-  }, [quotes, clients, appointments]);
-
-  // --- CHART DATA GENERATION (Last 7 Days) ---
-  const chartData = useMemo(() => {
-    const days = [];
-    const today = new Date();
-    
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
-      const dayName = new Intl.DateTimeFormat('es-MX', { weekday: 'short' }).format(d);
-
-      const sales = quotes
-        .filter(q => {
-           const qDate = new Date(q.created_at || today).toISOString().split('T')[0];
-           return qDate === dateStr && q.status === 'Aceptada';
-        })
+    const pipelineValue = quotes
+        .filter(q => q.status === 'Enviada' || q.status === 'Borrador')
         .reduce((acc, curr) => acc + Number(curr.total || 0), 0);
 
-      days.push({ name: dayName.charAt(0).toUpperCase() + dayName.slice(1), ventas: sales });
-    }
-    return days;
-  }, [quotes]);
+    const todayStr = now.toISOString().split('T')[0];
+    const appointmentsToday = appointments.filter(a => a.date?.startsWith(todayStr));
 
-  const recentAppointments = useMemo(() => {
-    return appointments.slice(0, 5); 
-  }, [appointments]);
+    // Determine Demand Index based on REAL weather
+    let demandIndex = 'Baja';
+    if (weather.temp > 25) demandIndex = 'Media';
+    if (weather.temp > 30) demandIndex = 'Alta';
+    if (weather.temp > 35) demandIndex = 'Crítica';
+
+    return { 
+        revenue: monthlyRevenue, 
+        pipeline: pipelineValue, 
+        appointmentsToday,
+        demandIndex
+    };
+  }, [quotes, appointments, weather]);
+
+  // --- 5. REAL TECHNICIAN STATUS ---
+  const technicianStatus = useMemo(() => {
+    // Only users with role containing relevant keywords or generally all staff if small team
+    const relevantStaff = staff.filter(u => 
+        u.role === 'Instalador' || u.role === 'Admin' || u.role === 'Super Admin'
+    );
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    return relevantStaff.map(user => {
+      // Find active appointment for this user TODAY
+      const activeJob = appointments.find(a => 
+        a.technician === user.name && 
+        a.date?.startsWith(todayStr) && 
+        (a.status === 'En Proceso' || a.status === 'Programada')
+      );
+      
+      return {
+        id: user.id,
+        name: user.name,
+        // If they have a job today that is 'En Proceso', they are On Site.
+        // If 'Programada', they are Assigned. Otherwise Available.
+        status: activeJob ? (activeJob.status === 'En Proceso' ? 'En Sitio' : 'Asignado') : 'Disponible',
+        // If user status is 'Inactivo', override everything
+        systemStatus: user.status, 
+        currentLocation: activeJob ? `Cliente #${activeJob.clientId}` : 'Base',
+        jobType: activeJob?.type
+      };
+    }).filter(u => u.systemStatus === 'Activo'); // Only show active users in dashboard
+  }, [staff, appointments]);
+
+  const chartData = [
+      { name: 'Cerrado', value: stats.revenue, color: '#10b981' }, 
+      { name: 'En Proceso', value: stats.pipeline, color: '#f59e0b' }
+  ];
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(val);
+
+  const getWeatherDescription = (code: number) => {
+      if (code === 0) return "Cielo Despejado";
+      if (code >= 1 && code <= 3) return "Parcialmente Nublado";
+      if (code >= 45 && code <= 48) return "Niebla";
+      if (code >= 51 && code <= 67) return "Lluvia Ligera";
+      if (code >= 80 && code <= 99) return "Tormenta / Chubascos";
+      return "Normal";
+  };
 
   if (loading) {
     return (
       <div className="h-[80vh] flex flex-col items-center justify-center text-slate-400">
         <Loader2 className="animate-spin mb-4 text-sky-600" size={48} />
-        <p className="font-bold text-sm uppercase tracking-widest">Cargando Datos de Producción...</p>
+        <p className="font-bold text-sm uppercase tracking-widest">Sincronizando Operaciones...</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      {/* Header Info */}
-      <div className="flex items-center justify-between">
-         <div>
-            <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">Resumen Ejecutivo</h2>
-            <p className="text-slate-500 text-sm font-medium">Información en tiempo real de tu operación.</p>
-         </div>
-         <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${usingMockData ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
-            <div className={`w-2 h-2 rounded-full ${usingMockData ? 'bg-amber-500' : 'bg-emerald-500'} animate-pulse`} />
-            <span className="text-[10px] font-black uppercase tracking-widest">{usingMockData ? 'Modo Demo (Offline)' : 'PostgreSQL Connected'}</span>
-         </div>
-      </div>
-
-      {/* Status Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {[
-          { label: 'Ingresos (Mes)', value: formatCurrency(stats.revenue), icon: TrendingUp, color: 'bg-emerald-50 text-emerald-600' },
-          { label: 'Nuevos Clientes', value: stats.newClients.toString(), icon: Users, color: 'bg-blue-50 text-blue-600' },
-          { label: 'Cotizaciones Activas', value: stats.pendingQuotes.toString(), icon: ShoppingCart, color: 'bg-amber-50 text-amber-600' },
-          { label: 'Citas para Hoy', value: stats.appointmentsToday.toString(), icon: Clock, color: 'bg-sky-50 text-sky-600' },
-        ].map((card, idx) => (
-          <div key={idx} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
-            <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{card.label}</p>
-              <h3 className="text-3xl font-black text-slate-900">{card.value}</h3>
+    <div className="space-y-8 animate-in fade-in duration-500 pb-20">
+      
+      {/* TOP SECTION: WEATHER & AI */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Weather Card - Real Data */}
+        <div className="bg-gradient-to-br from-sky-500 to-indigo-600 rounded-[2.5rem] p-8 text-white shadow-xl shadow-sky-600/20 relative overflow-hidden flex flex-col justify-between min-h-[240px]">
+            <div className="absolute top-0 right-0 p-6 opacity-20">
+                <ThermometerSun size={120} />
             </div>
-            <div className={`p-4 rounded-2xl ${card.color}`}>
-              <card.icon size={24} />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Charts */}
-        <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-                <h3 className="font-black text-lg text-slate-900 uppercase tracking-tight">Ventas Confirmadas</h3>
-                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Últimos 7 días</p>
-            </div>
-          </div>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="colorVentas" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11, fontWeight: 700}} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11, fontWeight: 700}} tickFormatter={(val) => `$${val/1000}k`} />
-                <Tooltip 
-                  contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'}} 
-                  itemStyle={{fontSize: '12px', fontWeight: 'bold'}}
-                />
-                <Area type="monotone" dataKey="ventas" stroke="#0ea5e9" fillOpacity={1} fill="url(#colorVentas)" strokeWidth={3} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Roadmap / Project Plan */}
-        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col">
-          <h3 className="font-black text-lg text-slate-900 mb-6 flex items-center gap-2 uppercase tracking-tight">
-            <CheckCircle2 className="text-sky-500" />
-            Estado del Sistema
-          </h3>
-          <div className="space-y-6 flex-1">
-            {[
-              { title: 'Base de Datos', desc: usingMockData ? 'Conexión Fallida (Mock)' : 'PostgreSQL Producción', status: usingMockData ? 'error' : 'completado' },
-              { title: 'API Endpoints', desc: 'Rutas CRUD activas', status: 'completado' },
-              { title: 'Integraciones', desc: 'Webhooks Ready', status: 'en-progreso' },
-              { title: 'IA Gemini', desc: 'Motor de cotizaciones disponible', status: 'completado' },
-            ].map((step, idx) => (
-              <div key={idx} className="flex gap-4">
-                <div className={`mt-1.5 h-3 w-3 rounded-full shrink-0 shadow-sm ${
-                  step.status === 'completado' ? 'bg-emerald-500 shadow-emerald-200' :
-                  step.status === 'error' ? 'bg-rose-500 shadow-rose-200' :
-                  step.status === 'en-progreso' ? 'bg-amber-500 animate-pulse' : 'bg-slate-200'
-                }`} />
-                <div>
-                  <h4 className="text-xs font-black text-slate-800 uppercase tracking-wide">{step.title}</h4>
-                  <p className="text-[10px] text-slate-400 font-medium leading-relaxed">{step.desc}</p>
+            <div className="relative z-10">
+                <div className="flex items-center gap-2 mb-2 opacity-80">
+                    <MapPin size={14} /> 
+                    <span className="text-xs font-bold uppercase tracking-widest">Ubicación Actual</span>
                 </div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-8 p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-slate-700">
-               <Workflow size={16} />
-               <span className="text-[10px] font-black uppercase tracking-widest">Producción</span>
+                {weather.loading ? (
+                    <div className="flex items-center gap-2 animate-pulse">
+                        <Loader2 size={24} className="animate-spin"/>
+                        <span className="text-xl font-bold">Detectando clima...</span>
+                    </div>
+                ) : weather.temp !== 0 ? (
+                    <>
+                        <h2 className="text-5xl font-black tracking-tighter">{weather.temp}°C</h2>
+                        <p className="font-medium text-sky-100">{getWeatherDescription(weather.code)}</p>
+                    </>
+                ) : (
+                    <div>
+                        <h2 className="text-3xl font-black tracking-tighter">--°C</h2>
+                        <p className="text-xs text-sky-200 mt-2">Habilita ubicación para datos reales.</p>
+                    </div>
+                )}
             </div>
-            <div className="w-2 h-2 bg-emerald-500 rounded-full" />
-          </div>
+            <div className="relative z-10 mt-4">
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-1">Demanda Estimada</p>
+                <div className="flex items-center gap-2">
+                    <Zap size={18} className={`fill-current ${stats.demandIndex === 'Alta' || stats.demandIndex === 'Crítica' ? 'text-amber-300 animate-pulse' : 'text-sky-200'}`} />
+                    <span className="text-xl font-bold">{stats.demandIndex}</span>
+                </div>
+            </div>
+        </div>
+
+        {/* AI Briefing - Real Context */}
+        <div className="lg:col-span-2 bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-xl relative overflow-hidden flex flex-col justify-center min-h-[240px]">
+            <div className="absolute top-0 right-0 p-8 opacity-10">
+                <BrainCircuit size={140} />
+            </div>
+            <div className="relative z-10">
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-white/10 rounded-xl backdrop-blur-sm text-sky-400">
+                        {aiLoading ? <Loader2 className="animate-spin" size={20} /> : <BrainCircuit size={20} />}
+                    </div>
+                    <h3 className="font-black text-lg uppercase tracking-tight">Gemini Daily Brief</h3>
+                </div>
+                <div className="bg-white/5 rounded-2xl p-6 border border-white/10 backdrop-blur-sm">
+                    {aiLoading ? (
+                        <p className="text-sm font-medium text-slate-400 animate-pulse">Analizando base de datos en tiempo real...</p>
+                    ) : (
+                        <p className="text-sm md:text-lg font-medium leading-relaxed text-slate-200">
+                            {aiBriefing || "👋 ¡Hola! Registra citas y cotizaciones para recibir análisis estratégicos aquí."}
+                        </p>
+                    )}
+                </div>
+            </div>
         </div>
       </div>
 
-      {/* Recent Activity */}
-      <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-8 border-b border-slate-100 flex items-center justify-between">
-          <div>
-            <h3 className="font-black text-slate-900 uppercase tracking-tighter">Próximos Servicios</h3>
-            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Agenda en tiempo real</p>
+      {/* MIDDLE SECTION: ACTIONS & TECH STATUS */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+          
+          {/* Quick Actions */}
+          <div className="xl:col-span-1 space-y-6">
+              <h3 className="font-black text-slate-900 text-lg uppercase tracking-tight flex items-center gap-2">
+                  <Zap size={20} className="text-amber-500" /> Accesos Rápidos
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                  <button onClick={() => navigate('/quotes')} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-sky-300 transition-all group text-left">
+                      <div className="w-10 h-10 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                          <FileText size={20} />
+                      </div>
+                      <p className="font-black text-slate-800 text-sm">Nueva Cotización</p>
+                  </button>
+                  <button onClick={() => navigate('/clients')} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-emerald-300 transition-all group text-left">
+                      <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                          <UserPlus size={20} />
+                      </div>
+                      <p className="font-black text-slate-800 text-sm">Registrar Cliente</p>
+                  </button>
+                  <button onClick={() => navigate('/appointments')} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-indigo-300 transition-all group text-left">
+                      <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                          <Calendar size={20} />
+                      </div>
+                      <p className="font-black text-slate-800 text-sm">Agendar Cita</p>
+                  </button>
+                  <button onClick={() => navigate('/inventory')} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-amber-300 transition-all group text-left">
+                      <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                          <PlusCircle size={20} />
+                      </div>
+                      <p className="font-black text-slate-800 text-sm">Stock Rápido</p>
+                  </button>
+              </div>
           </div>
-          <button className="text-sky-600 text-[10px] font-black uppercase tracking-widest hover:underline flex items-center gap-1">
-             Ver Calendario <ExternalLink size={12}/>
-          </button>
-        </div>
-        <div className="overflow-x-auto">
-          {recentAppointments.length === 0 ? (
-             <div className="p-10 text-center text-slate-400 flex flex-col items-center">
-                <Calendar size={48} className="mb-4 text-slate-200" />
-                <p className="text-sm font-medium">No hay citas registradas.</p>
-             </div>
-          ) : (
-            <table className="w-full text-left">
-                <thead className="bg-slate-50 text-slate-400 text-[9px] font-black uppercase tracking-widest">
-                <tr>
-                    <th className="px-8 py-5">Cliente</th>
-                    <th className="px-8 py-5">Servicio</th>
-                    <th className="px-8 py-5">Técnico</th>
-                    <th className="px-8 py-5">Estado</th>
-                    <th className="px-8 py-5">Fecha / Hora</th>
-                </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-sm">
-                {recentAppointments.map((row: any, idx: number) => (
-                    <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-8 py-5 font-bold text-slate-900">{row.client_name || 'Cliente'}</td>
-                    <td className="px-8 py-5 font-medium text-slate-600">{row.type}</td>
-                    <td className="px-8 py-5 text-slate-500">{row.technician}</td>
-                    <td className="px-8 py-5">
-                        <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
-                        row.status === 'Completada' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                        row.status === 'En Proceso' ? 'bg-sky-50 text-sky-600 border-sky-100' : 'bg-amber-50 text-amber-600 border-amber-100'
-                        }`}>
-                        {row.status}
-                        </span>
-                    </td>
-                    <td className="px-8 py-5 font-mono text-xs text-slate-400 font-bold">
-                        {row.date ? row.date.substring(0,10) : ''} • {row.time ? row.time.substring(0,5) : ''}
-                    </td>
-                    </tr>
-                ))}
-                </tbody>
-            </table>
-          )}
-        </div>
+
+          {/* Technician Live Status - Driven by DB */}
+          <div className="xl:col-span-2 bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm flex flex-col">
+              <div className="flex justify-between items-center mb-6">
+                  <h3 className="font-black text-slate-900 text-lg uppercase tracking-tight flex items-center gap-2">
+                      <Wrench size={20} className="text-slate-400" /> Staff Técnico
+                  </h3>
+                  <span className="text-[10px] font-black bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full animate-pulse flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" /> EN VIVO
+                  </span>
+              </div>
+              
+              {technicianStatus.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-slate-300 border-2 border-dashed border-slate-100 rounded-3xl p-8">
+                      <Users size={32} className="mb-2 opacity-50" />
+                      <p className="text-xs font-bold uppercase">No hay staff activo registrado</p>
+                      <button onClick={() => navigate('/users')} className="mt-4 text-[10px] text-sky-600 font-bold underline">
+                          Gestionar Usuarios
+                      </button>
+                  </div>
+              ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {technicianStatus.map((tech) => (
+                          <div key={tech.id} className={`p-5 rounded-3xl border-2 transition-all ${
+                              tech.status === 'En Sitio' 
+                              ? 'bg-sky-50 border-sky-100' 
+                              : tech.status === 'Asignado'
+                              ? 'bg-amber-50/50 border-amber-100'
+                              : 'bg-slate-50 border-slate-100'
+                          }`}>
+                              <div className="flex justify-between items-start mb-3">
+                                  <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center font-black text-slate-700 text-xs">
+                                      {tech.name.substring(0,2).toUpperCase()}
+                                  </div>
+                                  <div className={`w-3 h-3 rounded-full ${
+                                      tech.status === 'En Sitio' ? 'bg-sky-500 animate-pulse' : 
+                                      tech.status === 'Asignado' ? 'bg-amber-400' : 'bg-emerald-400'
+                                  }`} />
+                              </div>
+                              <h4 className="font-bold text-slate-900 text-sm truncate">{tech.name}</h4>
+                              <p className="text-xs text-slate-500 font-medium mb-2">{tech.status}</p>
+                              {tech.status !== 'Disponible' && (
+                                  <div className="bg-white/60 p-2 rounded-xl text-[10px] font-bold text-slate-600 flex items-center gap-1 truncate">
+                                      <MapPin size={10} /> {tech.currentLocation}
+                                  </div>
+                              )}
+                          </div>
+                      ))}
+                  </div>
+              )}
+          </div>
       </div>
+
+      {/* BOTTOM SECTION: FINANCIALS & ALERTS */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Revenue Chart */}
+          <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+              <div className="flex items-center justify-between mb-8">
+                  <div>
+                      <h3 className="font-black text-lg text-slate-900 uppercase tracking-tight">Rendimiento Financiero</h3>
+                      <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Mes Actual (Datos Reales)</p>
+                  </div>
+                  <div className="text-right">
+                      <p className="text-2xl font-black text-slate-900">{formatCurrency(stats.revenue)}</p>
+                      <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">Cobrado</p>
+                  </div>
+              </div>
+              
+              <div className="h-48 w-full">
+                  {stats.revenue === 0 && stats.pipeline === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-300">
+                          <TrendingUp size={48} className="mb-2 opacity-50" />
+                          <p className="text-xs font-bold uppercase">Sin movimientos financieros este mes</p>
+                      </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart layout="vertical" data={chartData} barSize={40}>
+                            <XAxis type="number" hide />
+                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11, fontWeight: 800}} width={100} />
+                            <Tooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
+                            <Bar dataKey="value" radius={[0, 10, 10, 0]}>
+                                {chartData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                ))}
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
+                  )}
+              </div>
+              <div className="mt-4 flex gap-6 justify-center">
+                  <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-emerald-500 rounded-full" />
+                      <span className="text-xs font-bold text-slate-600">Cerrado ({formatCurrency(stats.revenue)})</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-amber-500 rounded-full" />
+                      <span className="text-xs font-bold text-slate-600">Pipeline ({formatCurrency(stats.pipeline)})</span>
+                  </div>
+              </div>
+          </div>
+
+          {/* Critical Alerts - Real Data Driven */}
+          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col">
+              <h3 className="font-black text-lg text-slate-900 uppercase tracking-tight mb-6 flex items-center gap-2">
+                  <AlertTriangle size={20} className="text-rose-500" /> Atención Requerida
+              </h3>
+              <div className="flex-1 space-y-4 overflow-y-auto pr-2 custom-scrollbar max-h-64">
+                  {stats.appointmentsToday.length > 0 && (
+                      <div className="p-4 bg-sky-50 border border-sky-100 rounded-2xl flex gap-3">
+                          <div className="mt-1"><Clock size={16} className="text-sky-600" /></div>
+                          <div>
+                              <p className="text-xs font-bold text-slate-800">Citas para Hoy</p>
+                              <p className="text-[10px] text-slate-500 mt-1">Tienes {stats.appointmentsToday.length} citas programadas que requieren atención.</p>
+                          </div>
+                      </div>
+                  )}
+                  {stats.pipeline > 0 && (
+                      <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl flex gap-3">
+                          <div className="mt-1"><Briefcase size={16} className="text-amber-500" /></div>
+                          <div>
+                              <p className="text-xs font-bold text-slate-800">Cotizaciones Pendientes</p>
+                              <p className="text-[10px] text-slate-500 mt-1">Hay {formatCurrency(stats.pipeline)} esperando cierre. ¡Haz seguimiento!</p>
+                          </div>
+                      </div>
+                  )}
+                  {stats.demandIndex === 'Alta' && (
+                      <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex gap-3">
+                          <div className="mt-1"><ThermometerSun size={16} className="text-rose-500" /></div>
+                          <div>
+                              <p className="text-xs font-bold text-slate-800">Alta Demanda Térmica</p>
+                              <p className="text-[10px] text-slate-500 mt-1">El clima indica alta probabilidad de llamadas de emergencia.</p>
+                          </div>
+                      </div>
+                  )}
+                  {stats.appointmentsToday.length === 0 && stats.pipeline === 0 && (
+                      <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl text-center text-slate-400 text-xs">
+                          Sin alertas críticas por el momento.
+                      </div>
+                  )}
+              </div>
+              <button onClick={() => navigate('/reports')} className="mt-6 w-full py-3 bg-slate-50 text-slate-600 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 transition-all flex items-center justify-center gap-2">
+                  Ver Reportes Completos <ArrowRight size={14} />
+              </button>
+          </div>
+      </div>
+
     </div>
   );
 };

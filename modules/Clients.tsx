@@ -237,13 +237,13 @@ const Clients: React.FC = () => {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
-                webhookUrl: 'https://n8n.tu-dominio.com/webhook/sync-client',
-                payload: { clientId, action: 'SYNC_CRM' }
+                action: 'SYNC_CLIENT',
+                payload: { clientId, source: 'CRM_BUTTON' }
             })
         });
-        alert('Datos enviados al Webhook de n8n exitosamente.');
+        alert('Solicitud enviada a n8n. Se ejecutará el Webhook configurado.');
     } catch (e) {
-        alert('Error conectando con n8n.');
+        alert('Error conectando con el servidor.');
     } finally {
         setTimeout(() => setTriggeringId(null), 1000);
     }
