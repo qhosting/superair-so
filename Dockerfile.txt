@@ -1,19 +1,21 @@
+
 # Stage 1: Build the React Application
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
 # Define build arguments for frontend environment variables
+# These are necessary for Vite to bake them into the static files
 ARG API_KEY
 ENV API_KEY=$API_KEY
 
-# Force development environment to ensure devDependencies (Vite) are installed for building
+# Force development environment to ensure devDependencies (like Vite, TypeScript) are installed
 ENV NODE_ENV=development
 
 # Copy package files first to leverage Docker cache
 COPY package*.json ./
 
-# Install dependencies (including devDependencies)
+# Install all dependencies (including devDependencies)
 RUN npm install
 
 # Copy the rest of the application code
@@ -27,7 +29,7 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install system dependencies (Timezone data is crucial for scheduling apps)
+# Install system dependencies (Timezone data is crucial for scheduling/cron apps)
 RUN apk add --no-cache tzdata
 
 # Production environment settings
@@ -38,7 +40,8 @@ ENV HOST=0.0.0.0
 # Copy package files
 COPY package*.json ./
 
-# Install only production dependencies for the server
+# Install only production dependencies for the server (Express, PG, etc.)
+# This keeps the image small by excluding React/Vite/Typescript libs
 RUN npm install --omit=dev
 
 # Copy the server code and change ownership to non-root user
@@ -55,6 +58,7 @@ RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 EXPOSE 3000
 
 # Health check using Node.js native fetch (Node 18+)
+# Checks if the API is responsive before marking container as healthy
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/api/health').then((r) => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
 

@@ -65,19 +65,12 @@ const oauth2Client = new google.auth.OAuth2(
 
 // --- CRON JOBS ---
 // Ejecutar cada 15 minutos: */15 * * * *
-// Objetivo: Despertar flujo de N8N para procesar correos/facturas
 cron.schedule('*/15 * * * *', async () => {
   console.log('⏰ Running Cron: Trigger N8N CFDI Processing');
-  // URL interna de docker o pública
   const webhookUrl = process.env.N8N_WEBHOOK_URL || 'http://n8n:5678/webhook/process-cfdi';
-  
   try {
     const res = await fetch(webhookUrl, { method: 'POST' });
-    if (res.ok) {
-      console.log('✅ N8N Triggered Successfully');
-    } else {
-      console.error('⚠️ N8N Trigger Failed:', await res.text());
-    }
+    if (res.ok) console.log('✅ N8N Triggered Successfully');
   } catch (e) {
     console.error('❌ Cron Connection Error:', e.message);
   }
@@ -94,8 +87,6 @@ const authenticateToken = (req, res, next) => {
     '/api/settings/public'
   ];
 
-  // Permitir POST a /api/leads públicamente (Formulario de Contacto Landing)
-  // Pero mantener GET protegido para el Dashboard
   if (req.path === '/api/leads' && req.method === 'POST') {
     return next();
   }
@@ -126,9 +117,33 @@ const authorize = (roles = []) => {
 
 app.use('/api', authenticateToken);
 
-// --- DB INIT ---
+// --- DB INIT & MIGRATIONS ---
+const runMigrations = async () => {
+    console.log("🔄 Ejecutando auto-migraciones de base de datos...");
+    try {
+        // 1. Migraciones Tabla Products (Nuevos campos de precios y costos)
+        await db.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS cost NUMERIC DEFAULT 0`);
+        await db.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'product'`);
+        await db.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS price_wholesale NUMERIC DEFAULT 0`);
+        await db.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS price_vip NUMERIC DEFAULT 0`);
+        
+        // 2. Migraciones Tabla Clients (Datos Fiscales)
+        await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS rfc TEXT`);
+        await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'Residencial'`);
+        
+        // 3. Migraciones Tabla Orders (Facturación)
+        await db.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS cfdi_status TEXT DEFAULT 'Pendiente'`);
+        await db.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS fiscal_data JSONB`);
+        
+        console.log("✅ Migraciones completadas exitosamente.");
+    } catch (e) {
+        console.error("⚠️ Error en migraciones (no crítico):", e.message);
+    }
+};
+
 const initDB = async () => {
   try {
+    // Creación de Tablas Base
     await db.query(`CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'Admin', status TEXT DEFAULT 'Activo', last_login TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS clients (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT, phone TEXT, address TEXT, rfc TEXT, type TEXT DEFAULT 'Residencial', status TEXT DEFAULT 'Prospecto', notes TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, name TEXT NOT NULL, description TEXT, price NUMERIC, stock INTEGER DEFAULT 0, category TEXT, min_stock INTEGER DEFAULT 5, cost NUMERIC DEFAULT 0, type TEXT DEFAULT 'product', price_wholesale NUMERIC DEFAULT 0, price_vip NUMERIC DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
@@ -140,9 +155,10 @@ const initDB = async () => {
     await db.query(`CREATE TABLE IF NOT EXISTS notifications (id SERIAL PRIMARY KEY, title TEXT, message TEXT, type TEXT DEFAULT 'info', is_read BOOLEAN DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS leads (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT, phone TEXT, source TEXT DEFAULT 'Manual', campaign TEXT, status TEXT DEFAULT 'Nuevo', notes TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS fiscal_inbox (uuid TEXT PRIMARY KEY, rfc_emitter TEXT, rfc_receiver TEXT, legal_name TEXT, amount NUMERIC, xml_url TEXT, pdf_url TEXT, origin_email TEXT, received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, linked_order_id INTEGER, status TEXT DEFAULT 'Unlinked')`);
-    
-    // Nueva Tabla: Movimientos de Inventario (Kardex)
     await db.query(`CREATE TABLE IF NOT EXISTS inventory_movements (id SERIAL PRIMARY KEY, product_id INTEGER, user_name TEXT, type TEXT, quantity INTEGER, reason TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
+
+    // Ejecutar Migraciones de Columnas Faltantes
+    await runMigrations();
 
     // Ensure Admin
     const adminCheck = await db.query("SELECT * FROM users WHERE email = 'admin@superair.com.mx'");
@@ -167,20 +183,14 @@ app.post('/api/send-email', upload.single('attachment'), async (req, res) => {
             to: to,
             subject: subject,
             text: text,
-            attachments: file ? [{
-                filename: file.originalname,
-                path: file.path
-            }] : []
+            attachments: file ? [{ filename: file.originalname, path: file.path }] : []
         };
-
         const info = await transporter.sendMail(mailOptions);
-        
         if (file) fs.unlinkSync(file.path);
-
         res.json({ success: true, messageId: info.messageId });
     } catch (e) {
         console.error("Email Error:", e);
-        res.status(500).json({ error: "Error enviando correo. Verifique configuración SMTP." });
+        res.status(500).json({ error: "Error enviando correo." });
     }
 });
 
@@ -192,7 +202,6 @@ app.post('/api/ai/chat', async (req, res) => {
         const settingsRes = await db.query("SELECT data FROM app_settings WHERE category = 'marketing_info'");
         const marketingSettings = settingsRes.rows[0]?.data || {};
         const provider = marketingSettings.aiProvider || 'gemini';
-        
         let reply = "";
         const systemPrompt = "Eres el Asistente Operativo de SuperAir. Responde breve y profesionalmente.";
 
@@ -205,13 +214,10 @@ app.post('/api/ai/chat', async (req, res) => {
             reply = completion.choices[0].message.content;
         } else {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            // UPDATED: Use Gemini 3 Flash Preview for better reasoning
             const response = await ai.models.generateContent({
                 model: 'gemini-3-flash-preview',
                 contents: message,
-                config: {
-                    systemInstruction: systemPrompt
-                }
+                config: { systemInstruction: systemPrompt }
             });
             reply = response.text; 
         }
@@ -228,7 +234,6 @@ app.post('/api/orders/pay', authorize(['Admin', 'Super Admin']), async (req, res
     const { orderId, amount, method } = req.body;
     try {
         await db.query('BEGIN');
-        
         const orderCheck = await db.query("SELECT total, paid_amount FROM orders WHERE id = $1", [orderId]);
         if (orderCheck.rows.length === 0) throw new Error("Orden no encontrada");
         
@@ -237,7 +242,6 @@ app.post('/api/orders/pay', authorize(['Admin', 'Super Admin']), async (req, res
         const newStatus = newPaidAmount >= Number(order.total) ? 'Completado' : 'Pendiente';
 
         await db.query("UPDATE orders SET paid_amount = $1, status = $2 WHERE id = $3", [newPaidAmount, newStatus, orderId]);
-        
         await db.query('COMMIT');
         res.json({ success: true, newPaidAmount, status: newStatus });
     } catch (e) {
@@ -254,7 +258,6 @@ app.post('/api/orders/complete', authorize(['Admin', 'Super Admin']), async (req
         if (orderRes.rows.length === 0) throw new Error("Orden no encontrada");
         
         const items = orderRes.rows[0].items; 
-
         for (const item of items) {
             const prodCheck = await db.query("SELECT type, stock, name FROM products WHERE id = $1", [item.productId]);
             if (prodCheck.rows.length > 0) {
@@ -262,14 +265,8 @@ app.post('/api/orders/complete', authorize(['Admin', 'Super Admin']), async (req
                 if (product.type === 'product') {
                     const newStock = product.stock - item.quantity;
                     await db.query("UPDATE products SET stock = $1 WHERE id = $2", [newStock, item.productId]);
-                    
-                    await db.query("INSERT INTO inventory_movements (product_id, user_name, type, quantity, reason) VALUES ($1, $2, 'Salida', $3, $4)", 
-                        [item.productId, req.user.name, item.quantity, `Venta Orden #${orderId}`]
-                    );
-
-                    if (newStock < 5) {
-                         await db.query("INSERT INTO notifications (title, message, type) VALUES ($1, $2, 'warning')", ['Stock Bajo', `Producto ${product.name} bajo de stock.`]);
-                    }
+                    await db.query("INSERT INTO inventory_movements (product_id, user_name, type, quantity, reason) VALUES ($1, $2, 'Salida', $3, $4)", [item.productId, req.user.name, item.quantity, `Venta Orden #${orderId}`]);
+                    if (newStock < 5) await db.query("INSERT INTO notifications (title, message, type) VALUES ($1, $2, 'warning')", ['Stock Bajo', `Producto ${product.name} bajo de stock.`]);
                 }
             }
         }
@@ -305,12 +302,7 @@ app.post('/api/leads', async (req, res) => {
     const l = req.body; 
     try { 
         const r = await db.query("INSERT INTO leads (name, email, phone, source, status, notes) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *", [l.name, l.email, l.phone, l.source || 'Manual', l.status || 'Nuevo', l.notes]); 
-        
-        // Notify admins if it's a public submission
-        if (!req.user) {
-             await db.query("INSERT INTO notifications (title, message, type) VALUES ($1, $2, 'info')", ['Nuevo Lead Web', `Prospecto: ${l.name} (${l.source})`]);
-        }
-
+        if (!req.user) await db.query("INSERT INTO notifications (title, message, type) VALUES ($1, $2, 'info')", ['Nuevo Lead Web', `Prospecto: ${l.name} (${l.source})`]);
         res.json(r.rows[0]); 
     } catch(e){res.status(500).json({error:e.message});} 
 });
@@ -365,30 +357,17 @@ app.delete('/api/clients/:id', authorize(['Admin', 'Super Admin']), async (req, 
 });
 
 
-// --- NOTIFICATIONS ---
+// --- NOTIFICATIONS & INVOICING ---
 app.get('/api/notifications', async (req, res) => { 
-    try { 
-        const r = await db.query("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 20"); 
-        res.json(r.rows); 
-    } catch(e){res.status(500).json([]);} 
+    try { const r = await db.query("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 20"); res.json(r.rows); } catch(e){res.status(500).json([]);} 
 });
-
 app.post('/api/notifications/mark-read', async (req, res) => { 
-    try { 
-        await db.query("UPDATE notifications SET is_read = TRUE"); 
-        res.json({success:true}); 
-    } catch(e){res.status(500).json({error:e.message});} 
+    try { await db.query("UPDATE notifications SET is_read = TRUE"); res.json({success:true}); } catch(e){res.status(500).json({error:e.message});} 
 });
 
-
-// --- FISCAL & INVOICING ---
 app.get('/api/fiscal/inbox', async (req, res) => { 
-    try { 
-        const r = await db.query("SELECT * FROM fiscal_inbox WHERE status = 'Unlinked'"); 
-        res.json(r.rows); 
-    } catch(e){res.status(500).json([]);} 
+    try { const r = await db.query("SELECT * FROM fiscal_inbox WHERE status = 'Unlinked'"); res.json(r.rows); } catch(e){res.status(500).json([]);} 
 });
-
 app.post('/api/orders/:id/link-fiscal', authorize(['Admin', 'Super Admin']), async (req, res) => { 
     try { 
         const { fiscalUuid } = req.body; 
@@ -399,14 +378,11 @@ app.post('/api/orders/:id/link-fiscal', authorize(['Admin', 'Super Admin']), asy
         await db.query("UPDATE fiscal_inbox SET status='Linked', linked_order_id=$1 WHERE uuid=$2", [req.params.id, fiscalUuid]); 
         await db.query('COMMIT'); 
         res.json({success:true}); 
-    } catch(e){ 
-        await db.query('ROLLBACK'); 
-        res.status(500).json({error:e.message}); 
-    } 
+    } catch(e){ await db.query('ROLLBACK'); res.status(500).json({error:e.message}); } 
 });
 
 
-// --- USERS MANAGEMENT ---
+// --- USERS ---
 app.get('/api/users', authorize(['Super Admin', 'Admin']), async (req, res) => { try { const r = await db.query('SELECT id, name, email, role, status, last_login as "lastLogin" FROM users ORDER BY id ASC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
 
 app.post('/api/users', authorize(['Super Admin', 'Admin']), async (req, res) => {
@@ -417,16 +393,10 @@ app.post('/api/users', authorize(['Super Admin', 'Admin']), async (req, res) => 
         res.json({success:true});
     } catch(e) { res.status(500).json({error:e.message}); }
 });
-
-app.delete('/api/users/:id', authorize(['Super Admin', 'Admin']), async (req, res) => {
-    try {
-        await db.query("DELETE FROM users WHERE id=$1", [req.params.id]);
-        res.json({success:true});
-    } catch(e) { res.status(500).json({error:e.message}); }
-});
+app.delete('/api/users/:id', authorize(['Super Admin', 'Admin']), async (req, res) => { try { await db.query("DELETE FROM users WHERE id=$1", [req.params.id]); res.json({success:true}); } catch(e) { res.status(500).json({error:e.message}); } });
 
 
-// --- 🏭 INVENTORY & PRODUCTS ---
+// --- PRODUCTS ---
 app.get('/api/products', async (req, res) => { try { const r = await db.query('SELECT * FROM products ORDER BY name ASC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
 
 app.post('/api/products', authorize(['Admin', 'Super Admin']), async (req, res) => {
@@ -437,103 +407,50 @@ app.post('/api/products', authorize(['Admin', 'Super Admin']), async (req, res) 
             if (oldProd.rows.length > 0) {
                 const diff = p.stock - oldProd.rows[0].stock;
                 if (diff !== 0) {
-                    await db.query("INSERT INTO inventory_movements (product_id, user_name, type, quantity, reason) VALUES ($1, $2, $3, $4, 'Ajuste Manual')", 
-                        [p.id, req.user.name, diff > 0 ? 'Entrada' : 'Salida', Math.abs(diff)]
-                    );
+                    await db.query("INSERT INTO inventory_movements (product_id, user_name, type, quantity, reason) VALUES ($1, $2, $3, $4, 'Ajuste Manual')", [p.id, req.user.name, diff > 0 ? 'Entrada' : 'Salida', Math.abs(diff)]);
                 }
             }
-            await db.query(`UPDATE products SET name=$1, description=$2, price=$3, stock=$4, category=$5, min_stock=$6, cost=$7, type=$8, price_wholesale=$9, price_vip=$10 WHERE id=$11`,
-                [p.name, p.description, p.price, p.stock, p.category, p.min_stock, p.cost, p.type, p.price_wholesale, p.price_vip, p.id]
-            );
+            await db.query(`UPDATE products SET name=$1, description=$2, price=$3, stock=$4, category=$5, min_stock=$6, cost=$7, type=$8, price_wholesale=$9, price_vip=$10 WHERE id=$11`, [p.name, p.description, p.price, p.stock, p.category, p.min_stock, p.cost, p.type, p.price_wholesale, p.price_vip, p.id]);
         } else {
-            const r = await db.query(`INSERT INTO products (name, description, price, stock, category, min_stock, cost, type, price_wholesale, price_vip) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-                [p.name, p.description, p.price, p.stock, p.category, p.min_stock, p.cost, p.type, p.price_wholesale, p.price_vip]
-            );
-             await db.query("INSERT INTO inventory_movements (product_id, user_name, type, quantity, reason) VALUES ($1, $2, 'Entrada', $3, 'Inventario Inicial')", 
-                [r.rows[0].id, req.user.name, p.stock]
-            );
+            const r = await db.query(`INSERT INTO products (name, description, price, stock, category, min_stock, cost, type, price_wholesale, price_vip) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`, [p.name, p.description, p.price, p.stock, p.category, p.min_stock, p.cost, p.type, p.price_wholesale, p.price_vip]);
+             await db.query("INSERT INTO inventory_movements (product_id, user_name, type, quantity, reason) VALUES ($1, $2, 'Entrada', $3, 'Inventario Inicial')", [r.rows[0].id, req.user.name, p.stock]);
         }
         res.json({ success: true });
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
+app.delete('/api/products/:id', authorize(['Admin', 'Super Admin']), async (req, res) => { try { await db.query("DELETE FROM products WHERE id=$1", [req.params.id]); res.json({success:true}); } catch(e) { res.status(500).json({error:e.message}); } });
 
-app.delete('/api/products/:id', authorize(['Admin', 'Super Admin']), async (req, res) => {
-    try {
-        await db.query("DELETE FROM products WHERE id=$1", [req.params.id]);
-        res.json({success:true});
-    } catch(e) { res.status(500).json({error:e.message}); }
-});
-
-// --- BASIC GETS ---
-app.get('/api/quotes', async (req, res) => { try { const r = await db.query('SELECT id, client_id, client_name, total, status, items, created_at, payment_terms as "paymentTerms" FROM quotes ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
-app.get('/api/orders', async (req, res) => { try { const r = await db.query('SELECT id::text, quote_id, client_name as "clientName", total, paid_amount as "paidAmount", status, cfdi_status as "cfdiStatus", installation_date as "installationDate", fiscal_data as "fiscalData" FROM orders ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
-
-// --- SETTINGS ---
-app.post('/api/settings', async (req, res) => { 
-    const { category, data } = req.body; 
-    try { 
-        await db.query('INSERT INTO app_settings (category, data) VALUES ($1, $2) ON CONFLICT (category) DO UPDATE SET data = $2', [category, data]); 
-        res.json({ success: true }); 
-    } catch (e) { res.status(500).json({ error: e.message }); } 
-});
+// --- SETTINGS & APPOINTMENTS ---
+app.post('/api/settings', async (req, res) => { try { await db.query('INSERT INTO app_settings (category, data) VALUES ($1, $2) ON CONFLICT (category) DO UPDATE SET data = $2', [req.body.category, req.body.data]); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); } });
 app.get('/api/settings', async (req, res) => { try { const r = await db.query('SELECT * FROM app_settings'); const settings = {}; r.rows.forEach(row => { settings[row.category] = row.data; }); res.json(settings); } catch (e) { res.status(500).json({ error: e.message }); } });
-app.get('/api/settings/public', async (req, res) => {
-    try {
-        const r = await db.query("SELECT data FROM app_settings WHERE category = 'general_info'");
-        res.json(r.rows[0]?.data || {});
-    } catch (e) { res.status(500).json({}); }
-});
+app.get('/api/settings/public', async (req, res) => { try { const r = await db.query("SELECT data FROM app_settings WHERE category = 'general_info'"); res.json(r.rows[0]?.data || {}); } catch (e) { res.status(500).json({}); } });
 
-
-// --- APPOINTMENTS ---
 app.get('/api/appointments', async (req, res) => { try { const r = await db.query('SELECT a.id, a.client_id, c.name as client_name, a.technician, a.date, a.time, a.type, a.status, a.duration, a.google_event_link FROM appointments a LEFT JOIN clients c ON a.client_id = c.id'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
-
-app.post('/api/appointments', authorize(['Admin', 'Super Admin']), async (req, res) => {
-    const { client_id, technician, date, time, type, status, duration } = req.body;
-    try {
-        const r = await db.query("INSERT INTO appointments (client_id, technician, date, time, type, status, duration) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *", [client_id, technician, date, time, type, status, duration]);
-        res.json(r.rows[0]);
-    } catch (e) { res.status(500).json({error:e.message}); }
-});
-
+app.post('/api/appointments', authorize(['Admin', 'Super Admin']), async (req, res) => { const { client_id, technician, date, time, type, status, duration } = req.body; try { const r = await db.query("INSERT INTO appointments (client_id, technician, date, time, type, status, duration) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *", [client_id, technician, date, time, type, status, duration]); res.json(r.rows[0]); } catch (e) { res.status(500).json({error:e.message}); } });
 app.put('/api/appointments/:id', authorize(['Admin', 'Super Admin', 'Instalador']), async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
-    
     try {
         const oldAptRes = await db.query('SELECT status, client_id, technician, type, time FROM appointments WHERE id = $1', [id]);
         if (oldAptRes.rows.length === 0) return res.status(404).json({error: 'Cita no encontrada'});
-        
         const oldApt = oldAptRes.rows[0];
-        
         await db.query('UPDATE appointments SET status = $1 WHERE id = $2', [status, id]);
-        
         if (status === 'En Proceso' && oldApt.status !== 'En Proceso') {
             const clientRes = await db.query('SELECT phone, name FROM clients WHERE id = $1', [oldApt.client_id]);
             if (clientRes.rows.length > 0) {
                 const client = clientRes.rows[0];
-                if (client.phone) {
-                    const msg = `🚗 Hola ${client.name}, tu técnico de SuperAir (${oldApt.technician}) va en camino para tu servicio de ${oldApt.type}. Nos vemos pronto.`;
-                    console.log(`Sending WhatsApp to ${client.phone}: ${msg}`);
-                    sendWhatsApp(client.phone, msg).catch(err => console.error("WhatsApp Error:", err.message));
-                }
+                if (client.phone) sendWhatsApp(client.phone, `🚗 Hola ${client.name}, tu técnico de SuperAir (${oldApt.technician}) va en camino.`).catch(err => console.error("WhatsApp Error:", err.message));
             }
         }
-
         res.json({ success: true, status });
-    } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/api/quotes', async (req, res) => { try { const r = await db.query('SELECT id, client_id, client_name, total, status, items, created_at, payment_terms as "paymentTerms" FROM quotes ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
+app.get('/api/orders', async (req, res) => { try { const r = await db.query('SELECT id::text, quote_id, client_name as "clientName", total, paid_amount as "paidAmount", status, cfdi_status as "cfdiStatus", installation_date as "installationDate", fiscal_data as "fiscalData" FROM orders ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
 
 // --- AUTH & MISC ---
-app.post('/api/upload', upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  res.json({ url: `/uploads/${req.file.filename}` });
-});
-
+app.post('/api/upload', upload.single('file'), (req, res) => { if (!req.file) return res.status(400).json({ error: 'No file uploaded' }); res.json({ url: `/uploads/${req.file.filename}` }); });
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {
@@ -552,15 +469,10 @@ app.post('/api/auth/login', async (req, res) => {
 // --- SERVING FRONTEND IN PRODUCTION ---
 if (isProduction) {
   const distPath = path.join(__dirname, '../dist');
-  
   app.use(express.static(distPath));
-
   app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok' }));
-
   app.get('*', (req, res) => {
-    if (req.path.startsWith('/api')) {
-      return res.status(404).json({ error: 'Not Found' });
-    }
+    if (req.path.startsWith('/api')) return res.status(404).json({ error: 'Not Found' });
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }
