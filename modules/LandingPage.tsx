@@ -26,6 +26,7 @@ const LandingPage: React.FC = () => {
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   
   // Appointment Form State
   const [appointmentForm, setAppointmentForm] = useState({
@@ -41,24 +42,27 @@ const LandingPage: React.FC = () => {
   const [loadingCms, setLoadingCms] = useState(true);
 
   useEffect(() => {
-    // Intentar cargar contenido del CMS
-    fetch('/api/cms/content')
-      .then(res => {
-          if(!res.ok) throw new Error("API Error");
-          return res.json();
-      })
-      .then(data => {
-        if (data && Array.isArray(data) && data.length > 0) {
-          setCmsSections(data);
+    // Intentar cargar contenido del CMS y Configuración Pública
+    Promise.all([
+        fetch('/api/cms/content').then(r => r.ok ? r.json() : null),
+        fetch('/api/settings/public').then(r => r.ok ? r.json() : null)
+    ])
+    .then(([cmsData, settingsData]) => {
+        if (cmsData && Array.isArray(cmsData) && cmsData.length > 0) {
+          setCmsSections(cmsData);
         } else {
-          setCmsSections(null); // Usar fallback
+          setCmsSections(null);
         }
-      })
-      .catch(err => {
-        console.log("Info: Usando diseño estático por defecto (API no disponible o vacía)");
+        
+        if (settingsData && settingsData.logoUrl) {
+            setLogoUrl(settingsData.logoUrl);
+        }
+    })
+    .catch(err => {
+        console.log("Info: Usando diseño estático por defecto");
         setCmsSections(null);
-      })
-      .finally(() => setLoadingCms(false));
+    })
+    .finally(() => setLoadingCms(false));
   }, []);
 
   const toggleFaq = (idx: number) => {
@@ -200,10 +204,16 @@ const LandingPage: React.FC = () => {
                     className="flex items-center gap-3 font-black text-2xl text-slate-800 tracking-tighter cursor-pointer group" 
                     onClick={() => { window.scrollTo({top:0, behavior:'smooth'}); setMobileMenuOpen(false); }}
                 >
-                    <div className="bg-sky-600 text-white p-2 rounded-xl group-hover:rotate-12 transition-transform shadow-lg shadow-sky-600/30">
-                        <Wind size={20} /> 
-                    </div>
-                    <span className="hidden sm:inline group-hover:text-sky-600 transition-colors">SuperAir</span>
+                    {logoUrl ? (
+                        <img src={logoUrl} alt="Logo" className="h-10 object-contain" />
+                    ) : (
+                        <>
+                            <div className="bg-sky-600 text-white p-2 rounded-xl group-hover:rotate-12 transition-transform shadow-lg shadow-sky-600/30">
+                                <Wind size={20} /> 
+                            </div>
+                            <span className="hidden sm:inline group-hover:text-sky-600 transition-colors">SuperAir</span>
+                        </>
+                    )}
                 </div>
 
                 {/* Desktop Links (Pill Style) */}

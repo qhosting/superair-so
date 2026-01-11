@@ -39,6 +39,7 @@ export enum PaymentTerms {
 export interface Quote {
   id: string;
   clientId: string;
+  clientName?: string;
   items: { productId: string; quantity: number; price: number }[];
   total: number;
   status: 'Borrador' | 'Enviada' | 'Aceptada' | 'Rechazada';

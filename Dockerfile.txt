@@ -44,6 +44,9 @@ COPY --chown=node:node server ./server
 # Copy the built static files from the builder stage
 COPY --chown=node:node --from=builder /app/dist ./dist
 
+# Create uploads directory and set permissions for the node user to ensure volume writes work
+RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
+
 # Expose the application port
 EXPOSE 3000
 

@@ -2,31 +2,35 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, Plus, Package, AlertTriangle, ArrowUpRight, ArrowDownLeft, 
   Edit3, Filter, X, Warehouse, Boxes, Tag, Loader2, Trash2, Printer, 
-  Calculator, FileSpreadsheet, Wrench, Briefcase
+  Calculator, FileSpreadsheet, Wrench, Briefcase, History
 } from 'lucide-react';
 import { Product } from '../types';
 
+interface Movement {
+    id: number;
+    product_name: string;
+    user_name: string;
+    type: 'Entrada' | 'Salida';
+    quantity: number;
+    reason: string;
+    created_at: string;
+}
+
 const Inventory: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'inventory' | 'history'>('inventory');
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [loading, setLoading] = useState(true);
   
+  const [products, setProducts] = useState<Product[]>([]);
+  const [movements, setMovements] = useState<Movement[]>([]);
+  
   // State for Print Mode
   const [showPrintModal, setShowPrintModal] = useState(false);
 
-  const [products, setProducts] = useState<Product[]>([]);
-  
   const [newProduct, setNewProduct] = useState<Partial<Product>>({
-    name: '', 
-    description: '', 
-    price: 0, 
-    cost: 0,
-    price_wholesale: 0,
-    price_vip: 0,
-    stock: 0, 
-    category: 'Refacción', 
-    type: 'product',
-    min_stock: 5
+    name: '', description: '', price: 0, cost: 0, price_wholesale: 0, price_vip: 0,
+    stock: 0, category: 'Refacción', type: 'product', min_stock: 5
   });
 
   const fetchProducts = async () => {
@@ -36,21 +40,30 @@ const Inventory: React.FC = () => {
         if(!res.ok) throw new Error("API Error");
         const data = await res.json();
         if(Array.isArray(data)) setProducts(data);
-    } catch(e) { 
-        console.error("Failed to load inventory");
-    } finally { 
-        setLoading(false); 
-    }
+    } catch(e) { console.error("Failed to load inventory"); } 
+    finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchProducts(); }, []);
+  const fetchHistory = async () => {
+      setLoading(true);
+      try {
+          const res = await fetch('/api/inventory/movements');
+          const data = await res.json();
+          if(Array.isArray(data)) setMovements(data);
+      } catch(e) { console.error("Failed to load history"); }
+      finally { setLoading(false); }
+  };
+
+  useEffect(() => { 
+      if(activeTab === 'inventory') fetchProducts();
+      if(activeTab === 'history') fetchHistory();
+  }, [activeTab]);
 
   const handleSaveProduct = async () => {
     if (!newProduct.name || !newProduct.price) {
         alert("El nombre y precio público son obligatorios");
         return;
     }
-
     try {
         const payload = {
             ...newProduct,
@@ -60,27 +73,15 @@ const Inventory: React.FC = () => {
             price_wholesale: Number(newProduct.price_wholesale) || 0,
             price_vip: Number(newProduct.price_vip) || 0
         };
-
         const res = await fetch('/api/products', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payload)
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
         });
         if(res.ok) {
             setShowAddModal(false);
-            // Reset Form
-            setNewProduct({ 
-                name: '', description: '', price: 0, cost: 0, 
-                stock: 0, category: 'Refacción', type: 'product', min_stock: 5,
-                price_wholesale: 0, price_vip: 0
-            });
+            setNewProduct({ name: '', description: '', price: 0, cost: 0, stock: 0, category: 'Refacción', type: 'product', min_stock: 5, price_wholesale: 0, price_vip: 0 });
             fetchProducts(); 
-        } else {
-            throw new Error("Save Failed");
         }
-    } catch(e) { 
-        alert("Error guardando producto.");
-    }
+    } catch(e) { alert("Error guardando producto."); }
   };
 
   const handleDeleteProduct = async (id: string) => {
@@ -88,79 +89,18 @@ const Inventory: React.FC = () => {
     try {
         await fetch(`/api/products/${id}`, { method: 'DELETE' });
         setProducts(products.filter(p => p.id !== id));
-    } catch(e) {
-        alert("Error al eliminar producto");
-    }
+    } catch(e) { alert("Error al eliminar producto"); }
   };
 
   const calculatePrices = () => {
       const base = Number(newProduct.price) || 0;
       if (base <= 0) return;
-      
-      setNewProduct(prev => ({
-          ...prev,
-          price_wholesale: Number((base * 0.90).toFixed(2)), // 10% descuento
-          price_vip: Number((base * 0.85).toFixed(2)) // 15% descuento
-      }));
+      setNewProduct(prev => ({ ...prev, price_wholesale: Number((base * 0.90).toFixed(2)), price_vip: Number((base * 0.85).toFixed(2)) }));
   };
 
   const calculateMargin = (price: number, cost: number) => {
       if (!price || price === 0) return 0;
       return ((price - cost) / price) * 100;
-  };
-
-  const handlePrintInventory = (mode: 'blind' | 'audit') => {
-      const itemsToPrint = products.filter(p => p.type === 'product');
-      
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) return alert("Permite pop-ups para imprimir.");
-
-      const rows = itemsToPrint.map(p => `
-        <tr style="border-bottom: 1px solid #e2e8f0;">
-            <td style="padding: 10px;">${p.name}</td>
-            <td style="padding: 10px; font-size: 12px;">${p.category}</td>
-            <td style="padding: 10px; text-align: center;">${mode === 'audit' ? p.stock : '____'}</td>
-            <td style="padding: 10px; text-align: center;">${mode === 'audit' ? '____' : '____'}</td>
-        </tr>
-      `).join('');
-
-      printWindow.document.write(`
-        <html>
-        <head>
-            <title>Inventario Físico - SuperAir</title>
-            <style>
-                body { font-family: sans-serif; padding: 40px; }
-                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                th { text-align: left; border-bottom: 2px solid #000; padding: 10px; }
-                .header { display: flex; justify-content: space-between; margin-bottom: 30px; }
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <div>
-                    <h1>HOJA DE CONTEO FÍSICO</h1>
-                    <p>Fecha: ${new Date().toLocaleDateString()}</p>
-                    <p>Modo: ${mode === 'blind' ? 'Ciego (Sin Cantidades)' : 'Auditoría (Con Cantidades)'}</p>
-                </div>
-                <div><h2>SuperAir</h2></div>
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Producto / Descripción</th>
-                        <th>Categoría</th>
-                        <th style="text-align: center;">${mode === 'audit' ? 'Sistema' : 'Conteo 1'}</th>
-                        <th style="text-align: center;">${mode === 'audit' ? 'Físico' : 'Conteo 2'}</th>
-                    </tr>
-                </thead>
-                <tbody>${rows}</tbody>
-            </table>
-            <script>window.onload = function() { window.print(); }</script>
-        </body>
-        </html>
-      `);
-      printWindow.document.close();
-      setShowPrintModal(false);
   };
 
   const filteredProducts = useMemo(() => {
@@ -184,153 +124,188 @@ const Inventory: React.FC = () => {
           <p className="text-slate-500 text-sm font-medium">Gestión de activos, costos y listas de precios.</p>
         </div>
         <div className="flex gap-3">
-          <button 
-            onClick={() => setShowPrintModal(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-white text-slate-700 border border-slate-200 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 transition-all shadow-sm"
-          >
-            <Printer size={18} />
-            Hojas de Conteo
-          </button>
-          <button 
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-sky-700 shadow-xl shadow-sky-600/20 transition-all"
-          >
-            <Plus size={18} />
-            Nuevo Ítem
-          </button>
-        </div>
-      </div>
-
-      {/* Analytics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm relative overflow-hidden group">
-           <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform">
-              <Boxes size={80} className="text-sky-600" />
-           </div>
-           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Costo Inventario Actual</p>
-           <h3 className="text-3xl font-black text-slate-900">{formatCurrency(stats.totalValue)}</h3>
-        </div>
-        
-        <div className="bg-emerald-50 p-8 rounded-[2.5rem] border border-emerald-100 shadow-sm relative overflow-hidden group">
-           <div className="absolute top-0 right-0 p-6 opacity-10">
-              <ArrowUpRight size={80} className="text-emerald-600" />
-           </div>
-           <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Utilidad Potencial Est.</p>
-           <h3 className="text-3xl font-black text-emerald-900">{formatCurrency(stats.potentialProfit)}</h3>
-        </div>
-
-        <div className="bg-rose-50 p-8 rounded-[2.5rem] border border-rose-100 shadow-sm relative overflow-hidden group">
-           <div className="absolute top-0 right-0 p-6 opacity-10">
-              <AlertTriangle size={80} className="text-rose-600" />
-           </div>
-           <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-2">Stock Bajo / Crítico</p>
-           <h3 className="text-3xl font-black text-rose-900">{stats.lowStock} Ítems</h3>
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex bg-slate-100 p-1.5 rounded-2xl">
-            <button className="flex items-center gap-3 px-8 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest bg-white shadow-lg text-sky-600">
-              <Package size={16} /> Todo
+            <button onClick={() => setActiveTab('inventory')} className={`px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'inventory' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+                Stock Actual
             </button>
-          </div>
-
-          <div className="flex gap-4">
-             <div className="relative">
-                <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input 
-                  type="text" 
-                  placeholder="Buscar..." 
-                  className="pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500 transition-all w-64"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-             </div>
-          </div>
+            <button onClick={() => setActiveTab('history')} className={`px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'history' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+                Kardex (Historial)
+            </button>
         </div>
-
-        {loading ? (
-             <div className="p-20 flex justify-center"><Loader2 className="animate-spin text-sky-600" size={32}/></div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest">
-                <tr>
-                  <th className="px-8 py-5">Ítem</th>
-                  <th className="px-8 py-5">Tipo</th>
-                  <th className="px-8 py-5">Existencia</th>
-                  <th className="px-8 py-5">Costo Unit.</th>
-                  <th className="px-8 py-5">Precio Público</th>
-                  <th className="px-8 py-5">Margen</th>
-                  <th className="px-8 py-5 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredProducts.map((p) => {
-                    const margin = calculateMargin(Number(p.price), Number(p.cost || 0));
-                    return (
-                      <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
-                        <td className="px-8 py-6">
-                          <div className="flex items-center gap-4">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black ${p.type === 'service' ? 'bg-purple-50 text-purple-500' : 'bg-slate-100 text-slate-400'}`}>
-                              {p.type === 'service' ? <Wrench size={18}/> : <Tag size={18} />}
-                            </div>
-                            <div>
-                              <p className="font-black text-slate-900">{p.name}</p>
-                              <p className="text-[10px] font-mono text-slate-400 uppercase">{p.category}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-8 py-6">
-                           <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
-                               p.type === 'service' ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-sky-50 text-sky-600 border-sky-100'
-                           }`}>
-                             {p.type === 'service' ? 'Servicio' : 'Físico'}
-                           </span>
-                        </td>
-                        <td className="px-8 py-6">
-                           {p.type === 'service' ? (
-                               <span className="text-slate-300 font-bold">-</span>
-                           ) : (
-                               <span className={`text-lg font-black ${Number(p.stock) < (p.min_stock || 5) ? 'text-rose-600' : 'text-slate-900'}`}>{p.stock}</span>
-                           )}
-                        </td>
-                        <td className="px-8 py-6 font-medium text-slate-500 text-xs">
-                          {formatCurrency(Number(p.cost || 0))}
-                        </td>
-                        <td className="px-8 py-6 font-black text-slate-900">
-                          {formatCurrency(Number(p.price))}
-                        </td>
-                        <td className="px-8 py-6">
-                            <span className={`text-xs font-black ${margin < 20 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                                {margin.toFixed(1)}%
-                            </span>
-                        </td>
-                        <td className="px-8 py-6 text-right">
-                           <div className="flex justify-end gap-2">
-                              <button 
-                                onClick={() => handleDeleteProduct(p.id)}
-                                className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                              >
-                                 <Trash2 size={18} />
-                              </button>
-                           </div>
-                        </td>
-                      </tr>
-                    );
-                })}
-                {filteredProducts.length === 0 && (
-                    <tr>
-                        <td colSpan={7} className="text-center p-10 text-slate-400">No hay productos en inventario.</td>
-                    </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
+
+      {activeTab === 'inventory' ? (
+        <>
+            {/* Analytics */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform">
+                    <Boxes size={80} className="text-sky-600" />
+                </div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Costo Inventario Actual</p>
+                <h3 className="text-3xl font-black text-slate-900">{formatCurrency(stats.totalValue)}</h3>
+                </div>
+                
+                <div className="bg-emerald-50 p-8 rounded-[2.5rem] border border-emerald-100 shadow-sm relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-6 opacity-10">
+                    <ArrowUpRight size={80} className="text-emerald-600" />
+                </div>
+                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Utilidad Potencial Est.</p>
+                <h3 className="text-3xl font-black text-emerald-900">{formatCurrency(stats.potentialProfit)}</h3>
+                </div>
+
+                <div className="bg-rose-50 p-8 rounded-[2.5rem] border border-rose-100 shadow-sm relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-6 opacity-10">
+                    <AlertTriangle size={80} className="text-rose-600" />
+                </div>
+                <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-2">Stock Bajo / Crítico</p>
+                <h3 className="text-3xl font-black text-rose-900">{stats.lowStock} Ítems</h3>
+                </div>
+            </div>
+
+            {/* Table */}
+            <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div className="flex gap-4">
+                        <button onClick={() => setShowPrintModal(true)} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200"><Printer size={16}/> Hojas de Conteo</button>
+                        <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-2 bg-sky-600 text-white rounded-xl font-bold text-xs hover:bg-sky-700 shadow-lg shadow-sky-600/20"><Plus size={16}/> Nuevo Ítem</button>
+                    </div>
+                    <div className="relative">
+                        <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input 
+                        type="text" 
+                        placeholder="Buscar..." 
+                        className="pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500 transition-all w-64"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+                </div>
+
+                {loading ? (
+                    <div className="p-20 flex justify-center"><Loader2 className="animate-spin text-sky-600" size={32}/></div>
+                ) : (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                    <thead className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest">
+                        <tr>
+                        <th className="px-8 py-5">Ítem</th>
+                        <th className="px-8 py-5">Tipo</th>
+                        <th className="px-8 py-5">Existencia</th>
+                        <th className="px-8 py-5">Costo Unit.</th>
+                        <th className="px-8 py-5">Precio Público</th>
+                        <th className="px-8 py-5">Margen</th>
+                        <th className="px-8 py-5 text-right">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {filteredProducts.map((p) => {
+                            const margin = calculateMargin(Number(p.price), Number(p.cost || 0));
+                            return (
+                            <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
+                                <td className="px-8 py-6">
+                                <div className="flex items-center gap-4">
+                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black ${p.type === 'service' ? 'bg-purple-50 text-purple-500' : 'bg-slate-100 text-slate-400'}`}>
+                                    {p.type === 'service' ? <Wrench size={18}/> : <Tag size={18} />}
+                                    </div>
+                                    <div>
+                                    <p className="font-black text-slate-900">{p.name}</p>
+                                    <p className="text-[10px] font-mono text-slate-400 uppercase">{p.category}</p>
+                                    </div>
+                                </div>
+                                </td>
+                                <td className="px-8 py-6">
+                                <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
+                                    p.type === 'service' ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-sky-50 text-sky-600 border-sky-100'
+                                }`}>
+                                    {p.type === 'service' ? 'Servicio' : 'Físico'}
+                                </span>
+                                </td>
+                                <td className="px-8 py-6">
+                                {p.type === 'service' ? (
+                                    <span className="text-slate-300 font-bold">-</span>
+                                ) : (
+                                    <span className={`text-lg font-black ${Number(p.stock) < (p.min_stock || 5) ? 'text-rose-600' : 'text-slate-900'}`}>{p.stock}</span>
+                                )}
+                                </td>
+                                <td className="px-8 py-6 font-medium text-slate-500 text-xs">
+                                {formatCurrency(Number(p.cost || 0))}
+                                </td>
+                                <td className="px-8 py-6 font-black text-slate-900">
+                                {formatCurrency(Number(p.price))}
+                                </td>
+                                <td className="px-8 py-6">
+                                    <span className={`text-xs font-black ${margin < 20 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                        {margin.toFixed(1)}%
+                                    </span>
+                                </td>
+                                <td className="px-8 py-6 text-right">
+                                <div className="flex justify-end gap-2">
+                                    <button 
+                                        onClick={() => handleDeleteProduct(p.id)}
+                                        className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                    >
+                                        <Trash2 size={18} />
+                                    </button>
+                                </div>
+                                </td>
+                            </tr>
+                            );
+                        })}
+                    </tbody>
+                    </table>
+                </div>
+                )}
+            </div>
+        </>
+      ) : (
+          /* HISTORY VIEW */
+          <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden p-8 animate-in fade-in">
+              <div className="flex items-center gap-4 mb-6">
+                  <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl"><History size={24}/></div>
+                  <div>
+                      <h3 className="text-xl font-black text-slate-900 uppercase">Kardex de Movimientos</h3>
+                      <p className="text-xs text-slate-500">Auditoría completa de entradas y salidas.</p>
+                  </div>
+              </div>
+              
+              {loading ? <Loader2 className="animate-spin mx-auto text-indigo-600"/> : (
+                  <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                          <thead className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                              <tr>
+                                  <th className="pb-4">Fecha</th>
+                                  <th className="pb-4">Producto</th>
+                                  <th className="pb-4">Tipo</th>
+                                  <th className="pb-4">Cantidad</th>
+                                  <th className="pb-4">Usuario</th>
+                                  <th className="pb-4">Razón / Referencia</th>
+                              </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                              {movements.map(m => (
+                                  <tr key={m.id} className="hover:bg-slate-50">
+                                      <td className="py-4 text-xs font-bold text-slate-500">
+                                          {new Date(m.created_at).toLocaleDateString()} <span className="text-[9px] text-slate-400">{new Date(m.created_at).toLocaleTimeString()}</span>
+                                      </td>
+                                      <td className="py-4 font-black text-slate-800">{m.product_name}</td>
+                                      <td className="py-4">
+                                          <span className={`px-2 py-1 rounded text-[9px] font-black uppercase ${
+                                              m.type === 'Entrada' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+                                          }`}>
+                                              {m.type}
+                                          </span>
+                                      </td>
+                                      <td className="py-4 font-black text-slate-900">{m.quantity}</td>
+                                      <td className="py-4 text-xs font-medium text-slate-600">{m.user_name}</td>
+                                      <td className="py-4 text-xs text-slate-500 italic">{m.reason}</td>
+                                  </tr>
+                              ))}
+                          </tbody>
+                      </table>
+                  </div>
+              )}
+          </div>
+      )}
 
       {/* Add Modal */}
       {showAddModal && (
@@ -442,30 +417,6 @@ const Inventory: React.FC = () => {
               </div>
            </div>
         </div>
-      )}
-
-      {/* Print Modal Selector */}
-      {showPrintModal && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[130] flex items-center justify-center p-6">
-            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl max-w-sm w-full text-center space-y-6">
-                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-500">
-                    <Printer size={32} />
-                </div>
-                <div>
-                    <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Imprimir Hojas</h3>
-                    <p className="text-slate-400 text-xs font-medium mt-2">Selecciona el formato de impresión para el almacén.</p>
-                </div>
-                <div className="grid gap-3">
-                    <button onClick={() => handlePrintInventory('blind')} className="py-4 border border-slate-200 rounded-xl font-bold text-xs hover:bg-sky-50 hover:text-sky-600 hover:border-sky-200 transition-all">
-                        Ciego (Sin Cantidades)
-                    </button>
-                    <button onClick={() => handlePrintInventory('audit')} className="py-4 border border-slate-200 rounded-xl font-bold text-xs hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-all">
-                        Auditoría (Con Cantidades)
-                    </button>
-                </div>
-                <button onClick={() => setShowPrintModal(false)} className="text-slate-400 text-xs font-bold uppercase tracking-widest hover:text-slate-600">Cancelar</button>
-            </div>
-          </div>
       )}
     </div>
   );

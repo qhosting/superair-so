@@ -1,9 +1,11 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  FileText, Plus, Search, Mail, Eye, Send, X, Loader2, CheckCircle2, 
-  Trash2, Printer, MoreVertical, Edit
+  FileText, Plus, Search, Mail, Eye, Send, X, Loader2, 
+  Printer, Download, CheckCircle2
 } from 'lucide-react';
 import { Quote } from '../types';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 const Quotes: React.FC = () => {
   const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -11,13 +13,11 @@ const Quotes: React.FC = () => {
   
   // Modal State
   const [showEmailModal, setShowEmailModal] = useState(false);
-  
-  // Email Logic State
+  const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
   const [clientEmail, setClientEmail] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
   const [isSendingEmail, setIsSendingEmail] = useState(false);
-  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/quotes')
@@ -26,44 +26,124 @@ const Quotes: React.FC = () => {
       .finally(() => setLoading(false));
   }, []);
 
+  // --- PDF GENERATOR (Retorna el blob en lugar de descargar si returnBlob=true) ---
+  const generatePDF = (quote: Quote, returnBlob = false) => {
+    const doc = new jsPDF();
+    
+    // Header
+    doc.setFillColor(14, 165, 233); // Sky-600
+    doc.rect(0, 0, 210, 40, 'F');
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(22);
+    doc.setFont('helvetica', 'bold');
+    doc.text('COTIZACIÓN', 20, 25);
+    
+    doc.setFontSize(10);
+    doc.text('SuperAir S.A. de C.V.', 20, 32);
+    doc.text(`Folio: #${quote.id}`, 160, 25);
+    doc.text(`Fecha: ${new Date(quote.createdAt).toLocaleDateString()}`, 160, 32);
+
+    // Client Info
+    doc.setTextColor(50, 50, 50);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Cliente:', 20, 55);
+    doc.setFont('helvetica', 'normal');
+    doc.text(quote.clientName || 'Cliente General', 20, 62);
+
+    // Table
+    const tableColumn = ["Concepto / Producto", "Cant.", "Precio Unit.", "Total"];
+    const tableRows = [];
+
+    let items = [];
+    try {
+        items = typeof quote.items === 'string' ? JSON.parse(quote.items) : quote.items;
+    } catch (e) { items = []; }
+
+    items.forEach((item: any) => {
+      const itemTotal = item.price * item.quantity;
+      const itemName = item.productName || `Producto ID: ${item.productId}`; 
+      tableRows.push([
+        itemName,
+        item.quantity,
+        `$${item.price.toFixed(2)}`,
+        `$${itemTotal.toFixed(2)}`
+      ]);
+    });
+
+    (doc as any).autoTable({
+      head: [tableColumn],
+      body: tableRows,
+      startY: 80,
+      theme: 'grid',
+      headStyles: { fillColor: [14, 165, 233] }, 
+      styles: { fontSize: 10, cellPadding: 3 },
+    });
+
+    const finalY = (doc as any).lastAutoTable.finalY + 10;
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Total: $${Number(quote.total).toFixed(2)} MXN`, 140, finalY);
+
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Condiciones de Pago: ${quote.paymentTerms || 'Contado'}`, 20, finalY + 20);
+    doc.text('Precios sujetos a cambio sin previo aviso. Vigencia de 15 días.', 20, finalY + 25);
+    doc.text('Gracias por su preferencia.', 105, 280, { align: 'center' });
+
+    if (returnBlob) {
+        return doc.output('blob');
+    } else {
+        doc.save(`Cotizacion_SuperAir_${quote.id}.pdf`);
+    }
+  };
+
   const openEmailModal = (quote: Quote) => {
-      // Find client email somehow? Usually stored in quote or we fetch client.
-      // Assuming quote object has client info or we use a placeholder.
-      // Ideally quote has client_id, we fetch client. For now let's use a dummy or what we have.
-      setClientEmail('cliente@ejemplo.com'); // Placeholder as logic was missing
+      setSelectedQuote(quote);
+      setClientEmail('cliente@ejemplo.com'); 
       setEmailSubject(`Cotización #${quote.id} - SuperAir`);
-      setEmailBody(`Estimado cliente,\n\nAdjunto encontrará la cotización solicitada #${quote.id}.\n\nQuedamos atentos a sus comentarios.\n\nSaludos,\nEquipo SuperAir`);
-      setSelectedQuoteId(quote.id);
+      setEmailBody(`Estimado cliente,\n\nAdjunto encontrará la cotización solicitada #${quote.id} en formato PDF.\n\nQuedamos atentos a sus comentarios.\n\nSaludos,\nEquipo SuperAir`);
       setShowEmailModal(true);
   };
 
   const handleSendEmail = async () => {
-    setIsSendingEmail(true);
-    try {
-        const res = await fetch('/api/send-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                to: clientEmail,
-                subject: emailSubject,
-                html: emailBody.replace(/\n/g, '<br>'), // Simple newline to HTML
-                // En producción real, aquí se adjuntaría el PDF generado
-            })
-        });
+      if (!selectedQuote) return;
+      setIsSendingEmail(true);
 
-        const data = await res.json();
-        
-        if (res.ok) {
-            alert('Correo enviado exitosamente a ' + clientEmail);
-            setShowEmailModal(false);
-        } else {
-            throw new Error(data.error || 'Error sending email');
-        }
-    } catch (e: any) {
-        alert('Error enviando correo: ' + e.message);
-    } finally {
-        setIsSendingEmail(false);
-    }
+      try {
+          // 1. Generate PDF Blob
+          const pdfBlob = generatePDF(selectedQuote, true) as Blob;
+
+          // 2. Prepare FormData
+          const formData = new FormData();
+          formData.append('to', clientEmail);
+          formData.append('subject', emailSubject);
+          formData.append('text', emailBody);
+          formData.append('attachment', pdfBlob, `Cotizacion_${selectedQuote.id}.pdf`);
+
+          // 3. Send to Backend
+          const res = await fetch('/api/send-email', {
+              method: 'POST',
+              headers: {
+                  'Authorization': `Bearer ${localStorage.getItem('superair_token')}`
+              },
+              body: formData
+          });
+
+          if (res.ok) {
+              alert('Correo enviado exitosamente.');
+              setShowEmailModal(false);
+          } else {
+              throw new Error('Server error');
+          }
+      } catch (e) {
+          alert('Error al enviar correo. Verifique configuración SMTP.');
+          console.error(e);
+      } finally {
+          setIsSendingEmail(false);
+      }
   };
 
   return (
@@ -94,12 +174,14 @@ const Quotes: React.FC = () => {
                       {quotes.map(q => (
                           <tr key={q.id} className="hover:bg-slate-50">
                               <td className="py-4 font-bold text-slate-700">#{q.id}</td>
-                              <td className="py-4 font-bold text-slate-900">{q.clientId}</td>
-                              <td className="py-4 font-bold text-emerald-600">${q.total}</td>
+                              <td className="py-4 font-bold text-slate-900">{q.clientName || q.clientId}</td>
+                              <td className="py-4 font-bold text-emerald-600">${Number(q.total).toFixed(2)}</td>
                               <td className="py-4"><span className="bg-slate-100 px-2 py-1 rounded text-[10px] font-bold uppercase">{q.status}</span></td>
                               <td className="py-4 text-right flex justify-end gap-2">
+                                  <button onClick={() => generatePDF(q)} className="p-2 text-slate-400 hover:text-rose-600" title="Descargar PDF">
+                                      <Download size={16}/>
+                                  </button>
                                   <button onClick={() => openEmailModal(q)} className="p-2 text-slate-400 hover:text-sky-600"><Mail size={16}/></button>
-                                  <button className="p-2 text-slate-400 hover:text-emerald-600"><Eye size={16}/></button>
                               </td>
                           </tr>
                       ))}
@@ -107,74 +189,27 @@ const Quotes: React.FC = () => {
               </table>
           )}
       </div>
-
-      {/* Email Sending Modal */}
+      
       {showEmailModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[130] flex items-center justify-center p-6">
-           <div className="bg-white w-full max-w-5xl h-[80vh] flex rounded-[3.5rem] shadow-2xl animate-in zoom-in duration-300 overflow-hidden">
-              
-              {/* Left Panel: Editor */}
-              <div className="w-1/2 p-10 border-r border-slate-100 flex flex-col bg-white">
-                <div className="flex items-center justify-between mb-8">
-                     <h3 className="text-2xl font-black text-slate-900 tracking-tighter uppercase">Redactar Correo</h3>
-                </div>
-                
-                <div className="flex-1 space-y-6 overflow-y-auto pr-2 custom-scrollbar">
-                     <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Destinatario</label>
-                        <input value={clientEmail} disabled className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold opacity-60" />
-                     </div>
-                     <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Asunto</label>
-                        <input 
-                            value={emailSubject}
-                            onChange={e => setEmailSubject(e.target.value)}
-                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-sky-500" 
-                        />
-                     </div>
-                     <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mensaje (Editable)</label>
-                        <textarea 
-                          value={emailBody}
-                          onChange={e => setEmailBody(e.target.value)}
-                          className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none h-64 resize-none font-medium leading-relaxed focus:ring-2 focus:ring-sky-500"
-                        />
-                     </div>
-                </div>
-
-                <div className="pt-8 mt-auto border-t border-slate-100">
-                     <button 
-                      onClick={handleSendEmail}
-                      disabled={isSendingEmail}
-                      className="w-full py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-sky-600/20 flex items-center justify-center gap-3"
-                     >
-                        {isSendingEmail ? <Loader2 className="animate-spin" size={18}/> : <Send size={18} />}
-                        Enviar Ahora (SMTP Real)
-                     </button>
-                </div>
-              </div>
-
-              {/* Right Panel: Preview */}
-              <div className="w-1/2 bg-slate-50 flex flex-col relative">
-                 <button onClick={() => setShowEmailModal(false)} className="absolute top-6 right-6 p-2 hover:bg-slate-200 rounded-xl transition-all z-10"><X size={20}/></button>
-                 <div className="p-10 pb-4 border-b border-slate-200 flex items-center gap-2">
-                    <Eye size={18} className="text-slate-400"/>
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Vista Previa Cliente</span>
-                 </div>
-                 <div className="flex-1 overflow-y-auto p-10 custom-scrollbar">
-                    <div className="bg-white shadow-xl rounded-xl overflow-hidden border border-slate-200 min-h-[500px]">
-                        <div className="bg-slate-900 text-white p-6">
-                            <h2 className="font-bold text-lg">SuperAir</h2>
-                        </div>
-                        <div className="p-8 space-y-6">
-                            <div className="whitespace-pre-wrap text-slate-600 text-sm font-medium leading-relaxed">
-                                {emailBody}
-                            </div>
-                        </div>
-                    </div>
-                 </div>
-              </div>
-
+           <div className="bg-white w-full max-w-xl p-8 rounded-[2rem] shadow-xl">
+               <div className="flex justify-between items-center mb-6">
+                   <h3 className="font-bold text-lg">Enviar Cotización PDF</h3>
+                   <button onClick={() => setShowEmailModal(false)}><X size={20}/></button>
+               </div>
+               <div className="space-y-4">
+                   <input className="w-full p-3 border rounded-xl" placeholder="Email" value={clientEmail} onChange={e=>setClientEmail(e.target.value)} />
+                   <input className="w-full p-3 border rounded-xl" placeholder="Asunto" value={emailSubject} onChange={e=>setEmailSubject(e.target.value)} />
+                   <textarea className="w-full p-3 border rounded-xl h-32" value={emailBody} onChange={e=>setEmailBody(e.target.value)} />
+                   <button 
+                    onClick={handleSendEmail}
+                    disabled={isSendingEmail}
+                    className="w-full py-3 bg-sky-600 text-white rounded-xl font-bold flex justify-center gap-2 disabled:opacity-70"
+                   >
+                       {isSendingEmail ? <Loader2 className="animate-spin" size={16}/> : <Send size={16} />} 
+                       {isSendingEmail ? 'Enviando PDF...' : 'Enviar Ahora'}
+                   </button>
+               </div>
            </div>
         </div>
       )}

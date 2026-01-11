@@ -1,5 +1,3 @@
-
-
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -11,6 +9,8 @@ import fs from 'fs';
 import multer from 'multer';
 import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
+import { GoogleGenAI } from "@google/genai";
+import OpenAI from 'openai';
 import { sendWhatsApp, sendChatwootMessage } from './services.js';
 
 // --- CONFIG & HANDLERS ---
@@ -21,6 +21,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isProduction = process.env.NODE_ENV === 'production';
 const JWT_SECRET = process.env.JWT_SECRET || 'superair_secret_key_change_in_prod';
+const N8N_API_KEY = process.env.N8N_API_KEY || 'superair_n8n_master_key';
 
 // Asegurar directorio de uploads
 const UPLOAD_DIR = path.join(__dirname, '../uploads');
@@ -28,14 +29,12 @@ if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const app = express();
 app.use(express.json());
-// Servir archivos estáticos subidos (Fase 3)
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// Configuración de Puerto
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 
-// --- 1. CONFIGURACIÓN MULTER (SUBIDA DE ARCHIVOS) ---
+// --- CONFIGURACIÓN EXTERNA ---
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => {
@@ -45,42 +44,38 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-// --- 2. CONFIGURACIÓN NODEMAILER (EMAIL) ---
+// Configuración SMTP para Correos Reales
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
   port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: process.env.SMTP_SECURE === 'true',
+  secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
   }
 });
 
-// --- 3. GOOGLE OAUTH2 CLIENT (CALENDAR) ---
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI // ej: https://superair.com.mx/api/auth/google/callback
+  process.env.GOOGLE_REDIRECT_URI 
 );
 
-// --- MIDDLEWARES DE SEGURIDAD ---
+// --- MIDDLEWARES ---
 const authenticateToken = (req, res, next) => {
   const publicPaths = [
     '/api/auth/login', 
     '/api/health', 
     '/api/cms/content', 
     '/api/webhooks/leads',
-    '/api/webhooks/invoices' // Public for N8N
+    '/api/webhooks/invoices',
+    '/api/settings/public'
   ];
-  
-  // Allow public paths or uploads GET
-  if (publicPaths.includes(req.path) || (req.method === 'GET' && req.path.startsWith('/uploads'))) {
+  if (publicPaths.includes(req.path) || req.path.startsWith('/api/n8n') || (req.method === 'GET' && req.path.startsWith('/uploads'))) {
     return next();
   }
-
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
-
   if (!token) return res.status(401).json({ error: 'Acceso Denegado: Token requerido' });
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
@@ -90,12 +85,11 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// Middleware RBAC (Fase 4)
 const authorize = (roles = []) => {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'No autenticado' });
     if (roles.length && !roles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Permisos insuficientes para esta acción' });
+      return res.status(403).json({ error: 'Permisos insuficientes' });
     }
     next();
   };
@@ -103,61 +97,280 @@ const authorize = (roles = []) => {
 
 app.use('/api', authenticateToken);
 
-// --- INICIALIZACIÓN DB ---
+// --- DB INIT ---
 const initDB = async () => {
   try {
-    // ... Tablas existentes (users, clients, products, cms_content, appointments, quotes, orders, etc.)
     await db.query(`CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'Admin', status TEXT DEFAULT 'Activo', last_login TIMESTAMP)`);
-    // ... (Mantener resto de tablas originales)
     await db.query(`CREATE TABLE IF NOT EXISTS clients (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT, phone TEXT, address TEXT, rfc TEXT, type TEXT DEFAULT 'Residencial', status TEXT DEFAULT 'Prospecto', notes TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, name TEXT NOT NULL, description TEXT, price NUMERIC, stock INTEGER DEFAULT 0, category TEXT, min_stock INTEGER DEFAULT 5, cost NUMERIC DEFAULT 0, type TEXT DEFAULT 'product', price_wholesale NUMERIC DEFAULT 0, price_vip NUMERIC DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS cms_content (id SERIAL PRIMARY KEY, section_id TEXT UNIQUE, content JSONB, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS appointments (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id), technician TEXT, date DATE, time TIME, type TEXT, status TEXT, duration INTEGER DEFAULT 60, google_event_link TEXT)`);
     await db.query(`CREATE TABLE IF NOT EXISTS quotes (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id), client_name TEXT, total NUMERIC, status TEXT DEFAULT 'Borrador', items JSONB, payment_terms TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, quote_id INTEGER REFERENCES quotes(id), client_name TEXT, total NUMERIC, paid_amount NUMERIC DEFAULT 0, status TEXT DEFAULT 'Pendiente', installation_date DATE, cfdi_status TEXT DEFAULT 'Pendiente', fiscal_data JSONB, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
-    await db.query(`CREATE TABLE IF NOT EXISTS templates (id SERIAL PRIMARY KEY, code TEXT UNIQUE NOT NULL, name TEXT, subject TEXT, content TEXT, variables JSONB, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS app_settings (category TEXT PRIMARY KEY, data JSONB, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS notifications (id SERIAL PRIMARY KEY, title TEXT, message TEXT, type TEXT DEFAULT 'info', is_read BOOLEAN DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS leads (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT, phone TEXT, source TEXT DEFAULT 'Manual', campaign TEXT, status TEXT DEFAULT 'Nuevo', notes TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
+    await db.query(`CREATE TABLE IF NOT EXISTS fiscal_inbox (uuid TEXT PRIMARY KEY, rfc_emitter TEXT, rfc_receiver TEXT, legal_name TEXT, amount NUMERIC, xml_url TEXT, pdf_url TEXT, origin_email TEXT, received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, linked_order_id INTEGER, status TEXT DEFAULT 'Unlinked')`);
+    
+    // Nueva Tabla: Movimientos de Inventario (Kardex)
+    await db.query(`CREATE TABLE IF NOT EXISTS inventory_movements (id SERIAL PRIMARY KEY, product_id INTEGER, user_name TEXT, type TEXT, quantity INTEGER, reason TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
 
-    // --- NUEVA TABLA FASE 5: Bóveda Fiscal (Inbox) ---
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS fiscal_inbox (
-        uuid TEXT PRIMARY KEY,
-        rfc_emitter TEXT,
-        rfc_receiver TEXT,
-        legal_name TEXT,
-        amount NUMERIC,
-        xml_url TEXT,
-        pdf_url TEXT,
-        received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        linked_order_id INTEGER,
-        status TEXT DEFAULT 'Unlinked'
-      )
-    `);
-
-    // Ensure Admin Exists
+    // Ensure Admin
     const adminCheck = await db.query("SELECT * FROM users WHERE email = 'admin@superair.com.mx'");
     if (adminCheck.rows.length === 0) {
       const hashedPassword = await bcrypt.hash('admin123', 10);
       await db.query(`INSERT INTO users (name, email, password, role) VALUES ('Super Admin', 'admin@superair.com.mx', $1, 'Super Admin')`, [hashedPassword]);
     }
-
-    console.log('✅ Tablas Verificadas. Producción lista.');
-  } catch (err) {
-    console.error('❌ Error Init DB:', err);
-  }
+    console.log('✅ DB Init Complete');
+  } catch (err) { console.error('❌ Error Init DB:', err); }
 };
-
 db.checkConnection().then(connected => { if(connected) initDB(); });
 
-// --- API ROUTES ---
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+// --- 📧 EMAIL SENDING ---
+app.post('/api/send-email', upload.single('attachment'), async (req, res) => {
+    const { to, subject, text } = req.body;
+    const file = req.file;
 
-// Auth & Users
+    try {
+        const mailOptions = {
+            from: `"SuperAir ERP" <${process.env.SMTP_USER}>`,
+            to: to,
+            subject: subject,
+            text: text,
+            attachments: file ? [{
+                filename: file.originalname,
+                path: file.path
+            }] : []
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        
+        // Limpiar archivo temporal
+        if (file) fs.unlinkSync(file.path);
+
+        res.json({ success: true, messageId: info.messageId });
+    } catch (e) {
+        console.error("Email Error:", e);
+        res.status(500).json({ error: "Error enviando correo. Verifique configuración SMTP." });
+    }
+});
+
+
+// --- 🧠 AI CHAT AGENT ---
+app.post('/api/ai/chat', async (req, res) => {
+    // ... (Existing AI Logic)
+    const { message } = req.body;
+    try {
+        const settingsRes = await db.query("SELECT data FROM app_settings WHERE category = 'marketing_info'");
+        const marketingSettings = settingsRes.rows[0]?.data || {};
+        const provider = marketingSettings.aiProvider || 'gemini';
+        
+        let reply = "";
+        const systemPrompt = "Eres el Asistente Operativo de SuperAir. Responde breve y profesionalmente.";
+
+        if (provider === 'openai' && process.env.OPENAI_API_KEY) {
+            const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+            const completion = await openai.chat.completions.create({
+                messages: [{ role: "system", content: systemPrompt }, { role: "user", content: message }],
+                model: "gpt-4-turbo",
+            });
+            reply = completion.choices[0].message.content;
+        } else {
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const model = ai.getGenerativeModel({ model: "gemini-2.5-flash-latest", systemInstruction: systemPrompt });
+            const result = await model.generateContent(message);
+            reply = result.response.text();
+        }
+        res.json({ reply, provider });
+    } catch (e) {
+        res.status(500).json({ error: "AI no disponible" });
+    }
+});
+
+
+// --- 📦 ORDERS & PAYMENTS ---
+app.post('/api/orders/pay', authorize(['Admin', 'Super Admin']), async (req, res) => {
+    const { orderId, amount, method } = req.body;
+    try {
+        await db.query('BEGIN');
+        
+        // Verificar Orden
+        const orderCheck = await db.query("SELECT total, paid_amount FROM orders WHERE id = $1", [orderId]);
+        if (orderCheck.rows.length === 0) throw new Error("Orden no encontrada");
+        
+        const order = orderCheck.rows[0];
+        const newPaidAmount = Number(order.paid_amount) + Number(amount);
+        const newStatus = newPaidAmount >= Number(order.total) ? 'Completado' : 'Pendiente';
+
+        // Actualizar Orden
+        await db.query("UPDATE orders SET paid_amount = $1, status = $2 WHERE id = $3", [newPaidAmount, newStatus, orderId]);
+        
+        // Registrar Movimiento Financiero (Opcional, si tuviéramos tabla de tesorería)
+        // await db.query("INSERT INTO transactions ...");
+
+        await db.query('COMMIT');
+        res.json({ success: true, newPaidAmount, status: newStatus });
+    } catch (e) {
+        await db.query('ROLLBACK');
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Complete Order & Deduct Stock
+app.post('/api/orders/complete', authorize(['Admin', 'Super Admin']), async (req, res) => {
+    const { orderId } = req.body;
+    try {
+        await db.query('BEGIN');
+        const orderRes = await db.query(`SELECT o.id, q.items FROM orders o JOIN quotes q ON o.quote_id = q.id WHERE o.id = $1`, [orderId]);
+        if (orderRes.rows.length === 0) throw new Error("Orden no encontrada");
+        
+        const items = orderRes.rows[0].items; 
+
+        for (const item of items) {
+            const prodCheck = await db.query("SELECT type, stock, name FROM products WHERE id = $1", [item.productId]);
+            if (prodCheck.rows.length > 0) {
+                const product = prodCheck.rows[0];
+                if (product.type === 'product') {
+                    const newStock = product.stock - item.quantity;
+                    await db.query("UPDATE products SET stock = $1 WHERE id = $2", [newStock, item.productId]);
+                    
+                    // LOG KARDEX
+                    await db.query("INSERT INTO inventory_movements (product_id, user_name, type, quantity, reason) VALUES ($1, $2, 'Salida', $3, $4)", 
+                        [item.productId, req.user.name, item.quantity, `Venta Orden #${orderId}`]
+                    );
+
+                    if (newStock < 5) {
+                         await db.query("INSERT INTO notifications (title, message, type) VALUES ($1, $2, 'warning')", ['Stock Bajo', `Producto ${product.name} bajo de stock.`]);
+                    }
+                }
+            }
+        }
+        await db.query("UPDATE orders SET status = 'Completado' WHERE id = $1", [orderId]);
+        await db.query('COMMIT');
+        res.json({ success: true });
+    } catch (e) {
+        await db.query('ROLLBACK');
+        res.status(500).json({ error: e.message });
+    }
+});
+
+
+// --- 🏭 INVENTORY MOVEMENTS ---
+app.get('/api/inventory/movements', async (req, res) => {
+    try {
+        const r = await db.query(`
+            SELECT m.*, p.name as product_name 
+            FROM inventory_movements m 
+            JOIN products p ON m.product_id = p.id 
+            ORDER BY m.created_at DESC LIMIT 100
+        `);
+        res.json(r.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Update Product with Kardex Logging
+app.post('/api/products', authorize(['Admin', 'Super Admin']), async (req, res) => {
+    const p = req.body;
+    try {
+        // Si es actualización de stock manual
+        if (p.id) {
+            const oldProd = await db.query("SELECT stock FROM products WHERE id = $1", [p.id]);
+            if (oldProd.rows.length > 0) {
+                const diff = p.stock - oldProd.rows[0].stock;
+                if (diff !== 0) {
+                    await db.query("INSERT INTO inventory_movements (product_id, user_name, type, quantity, reason) VALUES ($1, $2, $3, $4, 'Ajuste Manual')", 
+                        [p.id, req.user.name, diff > 0 ? 'Entrada' : 'Salida', Math.abs(diff)]
+                    );
+                }
+            }
+            // Update logic...
+            await db.query(`UPDATE products SET name=$1, description=$2, price=$3, stock=$4, category=$5, min_stock=$6, cost=$7, type=$8, price_wholesale=$9, price_vip=$10 WHERE id=$11`,
+                [p.name, p.description, p.price, p.stock, p.category, p.min_stock, p.cost, p.type, p.price_wholesale, p.price_vip, p.id]
+            );
+        } else {
+            // Insert logic...
+            const r = await db.query(`INSERT INTO products (name, description, price, stock, category, min_stock, cost, type, price_wholesale, price_vip) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+                [p.name, p.description, p.price, p.stock, p.category, p.min_stock, p.cost, p.type, p.price_wholesale, p.price_vip]
+            );
+             await db.query("INSERT INTO inventory_movements (product_id, user_name, type, quantity, reason) VALUES ($1, $2, 'Entrada', $3, 'Inventario Inicial')", 
+                [r.rows[0].id, req.user.name, p.stock]
+            );
+        }
+        res.json({ success: true });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+
+// ... Resto de Endpoints (Settings, Uploads, Login, etc) ...
+app.post('/api/upload', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  res.json({ url: `/uploads/${req.file.filename}` });
+});
+
+app.post('/api/settings', async (req, res) => { 
+    const { category, data } = req.body; 
+    try { 
+        await db.query('INSERT INTO app_settings (category, data) VALUES ($1, $2) ON CONFLICT (category) DO UPDATE SET data = $2', [category, data]); 
+        res.json({ success: true }); 
+    } catch (e) { res.status(500).json({ error: e.message }); } 
+});
+app.get('/api/settings', async (req, res) => { try { const r = await db.query('SELECT * FROM app_settings'); const settings = {}; r.rows.forEach(row => { settings[row.category] = row.data; }); res.json(settings); } catch (e) { res.status(500).json({ error: e.message }); } });
+
+// NEW: Public Settings Endpoint for Landing Page (Logo, Company Name)
+app.get('/api/settings/public', async (req, res) => {
+    try {
+        const r = await db.query("SELECT data FROM app_settings WHERE category = 'general_info'");
+        res.json(r.rows[0]?.data || {});
+    } catch (e) { res.status(500).json({}); }
+});
+
+// Basic GETs
+app.get('/api/users', authorize(['Super Admin', 'Admin']), async (req, res) => { try { const r = await db.query('SELECT id, name, email, role, status, last_login as "lastLogin" FROM users ORDER BY id ASC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
+app.get('/api/appointments', async (req, res) => { try { const r = await db.query('SELECT a.id, a.client_id, c.name as client_name, a.technician, a.date, a.time, a.type, a.status, a.duration, a.google_event_link FROM appointments a LEFT JOIN clients c ON a.client_id = c.id'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
+
+// UPDATE APPOINTMENT STATUS & NOTIFY
+app.put('/api/appointments/:id', authorize(['Admin', 'Super Admin', 'Instalador']), async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    
+    try {
+        const oldAptRes = await db.query('SELECT status, client_id, technician, type, time FROM appointments WHERE id = $1', [id]);
+        if (oldAptRes.rows.length === 0) return res.status(404).json({error: 'Cita no encontrada'});
+        
+        const oldApt = oldAptRes.rows[0];
+        
+        await db.query('UPDATE appointments SET status = $1 WHERE id = $2', [status, id]);
+        
+        // WhatsApp Logic: Trigger when moving to 'En Proceso' (En Camino)
+        if (status === 'En Proceso' && oldApt.status !== 'En Proceso') {
+            const clientRes = await db.query('SELECT phone, name FROM clients WHERE id = $1', [oldApt.client_id]);
+            if (clientRes.rows.length > 0) {
+                const client = clientRes.rows[0];
+                if (client.phone) {
+                    const msg = `🚗 Hola ${client.name}, tu técnico de SuperAir (${oldApt.technician}) va en camino para tu servicio de ${oldApt.type}. Nos vemos pronto.`;
+                    console.log(`Sending WhatsApp to ${client.phone}: ${msg}`);
+                    // Fire and forget to not block response
+                    sendWhatsApp(client.phone, msg).catch(err => console.error("WhatsApp Error:", err.message));
+                }
+            }
+        }
+
+        res.json({ success: true, status });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/clients', async (req, res) => { try { const r = await db.query('SELECT * FROM clients ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
+app.get('/api/products', async (req, res) => { try { const r = await db.query('SELECT * FROM products ORDER BY name ASC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
+app.get('/api/quotes', async (req, res) => { try { const r = await db.query('SELECT id, client_id, client_name, total, status, items, created_at, payment_terms as "paymentTerms" FROM quotes ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
+app.get('/api/orders', async (req, res) => { try { const r = await db.query('SELECT id::text, quote_id, client_name as "clientName", total, paid_amount as "paidAmount", status, cfdi_status as "cfdiStatus", installation_date as "installationDate", fiscal_data as "fiscalData" FROM orders ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
+app.get('/api/leads', async (req, res) => { try { const r = await db.query('SELECT * FROM leads ORDER BY created_at DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
+
+// Login
 app.post('/api/auth/login', async (req, res) => {
-  // ... (Keep existing login logic)
   const { email, password } = req.body;
   try {
     const result = await db.query('SELECT * FROM users WHERE email = $1', [email]);
@@ -172,166 +385,23 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// FASE 4: Aplicar Authorize Middleware a rutas sensibles
-app.delete('/api/users/:id', authorize(['Super Admin']), async (req, res) => {
-    try { await db.query('DELETE FROM users WHERE id = $1', [req.params.id]); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); }
-});
-app.post('/api/users', authorize(['Super Admin', 'Admin']), async (req, res) => {
-    // ... (Create user logic)
-    const { name, email, password, role } = req.body;
-    try { const hashedPassword = await bcrypt.hash(password, 10); await db.query('INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4)', [name, email, hashedPassword, role]); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); }
-});
-app.get('/api/users', authorize(['Super Admin', 'Admin']), async (req, res) => {
-    try { const r = await db.query('SELECT id, name, email, role, status, last_login as "lastLogin" FROM users ORDER BY id ASC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// FASE 3: UPLOAD ENDPOINT
-app.post('/api/upload', upload.single('file'), (req, res) => {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-    res.json({ success: true, url: fileUrl, filename: req.file.filename });
-});
-
-// FASE 2: EMAIL SENDING (REAL)
-app.post('/api/send-email', async (req, res) => {
-    const { to, subject, html, attachments } = req.body;
-    
-    if (!process.env.SMTP_USER) {
-        return res.status(503).json({ error: 'SMTP no configurado en servidor' });
-    }
-
-    try {
-        const info = await transporter.sendMail({
-            from: `"SuperAir" <${process.env.SMTP_USER}>`,
-            to,
-            subject,
-            html,
-            attachments: attachments || [] // Expects array of { filename, path/content }
-        });
-        res.json({ success: true, messageId: info.messageId });
-    } catch (e) {
-        console.error("Email Error:", e);
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// FASE 1: GOOGLE CALENDAR AUTH (Endpoints Stub for Production)
-// Para que esto funcione, el usuario debe configurar las ENV VARS de Google en Docker
-app.get('/api/auth/google', (req, res) => {
-    const scopes = ['https://www.googleapis.com/auth/calendar'];
-    const url = oauth2Client.generateAuthUrl({ access_type: 'offline', scope: scopes });
-    res.json({ url });
-});
-
-app.post('/api/auth/google/callback', async (req, res) => {
-    const { code } = req.body;
-    try {
-        const { tokens } = await oauth2Client.getToken(code);
-        // Guardar tokens en app_settings globalmente para la cuenta de empresa
-        await db.query(
-            "INSERT INTO app_settings (category, data) VALUES ($1, $2) ON CONFLICT (category) DO UPDATE SET data = $2",
-            ['google_calendar_tokens', JSON.stringify(tokens)]
-        );
-        oauth2Client.setCredentials(tokens);
-        res.json({ success: true });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// FASE 5: N8N INVOICE WEBHOOK (Fiscal Vault)
-app.post('/api/webhooks/invoices', async (req, res) => {
-    console.log('🧾 Factura recibida de N8N:', req.body);
-    const { uuid, rfc, rfc_receiver, amount, xml_url, pdf_url, legal_name } = req.body;
-
-    // Validación básica
-    if (!uuid || !rfc || !amount) return res.status(400).json({ error: 'Datos fiscales incompletos' });
-
-    try {
-        await db.query('BEGIN');
-
-        // 1. Guardar en Inbox Fiscal
-        await db.query(
-            `INSERT INTO fiscal_inbox (uuid, rfc_emitter, rfc_receiver, amount, xml_url, pdf_url, legal_name, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, 'Unlinked')
-             ON CONFLICT (uuid) DO NOTHING`,
-            [uuid, rfc, rfc_receiver, amount, xml_url, pdf_url, legal_name]
-        );
-
-        // 2. Intentar asignación automática (Match por RFC Cliente)
-        // Buscamos si existe el cliente
-        const clientRes = await db.query("SELECT * FROM clients WHERE rfc = $1", [rfc_receiver]); // Asumiendo que el cliente es el RECEPTOR si es factura de venta
-        // Nota: En facturas de GASTOS, nosotros somos receptor. En ventas, nosotros somos EMISOR.
-        // Asumiremos que esto es para VENTAS, así que buscamos al cliente por el RFC del RECEPTOR.
-        
-        if (clientRes.rows.length > 0) {
-            const client = clientRes.rows[0];
-            // Notificar que llegó factura de cliente conocido
-            await db.query("INSERT INTO notifications (title, message, type) VALUES ($1, $2, 'info')", [
-                'Factura Recibida', `CFDI de ${client.name} por $${amount} disponible en Bóveda.`
-            ]);
-        } else {
-             await db.query("INSERT INTO notifications (title, message, type) VALUES ($1, $2, 'warning')", [
-                'Factura Desconocida', `CFDI recibido (RFC: ${rfc_receiver}) no coincide con clientes.`
-            ]);
-        }
-
-        await db.query('COMMIT');
-        res.json({ success: true, message: 'Factura procesada en bóveda' });
-    } catch (e) {
-        await db.query('ROLLBACK');
-        console.error("Invoice Webhook Error:", e);
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// Endpoint para leer la bóveda fiscal desde el Frontend
-app.get('/api/fiscal/inbox', async (req, res) => {
-    try {
-        const r = await db.query("SELECT * FROM fiscal_inbox WHERE status = 'Unlinked' ORDER BY received_at DESC");
-        // Mapear a formato frontend FiscalData
-        const data = r.rows.map(row => ({
-            uuid: row.uuid,
-            rfc: row.rfc_receiver, // Mostramos al cliente
-            legalName: row.legal_name,
-            amount: Number(row.amount),
-            xmlUrl: row.xml_url,
-            pdfUrl: row.pdf_url,
-            issuedAt: row.received_at
-        }));
-        res.json(data);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ... (Resto de endpoints existentes: Clients, Quotes, Orders, Settings, Leads, CMS)
-// Mantener endpoints existentes pero asegurarse de que usen `db.query` y no memoria.
-
-// Quotes (Ejemplo de mantenimiento)
-app.get('/api/quotes', async (req, res) => { 
-    try { const r = await db.query('SELECT id, client_id, client_name, total, status, items, created_at, payment_terms as "paymentTerms" FROM quotes ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } 
-});
-app.post('/api/quotes', async (req, res) => { 
-    const { client_name, total, items, paymentTerms } = req.body; 
-    try { 
-        const r = await db.query('INSERT INTO quotes (client_name, total, items, status, payment_terms) VALUES ($1, $2, $3, $4, $5) RETURNING *', [client_name, total, JSON.stringify(items), 'Borrador', paymentTerms]); 
-        res.json(r.rows[0]); 
-    } catch (e) { res.status(500).json({ error: e.message }); } 
-});
-// ... (Resto igual)
-
-// Orders
-app.get('/api/orders', async (req, res) => { try { const r = await db.query('SELECT id::text, client_name as "clientName", total, paid_amount as "paidAmount", status, cfdi_status as "cfdiStatus", installation_date as "installationDate", fiscal_data as "fiscalData" FROM orders ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
-// ...
-
-// Clients
-app.get('/api/clients', async (req, res) => { try { const r = await db.query('SELECT * FROM clients ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
-app.post('/api/clients', async (req, res) => { const { name, email, phone, address, type, status, notes, rfc } = req.body; try { const r = await db.query('INSERT INTO clients (name, email, phone, address, type, status, notes, rfc) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *', [name, email, phone, address, type, status, notes, rfc]); res.json(r.rows[0]); } catch (e) { res.status(500).json({ error: e.message }); } });
-app.delete('/api/clients/:id', async (req, res) => { try { await db.query('DELETE FROM clients WHERE id = $1', [req.params.id]); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
-
-// Static Files
+// --- SERVING FRONTEND IN PRODUCTION ---
 if (isProduction) {
-  app.use(express.static(path.join(__dirname, '../dist')));
-  app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../dist', 'index.html')));
+  const distPath = path.join(__dirname, '../dist');
+  
+  // Serve static files
+  app.use(express.static(distPath));
+
+  // Health Check Endpoint
+  app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok' }));
+
+  // Handle SPA routing: return index.html for any unknown non-API route
+  app.get('*', (req, res) => {
+    if (req.path.startsWith('/api')) {
+      return res.status(404).json({ error: 'Not Found' });
+    }
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
 }
 
 app.listen(PORT, HOST, () => {

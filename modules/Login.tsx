@@ -22,6 +22,9 @@ const Login: React.FC = () => {
   const [showRecovery, setShowRecovery] = useState(false);
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [isRecovering, setIsRecovering] = useState(false);
+  
+  // Custom Logo
+  const [logoUrl, setLogoUrl] = useState<string | null>(localStorage.getItem('superair_logo'));
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -86,8 +89,14 @@ const Login: React.FC = () => {
             <ArrowLeft size={16} /> Volver al sitio
           </Link>
           <div className="flex items-center gap-2 font-black text-2xl text-sky-400">
-            <Wind size={28} />
-            <span>SuperAir</span>
+            {logoUrl ? (
+                <img src={logoUrl} alt="Logo" className="h-10 object-contain" />
+            ) : (
+                <>
+                    <Wind size={28} />
+                    <span>SuperAir</span>
+                </>
+            )}
           </div>
         </div>
 

@@ -1,29 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from '../context/AuthContext';
 import { 
-  LayoutDashboard, 
-  Construction, 
-  Users, 
-  FileText, 
-  Package, 
-  Calendar, 
-  Settings, 
-  Menu, 
-  X,
-  Wind,
-  ShieldCheck,
-  ShoppingBag,
-  BarChart3,
-  LogOut,
-  Bell,
-  CheckCircle2,
-  AlertTriangle,
-  Info,
-  Magnet
+  LayoutDashboard, Construction, Users, FileText, Package, Calendar, Settings, Menu, X, Wind,
+  ShieldCheck, ShoppingBag, BarChart3, LogOut, Bell, CheckCircle2, AlertTriangle, Info, Magnet
 } from 'lucide-react';
 import { AppRoute } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
+import AdminChat from './AdminChat';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -34,7 +18,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { notifications, unreadCount, markAllAsRead, toasts, removeToast } = useNotification();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(localStorage.getItem('superair_logo'));
   const location = useLocation();
+
+  useEffect(() => {
+      const handleStorage = () => setLogoUrl(localStorage.getItem('superair_logo'));
+      window.addEventListener('storage', handleStorage);
+      return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   const menuItems = [
     { name: 'Dashboard', icon: LayoutDashboard, route: AppRoute.DASHBOARD },
@@ -68,12 +59,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900 relative">
       
       {/* TOAST CONTAINER */}
-      <div className="fixed bottom-6 right-6 z-[60] flex flex-col gap-3">
+      <div className="fixed bottom-6 right-6 z-[60] flex flex-col gap-3 pointer-events-none">
         {toasts.map(t => (
           <div 
             key={t.id} 
             onClick={() => removeToast(t.id)}
-            className={`flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl animate-in slide-in-from-right-10 cursor-pointer ${
+            className={`pointer-events-auto flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl animate-in slide-in-from-right-10 cursor-pointer ${
                 t.type === 'success' ? 'bg-slate-900 text-white' : 
                 t.type === 'error' ? 'bg-rose-600 text-white' : 
                 'bg-white text-slate-800 border border-slate-200'
@@ -91,11 +82,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         <div className="p-4 flex items-center justify-between border-b border-slate-800 h-16 shrink-0">
           {isSidebarOpen && (
             <div className="flex items-center gap-2 font-bold text-xl tracking-tight text-sky-400">
-              <Wind className="w-6 h-6" />
-              <span>SuperAir</span>
+              {logoUrl ? (
+                  <img src={logoUrl} alt="Logo" className="max-h-8 object-contain" />
+              ) : (
+                  <>
+                    <Wind className="w-6 h-6" />
+                    <span>SuperAir</span>
+                  </>
+              )}
             </div>
           )}
-          {!isSidebarOpen && <Wind className="w-8 h-8 text-sky-400 mx-auto" />}
+          {!isSidebarOpen && (logoUrl ? <img src={logoUrl} alt="Logo" className="w-8 h-8 object-contain mx-auto" /> : <Wind className="w-8 h-8 text-sky-400 mx-auto" />)}
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-1 hover:bg-slate-800 rounded-lg text-slate-400 transition-colors">
             {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
@@ -135,23 +132,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             {menuItems.find(m => m.route === activeRoute)?.name || 'Dashboard'}
           </h1>
           <div className="flex items-center gap-4 text-slate-500 text-sm font-bold">
-            <span className="hidden md:inline">
-                Status: <span className="text-emerald-500 animate-pulse">Online</span>
-            </span>
-            
-            {/* Notification Bell */}
             <div className="relative">
-              <button 
-                onClick={handleNotifClick}
-                className="p-2 relative hover:bg-slate-100 rounded-xl transition-colors text-slate-400 hover:text-slate-600"
-              >
+              <button onClick={handleNotifClick} className="p-2 relative hover:bg-slate-100 rounded-xl transition-colors text-slate-400 hover:text-slate-600">
                 <Bell size={20} />
-                {unreadCount > 0 && (
-                  <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white" />
-                )}
+                {unreadCount > 0 && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white" />}
               </button>
-
-              {/* Notification Dropdown */}
               {showNotifDropdown && (
                 <>
                   <div className="fixed inset-0 z-10 cursor-default" onClick={() => setShowNotifDropdown(false)} />
@@ -168,7 +153,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                           <div key={n.id} className={`p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors ${!n.isRead ? 'bg-sky-50/30' : ''}`}>
                             <p className="text-xs font-bold text-slate-800 mb-1">{n.title}</p>
                             <p className="text-[10px] text-slate-500 leading-relaxed">{n.message}</p>
-                            <p className="text-[9px] text-slate-300 mt-2 text-right">{new Date(n.createdAt).toLocaleTimeString()}</p>
                           </div>
                         ))
                       )}
@@ -189,8 +173,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             </div>
           </div>
         </header>
-        <section className="flex-1 overflow-y-auto p-8 bg-slate-50">
+        <section className="flex-1 overflow-y-auto p-8 bg-slate-50 relative">
           <div className="max-w-7xl mx-auto">{children}</div>
+          <AdminChat /> {/* Floating Admin AI Chat */}
         </section>
       </main>
     </div>

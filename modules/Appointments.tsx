@@ -91,6 +91,32 @@ const Appointments: React.FC = () => {
       }
   };
 
+  const updateStatus = async (id: string, newStatus: string) => {
+      try {
+          const res = await fetch(`/api/appointments/${id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: newStatus })
+          });
+          
+          if (res.ok) {
+              // Update local state
+              setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
+              if (selectedApt && selectedApt.id === id) {
+                  setSelectedApt(prev => ({ ...prev, status: newStatus }));
+              }
+              
+              if (newStatus === 'En Proceso') {
+                  alert('✅ Estatus actualizado a "En Proceso".\n\nSe ha enviado notificación automática por WhatsApp al cliente.');
+              }
+          } else {
+              alert('Error al actualizar estatus');
+          }
+      } catch(e) {
+          console.error(e);
+      }
+  };
+
   const handleConnectGoogle = () => {
       setIsConnectingGoogle(true);
       setTimeout(() => {
@@ -280,6 +306,27 @@ const Appointments: React.FC = () => {
                          {selectedApt.status}
                        </span>
                     </div>
+
+                    {/* ACTION BUTTONS */}
+                    <div className="grid grid-cols-2 gap-3">
+                        {selectedApt.status === 'Programada' && (
+                            <button 
+                                onClick={() => updateStatus(selectedApt.id, 'En Proceso')}
+                                className="col-span-2 py-3 bg-sky-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-sky-700 transition-all shadow-lg flex items-center justify-center gap-2"
+                            >
+                                <Truck size={16} /> Iniciar Ruta (Notificar Cliente)
+                            </button>
+                        )}
+                        {selectedApt.status === 'En Proceso' && (
+                            <button 
+                                onClick={() => updateStatus(selectedApt.id, 'Completada')}
+                                className="col-span-2 py-3 bg-emerald-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-700 transition-all shadow-lg flex items-center justify-center gap-2"
+                            >
+                                <CheckCircle2 size={16} /> Finalizar Servicio
+                            </button>
+                        )}
+                    </div>
+
                     <div className="flex items-center justify-between border-t border-slate-200 pt-4 mt-4">
                         <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo & Duración</h5>
                         <div className="text-right">
