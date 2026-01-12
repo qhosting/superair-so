@@ -1,4 +1,5 @@
 
+
 export interface Client {
   id: string;
   name: string;
@@ -39,7 +40,7 @@ export interface Quote {
   id: string;
   clientId: string;
   clientName?: string;
-  items: { productId: string; quantity: number; price: number }[];
+  items: { productId: string; productName?: string; quantity: number; price: number }[];
   total: number;
   status: 'Borrador' | 'Enviada' | 'Aceptada' | 'Rechazada';
   paymentTerms: PaymentTerms;

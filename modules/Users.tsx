@@ -1,5 +1,4 @@
 
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   UserPlus, Search, Shield, MoreVertical, Key, UserCheck, UserX, Settings2, 
@@ -42,13 +41,22 @@ const Users: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({ id: '', name: '', email: '', password: '', role: UserRole.ADMIN as string, status: 'Activo' });
 
+  // Data Fetching
+  const fetchUsers = async () => {
+      setLoading(true);
+      try {
+          const res = await fetch('/api/users');
+          const data = await res.json();
+          if(Array.isArray(data)) setUsers(data);
+      } catch (e) {
+          console.error("Error fetching users", e);
+      } finally {
+          setLoading(false);
+      }
+  };
+
   useEffect(() => {
-    fetch('/api/users')
-      .then(res => res.json())
-      .then(data => {
-        if(Array.isArray(data)) setUsers(data);
-      })
-      .finally(() => setLoading(false));
+    fetchUsers();
   }, []);
 
   // --- CRUD Operations ---
@@ -64,7 +72,7 @@ const Users: React.FC = () => {
           id: user.id, 
           name: user.name, 
           email: user.email, 
-          password: '', // Don't show existing password
+          password: '', // Don't show existing password hash
           role: user.role, 
           status: user.status 
       });
@@ -73,37 +81,30 @@ const Users: React.FC = () => {
   };
 
   const handleSaveUser = async () => {
-    // In a real app, verify password requirements here
     try {
+      let res;
       if (isEditing) {
-          // Mock Update (In real implementation, add PUT endpoint)
-          // For now, we delete and re-create locally or handle via existing API logic limitations
-          // Assuming API supports update or we simulate it:
-          const updatedUsers = users.map(u => u.id === formData.id ? { 
-            ...u, 
-            name: formData.name, 
-            email: formData.email, 
-            role: formData.role as UserRole, 
-            status: formData.status as 'Activo' | 'Inactivo'
-          } : u);
-          setUsers(updatedUsers); // Optimistic update
-          alert('Usuario actualizado correctamente');
+          res = await fetch(`/api/users/${formData.id}`, {
+              method: 'PUT',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify(formData)
+          });
       } else {
-          const res = await fetch('/api/users', {
+          res = await fetch('/api/users', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(formData)
           });
-          if(res.ok) {
-            alert('Usuario creado con éxito');
-            // Reload to get ID
-            const usersRes = await fetch('/api/users');
-            const data = await usersRes.json();
-            setUsers(data);
-          }
       }
-      setShowUserModal(false);
-    } catch(e) { alert('Error de operación'); }
+
+      if(res.ok) {
+        alert(isEditing ? 'Usuario actualizado' : 'Usuario creado');
+        setShowUserModal(false);
+        fetchUsers();
+      } else {
+          alert('Error en operación. Verifique datos.');
+      }
+    } catch(e) { alert('Error de conexión'); }
   };
 
   const handleDeleteUser = async (id: string) => {
@@ -115,14 +116,21 @@ const Users: React.FC = () => {
     }
   };
 
-  const toggleUserStatus = (id: string) => {
-      setUsers(users.map(u => {
-          if (u.id === id) {
-              const newStatus = u.status === 'Activo' ? 'Inactivo' : 'Activo';
-              return { ...u, status: newStatus };
-          }
-          return u;
-      }));
+  const toggleUserStatus = async (user: User) => {
+      const newStatus = user.status === 'Activo' ? 'Inactivo' : 'Activo';
+      // Optimistic update
+      setUsers(users.map(u => u.id === user.id ? { ...u, status: newStatus as any } : u));
+      
+      try {
+          await fetch(`/api/users/${user.id}`, {
+              method: 'PUT',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ ...user, status: newStatus })
+          });
+      } catch (e) {
+          console.error(e);
+          fetchUsers(); // Revert on error
+      }
   };
 
   // --- Render Helpers ---
@@ -262,7 +270,7 @@ const Users: React.FC = () => {
                     </td>
                     <td className="px-8 py-5">
                         <button 
-                            onClick={() => toggleUserStatus(user.id)}
+                            onClick={() => toggleUserStatus(user)}
                             className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-all ${
                                 user.status === 'Activo' 
                                 ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' 
@@ -509,9 +517,18 @@ const Users: React.FC = () => {
                     )}
                  </div>
                  {isEditing && (
-                     <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex gap-3 items-center">
-                         <ShieldAlert className="text-amber-500" size={20} />
-                         <p className="text-xs text-amber-700 font-medium">Para resetear la contraseña, usa el botón "Recuperar Acceso" en el login.</p>
+                     <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex flex-col gap-2">
+                         <div className="flex gap-3 items-center">
+                             <ShieldAlert className="text-amber-500" size={20} />
+                             <p className="text-xs text-amber-700 font-medium">Cambiar Contraseña (Opcional)</p>
+                         </div>
+                         <input 
+                            type="password" 
+                            placeholder="Nueva contraseña..." 
+                            className="w-full p-3 bg-white border border-amber-200 rounded-xl outline-none text-xs font-bold"
+                            value={formData.password}
+                            onChange={e => setFormData({...formData, password: e.target.value})}
+                        />
                      </div>
                  )}
               </div>

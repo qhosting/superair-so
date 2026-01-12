@@ -464,6 +464,33 @@ app.post('/api/users', authorize(['Super Admin', 'Admin']), async (req, res) => 
         res.json({success:true});
     } catch(e) { res.status(500).json({error:e.message}); }
 });
+
+// Added PUT endpoint for updating users
+app.put('/api/users/:id', authorize(['Super Admin', 'Admin']), async (req, res) => {
+    const { id } = req.params;
+    const { name, email, role, status, password } = req.body;
+    try {
+        let query = "UPDATE users SET name=$1, email=$2, role=$3, status=$4";
+        let params = [name, email, role, status];
+        let idx = 5;
+
+        if (password && password.trim() !== '') {
+            const hashedPassword = await bcrypt.hash(password, 10);
+            query += `, password=$${idx}`;
+            params.push(hashedPassword);
+            idx++;
+        }
+
+        query += ` WHERE id=$${idx}`;
+        params.push(id);
+
+        await db.query(query, params);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.delete('/api/users/:id', authorize(['Super Admin', 'Admin']), async (req, res) => { try { await db.query("DELETE FROM users WHERE id=$1", [req.params.id]); res.json({success:true}); } catch(e) { res.status(500).json({error:e.message}); } });
 
 
