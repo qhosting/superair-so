@@ -26,6 +26,37 @@ import {
 import { Link, useLocation } from '../context/AuthContext';
 import { LandingSection } from '../types';
 
+// --- CONTENIDO POR DEFECTO (FALLBACK) ---
+const DEFAULT_LANDING_CONTENT: LandingSection[] = [
+    { 
+        id: 'hero-default', 
+        type: 'hero', 
+        title: 'Climatización Inteligente', 
+        subtitle: 'Soluciones integrales en aire acondicionado. Instalación, mantenimiento y reparación con estándares de ingeniería.', 
+        buttonText: 'Cotizar Ahora', 
+        imageUrl: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=2069' 
+    },
+    { 
+        id: 'services-default', 
+        type: 'services', 
+        title: 'Expertos en Confort', 
+        subtitle: 'Tecnología Inverter y eficiencia energética para tu hogar o negocio.', 
+        buttonText: 'Ver Servicios',
+        items: [
+            { title: 'Instalación Certificada', desc: 'Montaje profesional de Minisplits y unidades paquete con garantía de vacío y hermeticidad.', icon: 'wrench', image: 'https://images.unsplash.com/photo-1621905252507-b354bcadcabc?q=80&w=2070' },
+            { title: 'Mantenimiento Preventivo', desc: 'Limpieza profunda (coil cleaner), revisión de presiones y amperaje para ahorrar energía.', icon: 'shield', image: 'https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?q=80&w=2070' },
+            { title: 'Reparación Express', desc: 'Diagnóstico preciso de códigos de error y fugas. Refacciones originales.', icon: 'zap', image: 'https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?q=80&w=2070' }
+        ]
+    },
+    { 
+        id: 'cta-default', 
+        type: 'cta', 
+        title: '¿Tu equipo no enfría?', 
+        subtitle: 'Agenda una visita técnica hoy mismo. Atendemos urgencias.', 
+        buttonText: 'Contactar Técnico' 
+    }
+];
+
 const LandingPage: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
@@ -85,10 +116,12 @@ const LandingPage: React.FC = () => {
         fetch('/api/settings/public').then(r => r.ok ? r.json() : null)
     ])
     .then(([cmsData, settingsData]) => {
+        // Use CMS data if available, otherwise use DEFAULT_LANDING_CONTENT
         if (cmsData && Array.isArray(cmsData) && cmsData.length > 0) {
           setCmsSections(cmsData);
         } else {
-          setCmsSections(null);
+          console.log("CMS Empty: Using Default Template");
+          setCmsSections(DEFAULT_LANDING_CONTENT);
         }
         
         if (settingsData && settingsData.logoUrl) {
@@ -96,8 +129,8 @@ const LandingPage: React.FC = () => {
         }
     })
     .catch(err => {
-        console.log("Info: Usando diseño estático por defecto");
-        setCmsSections(null);
+        console.log("API Error: Usando diseño estático por defecto");
+        setCmsSections(DEFAULT_LANDING_CONTENT);
     })
     .finally(() => setLoadingCms(false));
   }, []);
@@ -406,12 +439,10 @@ const LandingPage: React.FC = () => {
         </div>
       </nav>
 
-      {loadingCms ? (
-          <div className="h-screen flex items-center justify-center">
-              <Loader2 className="animate-spin text-sky-600" size={48} />
-          </div>
-      ) : cmsSections ? (
-          // RENDERIZADO DINÁMICO (CMS)
+      {/* RENDERIZADO DINÁMICO CON FALLBACK */}
+      {/* Si loadingCms es true, muestra loader. Si hay cmsSections, renderiza. Si no (y ya terminó de cargar), usa DEFAULT_LANDING_CONTENT implícitamente vía estado */}
+      
+      {cmsSections ? (
           <div className="pt-0">
               {cmsSections.map(section => renderDynamicSection(section))}
               
@@ -525,11 +556,11 @@ const LandingPage: React.FC = () => {
               </section>
           </div>
       ) : (
-          // FALLBACK SI TODO FALLA (VACÍO)
+          // SOLO SE MUESTRA SI TODO FALLA Y AUN ESTA CARGANDO (Raro caso)
           <div className="h-screen flex items-center justify-center">
              <div className="text-center">
                  <Loader2 className="animate-spin text-slate-300 mx-auto mb-4" size={48} />
-                 <p className="text-slate-400 font-bold">Cargando Contenido...</p>
+                 <p className="text-slate-400 font-bold">Iniciando Servidores...</p>
              </div>
           </div>
       )}
