@@ -1,5 +1,4 @@
 
-
 export interface Client {
   id: string;
   name: string;
@@ -18,15 +17,17 @@ export interface Product {
   id: string;
   name: string;
   description: string;
-  price: number; // Precio Público Base
-  cost?: number; // Nuevo: Costo Unitario
-  price_wholesale?: number; // Nuevo: Precio Mayoreo
-  price_vip?: number; // Nuevo: Precio VIP/Distribuidor
+  price: number; // Precio Público Base (Precio de Lista)
+  cost?: number; // Costo Unitario
+  price_wholesale?: number; // Precio Mayoreo
+  price_vip?: number; // Precio VIP/Distribuidor
   stock: number;
   category: 'Unidad AC' | 'Refacción' | 'Servicio' | 'Insumo' | 'Herramienta';
-  type?: 'product' | 'service'; // Nuevo: Diferenciador
+  type?: 'product' | 'service'; 
   btu?: number;
   min_stock?: number;
+  location?: string; // Ubicación en almacén (Ej: Pasillo A-1)
+  duration?: number; // Duración estimada en minutos (Solo servicios)
 }
 
 export enum PaymentTerms {
@@ -55,7 +56,7 @@ export interface FiscalData {
   xmlUrl?: string;
   pdfUrl?: string;
   issuedAt?: string;
-  originEmail?: string; // To track where n8n got it from
+  originEmail?: string; 
 }
 
 export interface Order {
@@ -76,7 +77,7 @@ export interface Appointment {
   technician: string;
   date: string;
   time: string;
-  duration?: number; // Duración en minutos
+  duration?: number; 
   type: 'Instalación' | 'Mantenimiento' | 'Reparación' | 'Visita Técnica';
   status: 'Programada' | 'En Proceso' | 'Completada' | 'Cancelada';
 }
@@ -102,11 +103,10 @@ export interface Template {
   code: 'email_quote' | 'email_invoice' | 'pdf_quote_layout';
   name: string;
   subject?: string;
-  content: string; // HTML allowed
-  variables: string[]; // List of available vars e.g. {{client_name}}
+  content: string; 
+  variables: string[]; 
 }
 
-// --- LEADS ---
 export type LeadStatus = 'Nuevo' | 'Contactado' | 'Calificado' | 'Cotizado' | 'Ganado' | 'Perdido';
 
 export interface Lead {
@@ -115,13 +115,12 @@ export interface Lead {
   email?: string;
   phone?: string;
   source: 'Facebook' | 'Google' | 'Instagram' | 'Manual' | 'Web';
-  campaign?: string; // Nombre de la campaña de Ads
+  campaign?: string; 
   status: LeadStatus;
   notes?: string;
   createdAt: string;
 }
 
-// --- NOTIFICATIONS ---
 export interface AppNotification {
   id: number;
   title: string;
@@ -134,7 +133,7 @@ export interface AppNotification {
 export enum AppRoute {
   DASHBOARD = 'dashboard',
   BUILDER = 'builder',
-  LEADS = 'leads', // Nuevo
+  LEADS = 'leads', 
   CLIENTS = 'clients',
   QUOTES = 'quotes',
   SALES = 'sales',
@@ -145,13 +144,12 @@ export enum AppRoute {
   REPORTS = 'reports'
 }
 
-// --- CMS TYPES ---
 export type SectionType = 'hero' | 'about' | 'services' | 'history' | 'cta' | 'footer';
 
 export interface LandingItem {
   title: string;
   desc: string;
-  icon?: string; // Icon name string mapping
+  icon?: string; 
   image?: string;
 }
 
@@ -162,5 +160,5 @@ export interface LandingSection {
   subtitle: string;
   buttonText?: string;
   imageUrl?: string;
-  items?: LandingItem[]; // For services grid
+  items?: LandingItem[]; 
 }

@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, Plus, Package, AlertTriangle, ArrowUpRight, ArrowDownLeft, 
   Edit3, Filter, X, Warehouse, Boxes, Tag, Loader2, Trash2, Printer, 
-  Calculator, FileSpreadsheet, Wrench, Briefcase, History, Download
+  Calculator, FileSpreadsheet, Wrench, Briefcase, History, Download, MapPin, Clock
 } from 'lucide-react';
 import { Product } from '../types';
 import jsPDF from 'jspdf';
@@ -33,7 +33,7 @@ const Inventory: React.FC = () => {
 
   const [newProduct, setNewProduct] = useState<Partial<Product>>({
     name: '', description: '', price: 0, cost: 0, price_wholesale: 0, price_vip: 0,
-    stock: 0, category: 'Refacción', type: 'product', min_stock: 5
+    stock: 0, category: 'Refacción', type: 'product', min_stock: 5, location: '', duration: 0
   });
 
   const fetchProducts = async () => {
@@ -62,9 +62,14 @@ const Inventory: React.FC = () => {
       if(activeTab === 'history') fetchHistory();
   }, [activeTab]);
 
+  const handleOpenEdit = (p: Product) => {
+      setNewProduct(p);
+      setShowAddModal(true);
+  };
+
   const handleSaveProduct = async () => {
     if (!newProduct.name || !newProduct.price) {
-        alert("El nombre y precio público son obligatorios");
+        alert("El nombre y precio público (lista) son obligatorios");
         return;
     }
     try {
@@ -74,14 +79,16 @@ const Inventory: React.FC = () => {
             cost: Number(newProduct.cost) || 0,
             stock: newProduct.type === 'service' ? 0 : (Number(newProduct.stock) || 0),
             price_wholesale: Number(newProduct.price_wholesale) || 0,
-            price_vip: Number(newProduct.price_vip) || 0
+            price_vip: Number(newProduct.price_vip) || 0,
+            duration: newProduct.type === 'service' ? Number(newProduct.duration) : 0,
+            location: newProduct.type === 'product' ? newProduct.location : ''
         };
         const res = await fetch('/api/products', {
             method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
         });
         if(res.ok) {
             setShowAddModal(false);
-            setNewProduct({ name: '', description: '', price: 0, cost: 0, stock: 0, category: 'Refacción', type: 'product', min_stock: 5, price_wholesale: 0, price_vip: 0 });
+            setNewProduct({ name: '', description: '', price: 0, cost: 0, stock: 0, category: 'Refacción', type: 'product', min_stock: 5, price_wholesale: 0, price_vip: 0, location: '', duration: 0 });
             fetchProducts(); 
         }
     } catch(e) { alert("Error guardando producto."); }
@@ -120,12 +127,13 @@ const Inventory: React.FC = () => {
       // Filter only physical products
       const itemsToPrint = products.filter(p => p.type === 'product');
 
-      const tableColumn = ["ID", "Categoría", "Producto", "Sistema", "Físico (Conteo)"];
+      const tableColumn = ["ID", "Ubicación", "Categoría", "Producto", "Sistema", "Físico (Conteo)"];
       const tableRows: any[] = [];
 
       itemsToPrint.forEach((item) => {
           tableRows.push([
               item.id,
+              item.location || 'N/A',
               item.category,
               item.name,
               item.stock,
@@ -142,8 +150,8 @@ const Inventory: React.FC = () => {
           styles: { fontSize: 10, cellPadding: 3 },
           columnStyles: {
               0: { cellWidth: 15 },
-              3: { halign: 'center' },
-              4: { halign: 'center' }
+              4: { halign: 'center' },
+              5: { halign: 'center' }
           }
       });
 
@@ -215,13 +223,13 @@ const Inventory: React.FC = () => {
                 <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-6">
                     <div className="flex gap-4">
                         <button onClick={() => setShowPrintModal(true)} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200"><Printer size={16}/> Hojas de Conteo</button>
-                        <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-2 bg-sky-600 text-white rounded-xl font-bold text-xs hover:bg-sky-700 shadow-lg shadow-sky-600/20"><Plus size={16}/> Nuevo Ítem</button>
+                        <button onClick={() => { setNewProduct({ name: '', description: '', price: 0, cost: 0, stock: 0, category: 'Refacción', type: 'product', min_stock: 5, price_wholesale: 0, price_vip: 0, location: '', duration: 0 }); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-2 bg-sky-600 text-white rounded-xl font-bold text-xs hover:bg-sky-700 shadow-lg shadow-sky-600/20"><Plus size={16}/> Nuevo Ítem</button>
                     </div>
                     <div className="relative">
                         <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                         <input 
                         type="text" 
-                        placeholder="Buscar..." 
+                        placeholder="Buscar por nombre..." 
                         className="pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500 transition-all w-64"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -238,9 +246,10 @@ const Inventory: React.FC = () => {
                         <tr>
                         <th className="px-8 py-5">Ítem</th>
                         <th className="px-8 py-5">Tipo</th>
+                        <th className="px-8 py-5">Ubicación / Duración</th>
                         <th className="px-8 py-5">Existencia</th>
-                        <th className="px-8 py-5">Costo Unit.</th>
-                        <th className="px-8 py-5">Precio Público</th>
+                        <th className="px-8 py-5">Costo</th>
+                        <th className="px-8 py-5">Precio Lista</th>
                         <th className="px-8 py-5">Margen</th>
                         <th className="px-8 py-5 text-right">Acciones</th>
                         </tr>
@@ -265,8 +274,15 @@ const Inventory: React.FC = () => {
                                 <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
                                     p.type === 'service' ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-sky-50 text-sky-600 border-sky-100'
                                 }`}>
-                                    {p.type === 'service' ? 'Servicio' : 'Físico'}
+                                    {p.type === 'service' ? 'Servicio' : 'Producto'}
                                 </span>
+                                </td>
+                                <td className="px-8 py-6">
+                                    {p.type === 'service' ? (
+                                        <div className="flex items-center gap-1 text-slate-500 text-xs font-bold"><Clock size={12}/> {p.duration || 0} min</div>
+                                    ) : (
+                                        <div className="flex items-center gap-1 text-slate-500 text-xs font-bold"><MapPin size={12}/> {p.location || 'N/A'}</div>
+                                    )}
                                 </td>
                                 <td className="px-8 py-6">
                                 {p.type === 'service' ? (
@@ -288,6 +304,9 @@ const Inventory: React.FC = () => {
                                 </td>
                                 <td className="px-8 py-6 text-right">
                                 <div className="flex justify-end gap-2">
+                                    <button onClick={() => handleOpenEdit(p)} className="p-2 text-slate-300 hover:text-sky-500 hover:bg-sky-50 rounded-lg transition-all">
+                                        <Edit3 size={18}/>
+                                    </button>
                                     <button 
                                         onClick={() => handleDeleteProduct(p.id)}
                                         className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
@@ -392,12 +411,12 @@ const Inventory: React.FC = () => {
       {/* Add Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[120] flex items-center justify-center p-6">
-           <div className="bg-white w-full max-w-2xl rounded-[3.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">
-              <div className="p-10 border-b border-slate-100 flex items-center justify-between">
-                 <h3 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Nuevo Ítem</h3>
+           <div className="bg-white w-full max-w-2xl rounded-[3.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300 flex flex-col max-h-[90vh]">
+              <div className="p-10 border-b border-slate-100 flex items-center justify-between shrink-0">
+                 <h3 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">{newProduct.id ? 'Editar' : 'Nuevo'} Ítem</h3>
                  <button onClick={() => setShowAddModal(false)} className="p-3 hover:bg-slate-100 rounded-2xl transition-all"><X size={24}/></button>
               </div>
-              <div className="p-10 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+              <div className="p-10 space-y-6 overflow-y-auto custom-scrollbar">
                  {/* Row 1: Basic Info */}
                  <div className="grid grid-cols-3 gap-6">
                      <div className="col-span-2 space-y-1">
@@ -442,14 +461,14 @@ const Inventory: React.FC = () => {
                         <input type="number" value={newProduct.cost} onChange={e => setNewProduct({...newProduct, cost: parseFloat(e.target.value)})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-medium" />
                      </div>
                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Precio Público ($)</label>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-sky-600">Precio Lista ($)</label>
                         <input type="number" value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: parseFloat(e.target.value)})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-sky-600" />
                      </div>
                  </div>
 
                  {/* Margin Display */}
                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <span className="text-xs font-bold text-slate-500">Margen Esperado:</span>
+                    <span className="text-xs font-bold text-slate-500">Margen Esperado (Sobre Precio Lista):</span>
                     <span className="font-black text-lg text-emerald-600">
                         {calculateMargin(Number(newProduct.price), Number(newProduct.cost)).toFixed(1)}%
                     </span>
@@ -479,21 +498,50 @@ const Inventory: React.FC = () => {
                     </div>
                  </div>
 
-                 {/* Row 4: Stock (Conditional) */}
-                 {newProduct.type === 'product' && (
-                     <div className="grid grid-cols-2 gap-6 pt-4 border-t border-slate-100">
+                 {/* Row 4: Conditional Fields (Product vs Service) */}
+                 {newProduct.type === 'product' ? (
+                     <div className="grid grid-cols-3 gap-6 pt-4 border-t border-slate-100">
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Stock Inicial</label>
-                            <input type="number" value={newProduct.stock} onChange={e => setNewProduct({...newProduct, stock: parseFloat(e.target.value)})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none" />
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ubicación (Pasillo/Estante)</label>
+                            <div className="relative">
+                                <MapPin size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"/>
+                                <input 
+                                    value={newProduct.location || ''} 
+                                    onChange={e => setNewProduct({...newProduct, location: e.target.value})} 
+                                    className="w-full pl-10 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-sm" 
+                                    placeholder="Ej: A-12"
+                                />
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Stock Actual</label>
+                            <input type="number" value={newProduct.stock} onChange={e => setNewProduct({...newProduct, stock: parseFloat(e.target.value)})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" />
                         </div>
                         <div className="space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Alerta Mínimo</label>
                             <input type="number" value={newProduct.min_stock} onChange={e => setNewProduct({...newProduct, min_stock: parseFloat(e.target.value)})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none" />
                         </div>
                      </div>
+                 ) : (
+                     <div className="pt-4 border-t border-slate-100">
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Duración Estimada (Minutos)</label>
+                            <div className="relative">
+                                <Clock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"/>
+                                <input 
+                                    type="number" 
+                                    value={newProduct.duration || ''} 
+                                    onChange={e => setNewProduct({...newProduct, duration: parseFloat(e.target.value)})} 
+                                    className="w-full pl-10 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-sm" 
+                                    placeholder="Ej: 60"
+                                />
+                            </div>
+                            <p className="text-[9px] text-slate-400 mt-1 ml-1">Usado para calcular agenda de técnicos.</p>
+                        </div>
+                     </div>
                  )}
               </div>
-              <div className="p-10 border-t border-slate-100 flex gap-4 bg-slate-50/50">
+              <div className="p-10 border-t border-slate-100 flex gap-4 bg-slate-50/50 sticky bottom-0 z-10">
                  <button onClick={handleSaveProduct} className="flex-1 py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-sky-600/20">Guardar en Base de Datos</button>
                  <button onClick={() => setShowAddModal(false)} className="px-10 py-4 bg-white text-slate-500 rounded-2xl font-black uppercase tracking-widest text-[10px] border border-slate-200">Cancelar</button>
               </div>
