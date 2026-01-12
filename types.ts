@@ -1,5 +1,4 @@
 
-
 export interface Client {
   id: string;
   name: string;
@@ -148,6 +147,13 @@ export enum AppRoute {
 // --- CMS TYPES ---
 export type SectionType = 'hero' | 'about' | 'services' | 'history' | 'cta' | 'footer';
 
+export interface LandingItem {
+  title: string;
+  desc: string;
+  icon?: string; // Icon name string mapping
+  image?: string;
+}
+
 export interface LandingSection {
   id: string;
   type: SectionType;
@@ -155,4 +161,5 @@ export interface LandingSection {
   subtitle: string;
   buttonText?: string;
   imageUrl?: string;
+  items?: LandingItem[]; // For services grid
 }

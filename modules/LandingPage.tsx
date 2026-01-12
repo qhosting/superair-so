@@ -15,7 +15,13 @@ import {
   Zap,
   Loader2,
   CheckCircle2,
-  Calendar
+  Calendar,
+  Factory,
+  Layout,
+  FileText as FileIcon,
+  Percent,
+  CreditCard,
+  Check
 } from 'lucide-react';
 import { Link, useLocation } from '../context/AuthContext';
 import { LandingSection } from '../types';
@@ -184,6 +190,23 @@ const LandingPage: React.FC = () => {
 
   const brands = ["Carrier", "York", "Trane", "Mirage", "Daikin", "LG"];
 
+  // Helper to map string icon names to components
+  const renderIcon = (iconName?: string) => {
+      const size = 24;
+      switch(iconName) {
+          case 'wrench': return <Wrench size={size} />;
+          case 'shield': return <ShieldCheck size={size} />;
+          case 'zap': return <Zap size={size} />;
+          case 'factory': return <Factory size={size} />;
+          case 'layout': return <Layout size={size} />;
+          case 'file': return <FileIcon size={size} />;
+          case 'percent': return <Percent size={size} />;
+          case 'credit': return <CreditCard size={size} />;
+          case 'check': return <Check size={size} />;
+          default: return <Wrench size={size} />;
+      }
+  };
+
   // --- RENDERIZADO DINÁMICO (Sincronizado con DB) ---
   const renderDynamicSection = (section: LandingSection) => {
       switch(section.type) {
@@ -206,7 +229,7 @@ const LandingPage: React.FC = () => {
                                     {section.subtitle}
                                 </p>
                                 <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
-                                    <button onClick={() => setShowAppointmentModal(true)} className="px-10 py-4 bg-sky-600 text-white font-black rounded-2xl hover:bg-sky-500 transition-all shadow-xl shadow-sky-600/30 uppercase tracking-widest text-xs flex items-center justify-center gap-2 hover:-translate-y-1">
+                                    <button onClick={() => setShowAppointmentModal(true)} className="px-10 py-4 bg-sky-600 text-white font-black rounded-2xl hover:bg-sky-50 transition-all shadow-xl shadow-sky-600/30 uppercase tracking-widest text-xs flex items-center justify-center gap-2 hover:-translate-y-1">
                                       <Zap size={16} /> {section.buttonText || 'Cotizar Ahora'}
                                     </button>
                                     <a href="tel:4423325814" className="px-10 py-4 bg-white/10 backdrop-blur-md border border-white/20 text-white font-black rounded-2xl hover:bg-white hover:text-slate-900 transition-all shadow-xl uppercase tracking-widest text-xs flex items-center justify-center gap-2">
@@ -219,6 +242,14 @@ const LandingPage: React.FC = () => {
                 </header>
               );
           case 'services':
+              // Default items if legacy data exists without items
+              const defaultItems = [
+                  { title: 'Instalación', desc: 'Instalación profesional de equipos Mini Split, Multisplit y Paquetes.', icon: 'wrench', image: 'https://images.unsplash.com/photo-1621905252507-b354bcadcabc?q=80&w=2070' },
+                  { title: 'Mantenimiento', desc: 'Limpieza profunda y revisión de presiones.', icon: 'shield', image: 'https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?q=80&w=2070' },
+                  { title: 'Reparación', desc: 'Diagnóstico preciso y reparación de fallas.', icon: 'zap', image: 'https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?q=80&w=2070' },
+              ];
+              const itemsToRender = section.items || defaultItems;
+
               return (
                   <section key={section.id} id="services" className="py-24 px-6 max-w-7xl mx-auto">
                       <div className="text-center mb-20">
@@ -226,21 +257,16 @@ const LandingPage: React.FC = () => {
                           <p className="text-slate-500 text-lg max-w-2xl mx-auto">{section.subtitle}</p>
                       </div>
                       
-                      {/* Servicios fijos por diseño (El usuario edita el título/subtítulo) */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                          {[
-                          { title: 'Instalación', desc: 'Instalación profesional de equipos Mini Split, Multisplit y Paquetes con los más altos estándares.', icon: Wrench, img: 'https://images.unsplash.com/photo-1621905252507-b354bcadcabc?q=80&w=2070' },
-                          { title: 'Mantenimiento', desc: 'Limpieza profunda, revisión de presiones y diagnóstico preventivo para alargar la vida de tu equipo.', icon: ShieldCheck, img: 'https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?q=80&w=2070' },
-                          { title: 'Reparación', desc: 'Diagnóstico preciso y reparación de fallas con refacciones originales y garantía de servicio.', icon: Zap, img: 'https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?q=80&w=2070' },
-                          ].map((service, idx) => (
+                          {itemsToRender.map((service: any, idx: number) => (
                           <div key={idx} className="group rounded-[2.5rem] overflow-hidden border border-slate-100 shadow-xl hover:shadow-2xl transition-all duration-300 bg-white">
                               <div className="h-48 overflow-hidden relative">
-                                  <img src={service.img} alt={service.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                                  <img src={service.image || service.img} alt={service.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
                                   <div className="absolute inset-0 bg-slate-900/20 group-hover:bg-transparent transition-colors" />
                               </div>
                               <div className="p-8">
                                   <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center mb-6">
-                                      <service.icon size={24} />
+                                      {renderIcon(service.icon)}
                                   </div>
                                   <h3 className="text-2xl font-black text-slate-900 mb-3 uppercase tracking-tight">{service.title}</h3>
                                   <p className="text-slate-500 text-sm leading-relaxed mb-6">{service.desc}</p>
