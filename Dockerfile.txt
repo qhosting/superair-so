@@ -32,18 +32,26 @@ WORKDIR /app
 # Install system dependencies (Timezone data is crucial for scheduling/cron apps)
 RUN apk add --no-cache tzdata
 
+# Set Timezone explicitly for the node process (Fixes cron schedule issues)
+ENV TZ=America/Mexico_City
+
 # Production environment settings
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
+
+# Pass API Key to Production Environment if provided during build
+# This ensures the backend has access to it even if not explicitly passed at runtime
+ARG API_KEY
+ENV API_KEY=$API_KEY
 
 # Default Integrations URLs (Can be overridden by docker-compose)
 ENV WAHA_URL=http://waha:3000
 ENV CHATWOOT_URL=https://app.chatwoot.com
 ENV N8N_WEBHOOK_URL=http://n8n:5678/webhook/process-cfdi
 
-# Copy package files
-COPY package*.json ./
+# Copy package files with correct ownership
+COPY --chown=node:node package*.json ./
 
 # Install only production dependencies for the server (Express, PG, etc.)
 # This keeps the image small by excluding React/Vite/Typescript libs
