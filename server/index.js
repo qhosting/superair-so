@@ -517,7 +517,75 @@ app.put('/api/appointments/:id', authorize(['Admin', 'Super Admin', 'Instalador'
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/quotes', async (req, res) => { try { const r = await db.query('SELECT id, client_id, client_name, total, status, items, created_at, payment_terms as "paymentTerms" FROM quotes ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
+// --- QUOTES ROUTES (Enhanced) ---
+app.get('/api/quotes', async (req, res) => { 
+    try { 
+        const r = await db.query('SELECT id, client_id, client_name, total, status, items, created_at, payment_terms as "paymentTerms" FROM quotes ORDER BY id DESC'); 
+        // Ensure items is parsed if it's a string (though pg usually handles jsonb)
+        const rows = r.rows.map(q => ({
+            ...q,
+            items: typeof q.items === 'string' ? JSON.parse(q.items) : q.items
+        }));
+        res.json(rows); 
+    } catch (e) { res.status(500).json({ error: e.message }); } 
+});
+
+app.post('/api/quotes', authorize(['Admin', 'Super Admin']), async (req, res) => {
+    const { clientId, clientName, items, total, paymentTerms, status } = req.body;
+    try {
+        const r = await db.query(
+            "INSERT INTO quotes (client_id, client_name, items, total, status, payment_terms) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+            [clientId, clientName, JSON.stringify(items), total, status || 'Borrador', paymentTerms]
+        );
+        res.json(r.rows[0]);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/quotes/:id', authorize(['Admin', 'Super Admin']), async (req, res) => {
+    const { id } = req.params;
+    const { clientId, clientName, items, total, paymentTerms, status } = req.body;
+    try {
+        const r = await db.query(
+            "UPDATE quotes SET client_id=$1, client_name=$2, items=$3, total=$4, status=$5, payment_terms=$6 WHERE id=$7 RETURNING *",
+            [clientId, clientName, JSON.stringify(items), total, status, paymentTerms, id]
+        );
+        res.json(r.rows[0]);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/quotes/:id/convert', authorize(['Admin', 'Super Admin']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.query('BEGIN');
+        
+        // 1. Get Quote
+        const quoteRes = await db.query("SELECT * FROM quotes WHERE id = $1", [id]);
+        if (quoteRes.rows.length === 0) throw new Error("Cotización no encontrada");
+        const quote = quoteRes.rows[0];
+
+        // 2. Create Order
+        await db.query(
+            "INSERT INTO orders (quote_id, client_name, total, status, cfdi_status) VALUES ($1, $2, $3, 'Pendiente', 'Pendiente')",
+            [id, quote.client_name, quote.total]
+        );
+
+        // 3. Update Quote Status
+        await db.query("UPDATE quotes SET status = 'Aceptada' WHERE id = $1", [id]);
+
+        await db.query('COMMIT');
+        res.json({ success: true });
+    } catch (e) {
+        await db.query('ROLLBACK');
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.get('/api/orders', async (req, res) => { try { const r = await db.query('SELECT id::text, quote_id, client_name as "clientName", total, paid_amount as "paidAmount", status, cfdi_status as "cfdiStatus", installation_date as "installationDate", fiscal_data as "fiscalData" FROM orders ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
 
 // --- AUTH & MISC ---
