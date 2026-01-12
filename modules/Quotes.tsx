@@ -358,7 +358,7 @@ const Quotes: React.FC = () => {
                       <tr>
                           <th className="pb-4">Folio</th>
                           <th className="pb-4">Cliente</th>
-                          <th className="pb-4">Total</th>
+                          <th className="pb-4">Total (MXN)</th>
                           <th className="pb-4">Estado</th>
                           <th className="pb-4 text-right">Acciones</th>
                       </tr>
@@ -559,7 +559,7 @@ const Quotes: React.FC = () => {
                                   </div>
                                   <div className="w-full h-px bg-slate-200"></div>
                                   <div className="flex justify-between items-center">
-                                      <span className="text-sm font-black text-slate-900 uppercase">Total Neto</span>
+                                      <span className="text-sm font-black text-slate-900 uppercase">Total Neto (MXN)</span>
                                       <span className="text-xl font-black text-sky-600">${total.toFixed(2)}</span>
                                   </div>
                               </div>

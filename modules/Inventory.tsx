@@ -265,7 +265,7 @@ const Inventory: React.FC = () => {
                 <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform">
                     <Boxes size={80} className="text-sky-600" />
                 </div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Costo Inventario Actual</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Costo Inventario (MXN)</p>
                 <h3 className="text-3xl font-black text-slate-900">{formatCurrency(stats.totalValue)}</h3>
                 </div>
                 
@@ -273,7 +273,7 @@ const Inventory: React.FC = () => {
                 <div className="absolute top-0 right-0 p-6 opacity-10">
                     <ArrowUpRight size={80} className="text-emerald-600" />
                 </div>
-                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Utilidad Potencial Est.</p>
+                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Utilidad Estimada (MXN)</p>
                 <h3 className="text-3xl font-black text-emerald-900">{formatCurrency(stats.potentialProfit)}</h3>
                 </div>
 
@@ -318,8 +318,8 @@ const Inventory: React.FC = () => {
                         <th className="px-8 py-5">Tipo</th>
                         <th className="px-8 py-5">Ubicación</th>
                         <th className="px-8 py-5">Existencia</th>
-                        <th className="px-8 py-5">Costo</th>
-                        <th className="px-8 py-5">Precio Lista</th>
+                        <th className="px-8 py-5">Costo (MXN)</th>
+                        <th className="px-8 py-5">Precio Lista (MXN)</th>
                         <th className="px-8 py-5">Margen</th>
                         <th className="px-8 py-5 text-right">Acciones</th>
                         </tr>
@@ -589,11 +589,11 @@ const Inventory: React.FC = () => {
                         </select>
                      </div>
                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Costo Unitario ($)</label>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Costo Unitario (MXN)</label>
                         <input type="number" value={newProduct.cost} onChange={e => setNewProduct({...newProduct, cost: parseFloat(e.target.value)})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-medium" />
                      </div>
                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-sky-600">Precio Lista ($)</label>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-sky-600">Precio Lista (MXN)</label>
                         <input type="number" value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: parseFloat(e.target.value)})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-sky-600" />
                      </div>
                  </div>

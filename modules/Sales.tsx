@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ShoppingBag, Inbox, FileText, CheckCircle, X, Receipt, Link as LinkIcon, 
@@ -130,7 +131,7 @@ const Sales: React.FC = () => {
                           <tr>
                               <th className="pb-4">Orden</th>
                               <th className="pb-4">Cliente</th>
-                              <th className="pb-4">Total</th>
+                              <th className="pb-4">Total (MXN)</th>
                               <th className="pb-4">Pagado</th>
                               <th className="pb-4">Estado</th>
                               <th className="pb-4">CFDI</th>
@@ -208,7 +209,7 @@ const Sales: React.FC = () => {
 
                     <div className="space-y-4">
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Monto a Abonar</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Monto a Abonar (MXN)</label>
                             <div className="relative">
                                 <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-600" size={18} />
                                 <input 
