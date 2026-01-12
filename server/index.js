@@ -491,6 +491,22 @@ app.post('/api/products', authorize(['Admin', 'Super Admin']), async (req, res) 
 });
 app.delete('/api/products/:id', authorize(['Admin', 'Super Admin']), async (req, res) => { try { await db.query("DELETE FROM products WHERE id=$1", [req.params.id]); res.json({success:true}); } catch(e) { res.status(500).json({error:e.message}); } });
 
+// --- INVENTORY HISTORY (New) ---
+app.get('/api/inventory/movements', async (req, res) => {
+    try {
+        const r = await db.query(`
+            SELECT im.id, p.name as product_name, im.user_name, im.type, im.quantity, im.reason, im.created_at
+            FROM inventory_movements im
+            JOIN products p ON im.product_id = p.id
+            ORDER BY im.created_at DESC
+            LIMIT 100
+        `);
+        res.json(r.rows);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // --- SETTINGS & APPOINTMENTS ---
 app.post('/api/settings', async (req, res) => { try { await db.query('INSERT INTO app_settings (category, data) VALUES ($1, $2) ON CONFLICT (category) DO UPDATE SET data = $2', [req.body.category, req.body.data]); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); } });
 app.get('/api/settings', async (req, res) => { try { const r = await db.query('SELECT * FROM app_settings'); const settings = {}; r.rows.forEach(row => { settings[row.category] = row.data; }); res.json(settings); } catch (e) { res.status(500).json({ error: e.message }); } });

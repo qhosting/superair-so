@@ -1,10 +1,13 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, Plus, Package, AlertTriangle, ArrowUpRight, ArrowDownLeft, 
   Edit3, Filter, X, Warehouse, Boxes, Tag, Loader2, Trash2, Printer, 
-  Calculator, FileSpreadsheet, Wrench, Briefcase, History
+  Calculator, FileSpreadsheet, Wrench, Briefcase, History, Download
 } from 'lucide-react';
 import { Product } from '../types';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 interface Movement {
     id: number;
@@ -101,6 +104,51 @@ const Inventory: React.FC = () => {
   const calculateMargin = (price: number, cost: number) => {
       if (!price || price === 0) return 0;
       return ((price - cost) / price) * 100;
+  };
+
+  // --- PDF GENERATION FOR INVENTORY SHEETS ---
+  const generatePDF = () => {
+      const doc = new jsPDF();
+      
+      // Header
+      doc.setFontSize(18);
+      doc.text('Hoja de Conteo de Inventario', 14, 20);
+      doc.setFontSize(10);
+      doc.text(`Fecha: ${new Date().toLocaleDateString()}`, 14, 28);
+      doc.text('SuperAir ERP', 160, 20);
+
+      // Filter only physical products
+      const itemsToPrint = products.filter(p => p.type === 'product');
+
+      const tableColumn = ["ID", "Categoría", "Producto", "Sistema", "Físico (Conteo)"];
+      const tableRows: any[] = [];
+
+      itemsToPrint.forEach((item) => {
+          tableRows.push([
+              item.id,
+              item.category,
+              item.name,
+              item.stock,
+              "__________" // Blank line for writing
+          ]);
+      });
+
+      (doc as any).autoTable({
+          head: [tableColumn],
+          body: tableRows,
+          startY: 35,
+          theme: 'grid',
+          headStyles: { fillColor: [14, 165, 233] },
+          styles: { fontSize: 10, cellPadding: 3 },
+          columnStyles: {
+              0: { cellWidth: 15 },
+              3: { halign: 'center' },
+              4: { halign: 'center' }
+          }
+      });
+
+      doc.save(`Inventario_Conteo_${new Date().toISOString().slice(0,10)}.pdf`);
+      setShowPrintModal(false);
   };
 
   const filteredProducts = useMemo(() => {
@@ -304,6 +352,40 @@ const Inventory: React.FC = () => {
                       </table>
                   </div>
               )}
+          </div>
+      )}
+
+      {/* Print Modal */}
+      {showPrintModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[120] flex items-center justify-center p-6">
+              <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-300">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-2xl font-black text-slate-900 uppercase">Hojas de Conteo</h3>
+                      <button onClick={() => setShowPrintModal(false)} className="p-2 hover:bg-slate-100 rounded-xl"><X size={20}/></button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                      <p className="text-sm text-slate-500 leading-relaxed">
+                          Genera un PDF listo para imprimir con la lista actual de productos físicos.
+                          Útil para realizar auditorías de inventario manual.
+                      </p>
+                      
+                      <div className="bg-sky-50 border border-sky-100 rounded-2xl p-4 flex items-center gap-3">
+                          <Package className="text-sky-600" size={24}/>
+                          <div>
+                              <p className="font-bold text-sky-900 text-sm">{products.filter(p => p.type === 'product').length} Productos Físicos</p>
+                              <p className="text-xs text-sky-600">Se excluirán servicios.</p>
+                          </div>
+                      </div>
+
+                      <button 
+                          onClick={generatePDF}
+                          className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 hover:bg-slate-800 shadow-xl transition-all"
+                      >
+                          <Download size={16}/> Descargar PDF
+                      </button>
+                  </div>
+              </div>
           </div>
       )}
 
