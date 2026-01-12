@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Magnet, Plus, Phone, MessageSquare, ArrowRight, UserPlus, 
   MoreHorizontal, Loader2, GripVertical, CheckCircle2, X,
-  Share2, Copy, Facebook, Globe, Calendar, Link as LinkIcon, Edit3, Trash2, Mail
+  Share2, Copy, Facebook, Globe, Calendar, Link as LinkIcon, Edit3, Trash2, Mail,
+  User, Megaphone, FileText, Smartphone
 } from 'lucide-react';
 import { Lead, LeadStatus } from '../types';
 import { useNavigate } from '../context/AuthContext';
@@ -256,47 +257,147 @@ const Leads: React.FC = () => {
           </div>
       </div>
 
-      {/* Add/Edit Lead Modal */}
+      {/* Add/Edit Lead Modal - REDISEÑADO */}
       {showAddModal && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[120] flex items-center justify-center p-6">
-              <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8 animate-in zoom-in duration-300">
-                  <div className="flex justify-between items-center mb-6">
-                      <h3 className="font-black text-xl text-slate-900 uppercase">{isEditing ? 'Editar Lead' : 'Nuevo Prospecto'}</h3>
-                      <button onClick={() => setShowAddModal(false)}><X className="text-slate-400 hover:text-slate-600" /></button>
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[150] flex items-center justify-center p-6">
+              <div className="bg-white w-full max-w-2xl rounded-[3.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300 flex flex-col max-h-[90vh]">
+                  {/* Modal Header */}
+                  <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
+                      <div>
+                          <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">
+                              {isEditing ? 'Editar Prospecto' : 'Nuevo Prospecto'}
+                          </h3>
+                          <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">
+                              Ingresa los detalles del cliente potencial
+                          </p>
+                      </div>
+                      <button onClick={() => setShowAddModal(false)} className="p-3 hover:bg-slate-100 rounded-2xl transition-all text-slate-400 hover:text-slate-600">
+                          <X size={24} />
+                      </button>
                   </div>
-                  <div className="space-y-4">
-                      <div className="space-y-1">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre</label>
-                          <input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold" value={leadForm.name} onChange={e => setLeadForm({...leadForm, name: e.target.value})} />
+
+                  {/* Modal Content - Scrollable */}
+                  <div className="p-8 overflow-y-auto custom-scrollbar">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                          {/* Columna Izquierda: Contacto */}
+                          <div className="space-y-6">
+                              <h4 className="flex items-center gap-2 text-sm font-black text-slate-800 uppercase tracking-tight pb-2 border-b border-slate-100">
+                                  <User size={16} className="text-sky-500" /> Información de Contacto
+                              </h4>
+                              
+                              <div className="space-y-1">
+                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Completo</label>
+                                  <div className="relative">
+                                      <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                      <input 
+                                          className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 font-bold text-slate-700" 
+                                          placeholder="Ej: Familia Ramírez"
+                                          value={leadForm.name} 
+                                          onChange={e => setLeadForm({...leadForm, name: e.target.value})} 
+                                      />
+                                  </div>
+                              </div>
+
+                              <div className="space-y-1">
+                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Teléfono / WhatsApp</label>
+                                  <div className="relative">
+                                      <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                      <input 
+                                          type="tel"
+                                          className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 font-medium text-slate-600" 
+                                          placeholder="10 Dígitos"
+                                          value={leadForm.phone} 
+                                          onChange={e => setLeadForm({...leadForm, phone: e.target.value})} 
+                                      />
+                                  </div>
+                              </div>
+
+                              <div className="space-y-1">
+                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Correo Electrónico</label>
+                                  <div className="relative">
+                                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                      <input 
+                                          type="email"
+                                          className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 font-medium text-slate-600" 
+                                          placeholder="ejemplo@correo.com"
+                                          value={leadForm.email} 
+                                          onChange={e => setLeadForm({...leadForm, email: e.target.value})} 
+                                      />
+                                  </div>
+                              </div>
+                          </div>
+
+                          {/* Columna Derecha: Origen y Notas */}
+                          <div className="space-y-6">
+                              <h4 className="flex items-center gap-2 text-sm font-black text-slate-800 uppercase tracking-tight pb-2 border-b border-slate-100">
+                                  <Magnet size={16} className="text-indigo-500" /> Origen y Detalles
+                              </h4>
+
+                              <div className="grid grid-cols-2 gap-4">
+                                  <div className="space-y-1">
+                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fuente</label>
+                                      <div className="relative">
+                                          <select 
+                                              className="w-full pl-4 pr-8 py-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-700 appearance-none" 
+                                              value={leadForm.source} 
+                                              onChange={e => setLeadForm({...leadForm, source: e.target.value as any})}
+                                          >
+                                              <option>Manual</option>
+                                              <option>Facebook</option>
+                                              <option>Google</option>
+                                              <option>Recomendación</option>
+                                              <option>WhatsApp</option>
+                                          </select>
+                                          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-indigo-400">
+                                              <Globe size={16} />
+                                          </div>
+                                      </div>
+                                  </div>
+                                  <div className="space-y-1">
+                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Campaña</label>
+                                      <div className="relative">
+                                          <Megaphone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                          <input 
+                                              className="w-full pl-10 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 text-sm" 
+                                              placeholder="Ej: Verano"
+                                              value={leadForm.campaign || ''} 
+                                              onChange={e => setLeadForm({...leadForm, campaign: e.target.value})} 
+                                          />
+                                      </div>
+                                  </div>
+                              </div>
+
+                              <div className="space-y-1">
+                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Notas / Requerimientos</label>
+                                  <div className="relative">
+                                      <FileText className="absolute left-4 top-4 text-slate-400" size={18} />
+                                      <textarea 
+                                          className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 h-32 resize-none text-sm leading-relaxed" 
+                                          placeholder="Detalles importantes sobre la solicitud..."
+                                          value={leadForm.notes} 
+                                          onChange={e => setLeadForm({...leadForm, notes: e.target.value})} 
+                                      />
+                                  </div>
+                              </div>
+                          </div>
                       </div>
-                      <div className="space-y-1">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Teléfono</label>
-                          <input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none" value={leadForm.phone} onChange={e => setLeadForm({...leadForm, phone: e.target.value})} />
-                      </div>
-                      <div className="space-y-1">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email</label>
-                          <input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none" value={leadForm.email} onChange={e => setLeadForm({...leadForm, email: e.target.value})} />
-                      </div>
-                      <div className="space-y-1">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fuente</label>
-                          <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-slate-600" value={leadForm.source} onChange={e => setLeadForm({...leadForm, source: e.target.value as any})}>
-                              <option>Manual</option>
-                              <option>Facebook</option>
-                              <option>Google</option>
-                              <option>Recomendación</option>
-                          </select>
-                      </div>
-                      <div className="space-y-1">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Campaña (Opcional)</label>
-                          <input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none" placeholder="Ej: Verano 2025" value={leadForm.campaign || ''} onChange={e => setLeadForm({...leadForm, campaign: e.target.value})} />
-                      </div>
-                      <div className="space-y-1">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Notas</label>
-                          <textarea className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none h-20 resize-none" value={leadForm.notes} onChange={e => setLeadForm({...leadForm, notes: e.target.value})} />
-                      </div>
-                      
-                      <button onClick={handleSaveLead} disabled={isSaving} className="w-full py-4 bg-sky-600 text-white rounded-xl font-black uppercase tracking-widest text-xs hover:bg-sky-700 transition-all flex items-center justify-center gap-2">
-                          {isSaving ? <Loader2 className="animate-spin" size={16}/> : <Plus size={16}/>} Guardar
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="p-8 border-t border-slate-100 bg-slate-50/50 flex gap-4 sticky bottom-0 z-10">
+                      <button 
+                          onClick={handleSaveLead} 
+                          disabled={isSaving} 
+                          className="flex-1 py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-sky-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-sky-600/20 disabled:opacity-70 disabled:cursor-not-allowed"
+                      >
+                          {isSaving ? <Loader2 className="animate-spin" size={18}/> : <CheckCircle2 size={18}/>} 
+                          {isEditing ? 'Guardar Cambios' : 'Registrar Lead'}
+                      </button>
+                      <button 
+                          onClick={() => setShowAddModal(false)}
+                          className="px-8 py-4 bg-white text-slate-500 border border-slate-200 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all"
+                      >
+                          Cancelar
                       </button>
                   </div>
               </div>
