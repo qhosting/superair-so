@@ -15,7 +15,7 @@ ENV NODE_ENV=development
 # Copy package files first to leverage Docker cache
 COPY package*.json ./
 
-# Install all dependencies (including devDependencies)
+# Install all dependencies (including devDependencies for building)
 RUN npm install
 
 # Copy the rest of the application code
@@ -29,7 +29,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install system dependencies (Timezone data is crucial for scheduling/cron apps)
+# Install system dependencies
+# tzdata: Required for correct CronJob timing (Timezone)
+# python3, make, g++: Optional but recommended if any npm package needs native compilation
 RUN apk add --no-cache tzdata
 
 # Set Timezone explicitly for the node process (Fixes cron schedule issues)
@@ -41,7 +43,7 @@ ENV PORT=3000
 ENV HOST=0.0.0.0
 
 # Pass API Key to Production Environment if provided during build
-# This ensures the backend has access to it even if not explicitly passed at runtime
+# This ensures the backend has access to it even if not explicitly passed at runtime via docker-compose
 ARG API_KEY
 ENV API_KEY=$API_KEY
 
@@ -54,7 +56,7 @@ ENV N8N_WEBHOOK_URL=http://n8n:5678/webhook/process-cfdi
 COPY --chown=node:node package*.json ./
 
 # Install only production dependencies for the server (Express, PG, etc.)
-# This keeps the image small by excluding React/Vite/Typescript libs
+# This keeps the image small by excluding React/Vite/Typescript build libs
 RUN npm install --omit=dev
 
 # Copy the server code and change ownership to non-root user
@@ -64,7 +66,7 @@ COPY --chown=node:node server ./server
 COPY --chown=node:node --from=builder /app/dist ./dist
 
 # Create uploads directory and set permissions for the node user
-# This ensures the application can write uploaded files (logos, invoices)
+# This ensures the application can write uploaded files (logos, invoices, fiscal docs)
 RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 
 # Expose the application port
