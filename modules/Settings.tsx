@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   Globe, Save, AlertTriangle, CheckCircle2, Image as ImageIcon, 
   RefreshCw, DollarSign, Wallet, MapPin, Clock, Calendar, BarChart3, 
   Search, BrainCircuit, LayoutTemplate, Database, Power,
-  Landmark, CreditCard, Bot, Building2, Upload
+  Landmark, CreditCard, Bot, Building2, Upload, FileText, Receipt
 } from 'lucide-react';
 
 const Toast: React.FC<{ message: string; type: 'success' | 'error'; onClose: () => void }> = ({ message, type, onClose }) => {
@@ -37,19 +38,33 @@ const Settings: React.FC = () => {
       isMaintenance: false
   });
 
+  const [treasuryInfo, setTreasuryInfo] = useState({
+      rfc: '',
+      legalName: '',
+      taxRegime: '601 - General de Ley Personas Morales',
+      bankName: '',
+      accountNumber: '',
+      clabe: ''
+  });
+
   // Load Data
   useEffect(() => {
     const loadData = async () => {
         try {
             const res = await fetch('/api/settings');
             const data = await res.json();
+            
             if (data.marketing_info) setMarketingInfo(prev => ({ ...prev, ...data.marketing_info }));
+            
             if (data.general_info) {
                 setGeneralInfo(prev => ({ ...prev, ...data.general_info }));
                 // Sync Maintenance with LocalStorage for fast reading in App.tsx
                 localStorage.setItem('superair_is_published', (!data.general_info.isMaintenance).toString());
                 if (data.general_info.logoUrl) localStorage.setItem('superair_logo', data.general_info.logoUrl);
             }
+
+            if (data.treasury_info) setTreasuryInfo(prev => ({ ...prev, ...data.treasury_info }));
+
         } catch (e) { console.error("Error loading settings", e); }
     };
     loadData();
@@ -119,7 +134,7 @@ const Settings: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-6">
                   <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre de la Empresa</label>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Comercial</label>
                       <input 
                         value={generalInfo.companyName}
                         onChange={e => setGeneralInfo({...generalInfo, companyName: e.target.value})}
@@ -127,7 +142,7 @@ const Settings: React.FC = () => {
                       />
                   </div>
                   <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email de Contacto</label>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email de Contacto (Público)</label>
                       <input 
                         value={generalInfo.contactEmail}
                         onChange={e => setGeneralInfo({...generalInfo, contactEmail: e.target.value})}
@@ -186,6 +201,97 @@ const Settings: React.FC = () => {
           <div className="flex justify-end pt-4">
               <button onClick={() => saveSettings('general_info', generalInfo)} className="px-8 py-3 bg-sky-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-sky-700 transition-all flex items-center gap-2 shadow-lg shadow-sky-600/20">
                   {isSaving ? <RefreshCw className="animate-spin" size={16}/> : <Save size={16} />} Guardar Cambios
+              </button>
+          </div>
+      </div>
+  );
+
+  const renderTreasury = () => (
+      <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-8 animate-in fade-in">
+          <div className="flex items-center gap-6 pb-6 border-b border-slate-100">
+              <div className="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-500">
+                  <Landmark size={32} />
+              </div>
+              <div>
+                  <h3 className="text-2xl font-black text-slate-900 tracking-tighter">Datos Fiscales y Bancarios</h3>
+                  <p className="text-slate-400 font-medium text-xs">Información para emisión de cotizaciones y facturas.</p>
+              </div>
+          </div>
+
+          <div className="space-y-6">
+              <h4 className="font-black text-slate-800 uppercase tracking-tight text-sm flex items-center gap-2">
+                  <Receipt size={16} className="text-emerald-500"/> Identidad Fiscal
+              </h4>
+              <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Razón Social</label>
+                      <input 
+                        value={treasuryInfo.legalName}
+                        onChange={e => setTreasuryInfo({...treasuryInfo, legalName: e.target.value})}
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                        placeholder="Ej: SUPER AIR MEXICO SA DE CV"
+                      />
+                  </div>
+                  <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">RFC Emisor</label>
+                      <input 
+                        value={treasuryInfo.rfc}
+                        onChange={e => setTreasuryInfo({...treasuryInfo, rfc: e.target.value})}
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold uppercase"
+                        placeholder="ABC123456XYZ"
+                      />
+                  </div>
+                  <div className="col-span-2 space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Régimen Fiscal</label>
+                      <select 
+                        value={treasuryInfo.taxRegime}
+                        onChange={e => setTreasuryInfo({...treasuryInfo, taxRegime: e.target.value})}
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                      >
+                          <option>601 - General de Ley Personas Morales</option>
+                          <option>612 - Personas Físicas con Actividades Empresariales</option>
+                          <option>626 - Régimen Simplificado de Confianza</option>
+                      </select>
+                  </div>
+              </div>
+          </div>
+
+          <div className="space-y-6 pt-6 border-t border-slate-100">
+              <h4 className="font-black text-slate-800 uppercase tracking-tight text-sm flex items-center gap-2">
+                  <Wallet size={16} className="text-emerald-500"/> Cuenta Receptora
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Banco</label>
+                      <input 
+                        value={treasuryInfo.bankName}
+                        onChange={e => setTreasuryInfo({...treasuryInfo, bankName: e.target.value})}
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                        placeholder="Ej: BBVA"
+                      />
+                  </div>
+                  <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Número de Cuenta</label>
+                      <input 
+                        value={treasuryInfo.accountNumber}
+                        onChange={e => setTreasuryInfo({...treasuryInfo, accountNumber: e.target.value})}
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                      />
+                  </div>
+                  <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">CLABE Interbancaria</label>
+                      <input 
+                        value={treasuryInfo.clabe}
+                        onChange={e => setTreasuryInfo({...treasuryInfo, clabe: e.target.value})}
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                      />
+                  </div>
+              </div>
+          </div>
+
+          <div className="flex justify-end pt-4">
+              <button onClick={() => saveSettings('treasury_info', treasuryInfo)} className="px-8 py-3 bg-emerald-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-700 transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/20">
+                  {isSaving ? <RefreshCw className="animate-spin" size={16}/> : <Save size={16} />} Guardar Datos
               </button>
           </div>
       </div>
@@ -269,6 +375,9 @@ const Settings: React.FC = () => {
             <button onClick={() => setActiveTab('general')} className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'general' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500'}`}>
                 <Building2 size={16} /> General
             </button>
+            <button onClick={() => setActiveTab('treasury')} className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'treasury' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500'}`}>
+                <Landmark size={16} /> Tesorería
+            </button>
             <button onClick={() => setActiveTab('marketing')} className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'marketing' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500'}`}>
                 <BarChart3 size={16} /> Marketing & IA
             </button>
@@ -278,7 +387,25 @@ const Settings: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2">
               {activeTab === 'general' && renderGeneral()}
+              {activeTab === 'treasury' && renderTreasury()}
               {activeTab === 'marketing' && renderMarketing()}
+          </div>
+          
+          {/* Helper Sidebar */}
+          <div className="space-y-6">
+              <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] relative overflow-hidden">
+                  <div className="relative z-10">
+                      <h4 className="font-black text-lg uppercase mb-2">Estado del Sistema</h4>
+                      <div className="flex items-center gap-2 mb-4">
+                          <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"/>
+                          <span className="text-xs font-bold text-emerald-300">Base de Datos Conectada</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-relaxed">
+                          La configuración se guarda automáticamente en la tabla <code>app_settings</code>. 
+                          Los cambios en "General" se reflejan instantáneamente en la Landing Page pública.
+                      </p>
+                  </div>
+              </div>
           </div>
       </div>
     </div>
