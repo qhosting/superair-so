@@ -514,22 +514,43 @@ app.get('/api/settings/public', async (req, res) => { try { const r = await db.q
 
 app.get('/api/appointments', async (req, res) => { try { const r = await db.query('SELECT a.id, a.client_id, c.name as client_name, a.technician, a.date, a.time, a.type, a.status, a.duration, a.google_event_link FROM appointments a LEFT JOIN clients c ON a.client_id = c.id'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
 app.post('/api/appointments', authorize(['Admin', 'Super Admin']), async (req, res) => { const { client_id, technician, date, time, type, status, duration } = req.body; try { const r = await db.query("INSERT INTO appointments (client_id, technician, date, time, type, status, duration) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *", [client_id, technician, date, time, type, status, duration]); res.json(r.rows[0]); } catch (e) { res.status(500).json({error:e.message}); } });
+
+// --- UPDATED APPOINTMENT ENDPOINT (Supports full edit/reschedule) ---
 app.put('/api/appointments/:id', authorize(['Admin', 'Super Admin', 'Instalador']), async (req, res) => {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, date, time, technician, duration } = req.body;
     try {
-        const oldAptRes = await db.query('SELECT status, client_id, technician, type, time FROM appointments WHERE id = $1', [id]);
+        const oldAptRes = await db.query('SELECT status, client_id, technician, type, time, date FROM appointments WHERE id = $1', [id]);
         if (oldAptRes.rows.length === 0) return res.status(404).json({error: 'Cita no encontrada'});
         const oldApt = oldAptRes.rows[0];
-        await db.query('UPDATE appointments SET status = $1 WHERE id = $2', [status, id]);
+
+        // Build dynamic update query
+        const fields = [];
+        const values = [];
+        let idx = 1;
+
+        if (status) { fields.push(`status = $${idx++}`); values.push(status); }
+        if (date) { fields.push(`date = $${idx++}`); values.push(date); }
+        if (time) { fields.push(`time = $${idx++}`); values.push(time); }
+        if (technician) { fields.push(`technician = $${idx++}`); values.push(technician); }
+        if (duration) { fields.push(`duration = $${idx++}`); values.push(duration); }
+
+        values.push(id);
+        const queryText = `UPDATE appointments SET ${fields.join(', ')} WHERE id = $${idx}`;
+        
+        await db.query(queryText, values);
+
+        // Notify if status changed to 'En Proceso'
         if (status === 'En Proceso' && oldApt.status !== 'En Proceso') {
             const clientRes = await db.query('SELECT phone, name FROM clients WHERE id = $1', [oldApt.client_id]);
             if (clientRes.rows.length > 0) {
                 const client = clientRes.rows[0];
-                if (client.phone) sendWhatsApp(client.phone, `🚗 Hola ${client.name}, tu técnico de SuperAir (${oldApt.technician}) va en camino.`).catch(err => console.error("WhatsApp Error:", err.message));
+                if (client.phone) sendWhatsApp(client.phone, `🚗 Hola ${client.name}, tu técnico de SuperAir (${technician || oldApt.technician}) va en camino.`).catch(err => console.error("WhatsApp Error:", err.message));
             }
         }
-        res.json({ success: true, status });
+        
+        // Return updated object
+        res.json({ success: true, status, date, time });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

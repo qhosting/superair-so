@@ -1,8 +1,9 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Clock, 
   MapPin, User, ExternalLink, X, Truck, Wrench, Camera, ClipboardList, 
-  Phone, MessageSquare, Loader2, CheckCircle2, AlertTriangle, CalendarCheck
+  Phone, MessageSquare, Loader2, CheckCircle2, AlertTriangle, CalendarCheck, Edit3, Save
 } from 'lucide-react';
 import { Appointment, User as UserType } from '../types';
 
@@ -11,6 +12,11 @@ const Appointments: React.FC = () => {
   const [selectedApt, setSelectedApt] = useState<any | null>(null);
   const [showNewAptModal, setShowNewAptModal] = useState(false);
   
+  // Filter & Edit State
+  const [selectedTechFilter, setSelectedTechFilter] = useState('Todos');
+  const [isRescheduling, setIsRescheduling] = useState(false);
+  const [editForm, setEditForm] = useState<any>({});
+
   // Data State
   const [appointments, setAppointments] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
@@ -117,6 +123,48 @@ const Appointments: React.FC = () => {
       }
   };
 
+  const saveReschedule = async () => {
+      if (!selectedApt) return;
+      try {
+          // Format date if needed
+          const payload = {
+              date: editForm.date,
+              time: editForm.time,
+              technician: editForm.technician,
+              status: selectedApt.status // Mantener status original o permitir cambiarlo si se requiere
+          };
+
+          const res = await fetch(`/api/appointments/${selectedApt.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+          });
+
+          if (res.ok) {
+              // Actualizar estado local
+              setAppointments(prev => prev.map(a => a.id === selectedApt.id ? { ...a, ...payload } : a));
+              setSelectedApt({ ...selectedApt, ...payload });
+              setIsRescheduling(false);
+              alert("Cita reprogramada exitosamente.");
+          } else {
+              alert("Error al guardar cambios.");
+          }
+      } catch(e) {
+          alert("Error de conexión");
+      }
+  };
+
+  const startReschedule = () => {
+      // Clean date string to YYYY-MM-DD
+      const dateStr = selectedApt.date ? selectedApt.date.substring(0, 10) : '';
+      setEditForm({
+          date: dateStr,
+          time: selectedApt.time,
+          technician: selectedApt.technician
+      });
+      setIsRescheduling(true);
+  };
+
   const handleConnectGoogle = () => {
       setIsConnectingGoogle(true);
       setTimeout(() => {
@@ -147,7 +195,12 @@ const Appointments: React.FC = () => {
   const getAptsForDay = (day: number | null) => {
     if (!day) return [];
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return appointments.filter(a => a.date && a.date.substring(0,10) === dateStr);
+    
+    return appointments.filter(a => {
+        const isSameDate = a.date && a.date.substring(0,10) === dateStr;
+        const isSameTech = selectedTechFilter === 'Todos' || a.technician === selectedTechFilter;
+        return isSameDate && isSameTech;
+    });
   };
 
   const getStatusColor = (status: string) => {
@@ -168,7 +221,19 @@ const Appointments: React.FC = () => {
           <div className="flex flex-col md:flex-row items-center justify-between mb-10 gap-6">
             <div>
               <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter capitalize">{monthName} {year}</h2>
-              <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Gestión de Campo y Logística</p>
+              <div className="flex items-center gap-4 mt-2">
+                  <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Vista de Técnico:</p>
+                  <select 
+                    value={selectedTechFilter}
+                    onChange={e => setSelectedTechFilter(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-sky-500"
+                  >
+                      <option value="Todos">Todos los Técnicos</option>
+                      {installers.map(ins => (
+                          <option key={ins.id} value={ins.name}>{ins.name}</option>
+                      ))}
+                  </select>
+              </div>
             </div>
             <div className="flex items-center gap-4">
               <div className="flex bg-slate-100 p-1.5 rounded-2xl">
@@ -211,7 +276,7 @@ const Appointments: React.FC = () => {
                             {dayApts.map(apt => (
                             <div 
                                 key={apt.id} 
-                                onClick={(e) => { e.stopPropagation(); setSelectedApt(apt); }}
+                                onClick={(e) => { e.stopPropagation(); setSelectedApt(apt); setIsRescheduling(false); }}
                                 className={`text-[9px] p-2 rounded-lg font-black uppercase tracking-tighter truncate border shadow-sm transition-transform hover:scale-105 ${getStatusColor(apt.status)}`}
                             >
                                 <div className="flex items-center gap-1">
@@ -348,23 +413,78 @@ const Appointments: React.FC = () => {
                     )}
                  </div>
 
-                 {/* Information Grid */}
-                 <div className="grid grid-cols-2 gap-10">
-                    <div className="space-y-4">
-                       <div className="flex items-center gap-3">
-                          <User size={18} className="text-sky-500" />
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Técnico Asignado</p>
-                       </div>
-                       <p className="font-black text-slate-800 pl-7">{selectedApt.technician}</p>
+                 {/* Information Grid / Edit Mode */}
+                 {isRescheduling ? (
+                     <div className="bg-white border-2 border-dashed border-sky-200 rounded-[2.5rem] p-8 space-y-6 animate-in fade-in">
+                         <div className="flex items-center gap-2 mb-2">
+                             <Edit3 size={18} className="text-sky-500"/>
+                             <h4 className="font-black text-lg text-slate-900 uppercase">Reprogramar Cita</h4>
+                         </div>
+                         
+                         <div className="grid grid-cols-2 gap-4">
+                             <div>
+                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nueva Fecha</label>
+                                 <input 
+                                    type="date" 
+                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-sm"
+                                    value={editForm.date}
+                                    onChange={e => setEditForm({...editForm, date: e.target.value})}
+                                 />
+                             </div>
+                             <div>
+                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nueva Hora</label>
+                                 <input 
+                                    type="time" 
+                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-sm"
+                                    value={editForm.time}
+                                    onChange={e => setEditForm({...editForm, time: e.target.value})}
+                                 />
+                             </div>
+                         </div>
+                         <div>
+                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Reasignar Técnico</label>
+                             <select 
+                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-sm"
+                                value={editForm.technician}
+                                onChange={e => setEditForm({...editForm, technician: e.target.value})}
+                             >
+                                {installers.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
+                             </select>
+                         </div>
+
+                         <div className="flex gap-2 pt-2">
+                             <button onClick={() => setIsRescheduling(false)} className="flex-1 py-3 border border-slate-200 text-slate-500 rounded-xl font-bold text-xs">Cancelar</button>
+                             <button onClick={saveReschedule} className="flex-1 py-3 bg-sky-600 text-white rounded-xl font-bold text-xs shadow-lg hover:bg-sky-700 flex items-center justify-center gap-2">
+                                 <Save size={16}/> Guardar
+                             </button>
+                         </div>
+                     </div>
+                 ) : (
+                    <div className="grid grid-cols-2 gap-10 relative">
+                        <button 
+                            onClick={startReschedule}
+                            className="absolute -top-8 right-0 text-[10px] font-bold text-sky-600 uppercase tracking-widest hover:underline flex items-center gap-1"
+                        >
+                            <Edit3 size={12}/> Editar / Reprogramar
+                        </button>
+
+                        <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                            <User size={18} className="text-sky-500" />
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Técnico Asignado</p>
+                        </div>
+                        <p className="font-black text-slate-800 pl-7">{selectedApt.technician}</p>
+                        </div>
+                        <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                            <Clock size={18} className="text-sky-500" />
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Horario Programado</p>
+                        </div>
+                        <p className="font-black text-slate-800 pl-7">{selectedApt.time} HRS</p>
+                        <p className="text-xs text-slate-400 font-bold pl-7 uppercase">{selectedApt.date ? new Date(selectedApt.date).toLocaleDateString() : ''}</p>
+                        </div>
                     </div>
-                    <div className="space-y-4">
-                       <div className="flex items-center gap-3">
-                          <Clock size={18} className="text-sky-500" />
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Horario Programado</p>
-                       </div>
-                       <p className="font-black text-slate-800 pl-7">{selectedApt.time} HRS</p>
-                    </div>
-                 </div>
+                 )}
               </div>
            </div>
         </div>
