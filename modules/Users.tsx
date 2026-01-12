@@ -8,15 +8,7 @@ import {
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 
-// Mock Audit Log Data
-const MOCK_ACTIVITY = [
-    { id: 1, user: 'Carlos R.', action: 'Creó cotización #1024', time: 'Hace 10 min', type: 'success' },
-    { id: 2, user: 'Admin', action: 'Modificó permisos de Instalador', time: 'Hace 1 hora', type: 'warning' },
-    { id: 3, user: 'Miguel A.', action: 'Completó servicio en Juriquilla', time: 'Hace 2 horas', type: 'info' },
-    { id: 4, user: 'Sistema', action: 'Backup automático realizado', time: 'Hace 4 horas', type: 'neutral' }
-];
-
-// Mock Permissions Data
+// Default Permissions Structure (Fallback)
 const INITIAL_PERMISSIONS = {
     [UserRole.SUPER_ADMIN]: { clients: 'full', quotes: 'full', inventory: 'full', users: 'full' },
     [UserRole.ADMIN]: { clients: 'full', quotes: 'full', inventory: 'edit', users: 'view' },
@@ -33,30 +25,52 @@ const Users: React.FC = () => {
   const [showPermissionsModal, setShowPermissionsModal] = useState(false);
   
   const [users, setUsers] = useState<User[]>([]);
+  const [activityLog, setActivityLog] = useState<any[]>([]); // Real Data
   const [loading, setLoading] = useState(true);
   const [permissions, setPermissions] = useState(INITIAL_PERMISSIONS);
   const [selectedRoleForPerms, setSelectedRoleForPerms] = useState<UserRole>(UserRole.ADMIN);
+  const [savingPerms, setSavingPerms] = useState(false);
 
   // Form State
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({ id: '', name: '', email: '', password: '', role: UserRole.ADMIN as string, status: 'Activo' });
 
   // Data Fetching
-  const fetchUsers = async () => {
+  const fetchData = async () => {
       setLoading(true);
       try {
-          const res = await fetch('/api/users');
-          const data = await res.json();
-          if(Array.isArray(data)) setUsers(data);
+          const [usersRes, notifRes, settingsRes] = await Promise.all([
+              fetch('/api/users'),
+              fetch('/api/notifications'),
+              fetch('/api/settings')
+          ]);
+
+          if (usersRes.ok) {
+              const data = await usersRes.json();
+              if(Array.isArray(data)) setUsers(data);
+          }
+
+          if (notifRes.ok) {
+              const data = await notifRes.json();
+              if (Array.isArray(data)) setActivityLog(data);
+          }
+
+          if (settingsRes.ok) {
+              const settings = await settingsRes.json();
+              if (settings.rbac_rules) {
+                  setPermissions(settings.rbac_rules);
+              }
+          }
+
       } catch (e) {
-          console.error("Error fetching users", e);
+          console.error("Error fetching data", e);
       } finally {
           setLoading(false);
       }
   };
 
   useEffect(() => {
-    fetchUsers();
+    fetchData();
   }, []);
 
   // --- CRUD Operations ---
@@ -100,7 +114,7 @@ const Users: React.FC = () => {
       if(res.ok) {
         alert(isEditing ? 'Usuario actualizado' : 'Usuario creado');
         setShowUserModal(false);
-        fetchUsers();
+        fetchData(); // Refresh users and logs
       } else {
           alert('Error en operación. Verifique datos.');
       }
@@ -129,7 +143,24 @@ const Users: React.FC = () => {
           });
       } catch (e) {
           console.error(e);
-          fetchUsers(); // Revert on error
+          fetchData(); // Revert on error
+      }
+  };
+
+  const savePermissions = async () => {
+      setSavingPerms(true);
+      try {
+          await fetch('/api/settings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ category: 'rbac_rules', data: permissions })
+          });
+          alert('Permisos actualizados y guardados en base de datos.');
+          setShowPermissionsModal(false);
+      } catch (e) {
+          alert('Error guardando permisos.');
+      } finally {
+          setSavingPerms(false);
       }
   };
 
@@ -163,7 +194,7 @@ const Users: React.FC = () => {
       }));
   };
 
-  if (loading) return <div className="h-96 flex items-center justify-center"><Loader2 className="animate-spin text-sky-600" size={48}/></div>;
+  if (loading && users.length === 0) return <div className="h-96 flex items-center justify-center"><Loader2 className="animate-spin text-sky-600" size={48}/></div>;
 
   return (
     <div className="flex flex-col xl:flex-row gap-8 pb-20 h-[calc(100vh-100px)]">
@@ -316,14 +347,14 @@ const Users: React.FC = () => {
         </div>
       </div>
 
-      {/* Sidebar: Audit Log */}
+      {/* Sidebar: Audit Log - REAL DATA */}
       <div className="xl:w-80 shrink-0 space-y-6 flex flex-col h-full overflow-hidden">
          <div className="bg-slate-900 p-6 rounded-[2.5rem] text-white shadow-xl relative overflow-hidden shrink-0">
             <div className="absolute top-0 right-0 p-6 opacity-10">
                <Fingerprint size={100} />
             </div>
             <h3 className="font-black text-lg uppercase tracking-tight mb-2 relative z-10">Auditoría</h3>
-            <p className="text-xs text-slate-400 mb-4 relative z-10">Log de seguridad inmutable.</p>
+            <p className="text-xs text-slate-400 mb-4 relative z-10">Log de operaciones del sistema.</p>
             <div className="flex items-center gap-2 text-[10px] font-mono text-emerald-400 bg-emerald-400/10 px-3 py-1.5 rounded-lg w-fit relative z-10">
                 <Activity size={12} /> Live Monitoring
             </div>
@@ -334,22 +365,28 @@ const Users: React.FC = () => {
                 <h4 className="font-black text-slate-900 uppercase tracking-tight text-sm">Actividad Reciente</h4>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                {MOCK_ACTIVITY.map(log => (
-                    <div key={log.id} className="flex gap-3 items-start p-3 hover:bg-slate-50 rounded-2xl transition-colors">
-                        <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${
-                            log.type === 'success' ? 'bg-emerald-500' : 
-                            log.type === 'warning' ? 'bg-amber-500' :
-                            log.type === 'info' ? 'bg-sky-500' : 'bg-slate-300'
-                        }`} />
-                        <div>
-                            <p className="text-xs font-bold text-slate-800 leading-snug">{log.action}</p>
-                            <div className="flex items-center gap-2 mt-1">
-                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">{log.user}</span>
-                                <span className="text-[9px] text-slate-300">• {log.time}</span>
+                {activityLog.length === 0 ? (
+                    <div className="text-center p-4 text-slate-400 text-xs">Sin actividad registrada</div>
+                ) : (
+                    activityLog.map(log => (
+                        <div key={log.id} className="flex gap-3 items-start p-3 hover:bg-slate-50 rounded-2xl transition-colors">
+                            <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${
+                                log.type === 'success' ? 'bg-emerald-500' : 
+                                log.type === 'warning' ? 'bg-amber-500' :
+                                log.type === 'info' ? 'bg-sky-500' : 'bg-slate-300'
+                            }`} />
+                            <div>
+                                <p className="text-xs font-bold text-slate-800 leading-snug">{log.title}</p>
+                                <p className="text-[10px] text-slate-500 leading-snug mt-0.5">{log.message}</p>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-[9px] text-slate-300">
+                                        {new Date(log.createdAt).toLocaleString()}
+                                    </span>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                ))}
+                    ))
+                )}
             </div>
          </div>
       </div>
@@ -435,8 +472,13 @@ const Users: React.FC = () => {
 
                 <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3 shrink-0">
                     <button onClick={() => setShowPermissionsModal(false)} className="px-6 py-3 text-slate-500 font-bold text-xs hover:bg-slate-100 rounded-xl transition-all">Cancelar</button>
-                    <button onClick={() => { alert('Permisos actualizados'); setShowPermissionsModal(false); }} className="px-8 py-3 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-800 transition-all flex items-center gap-2 shadow-lg">
-                        <Save size={16}/> Guardar Cambios
+                    <button 
+                        onClick={savePermissions}
+                        disabled={savingPerms}
+                        className="px-8 py-3 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-800 transition-all flex items-center gap-2 shadow-lg disabled:opacity-70"
+                    >
+                        {savingPerms ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>}
+                        Guardar Cambios
                     </button>
                 </div>
             </div>
