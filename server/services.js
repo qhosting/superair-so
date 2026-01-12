@@ -1,5 +1,7 @@
+
 // Node.js 18+ has native fetch, so we don't need to import it.
 // import fetch from 'node-fetch'; 
+import { GoogleGenAI, Type } from "@google/genai";
 
 // --- CONFIGURACIÓN ---
 // En producción, estas variables vienen de process.env
@@ -112,4 +114,61 @@ export const sendChatwootMessage = async (email, name, message) => {
     console.error('❌ Error enviando a Chatwoot (Timeout o Red):', error.message);
     throw error;
   }
+};
+
+/**
+ * Analiza un mensaje entrante de WhatsApp para determinar si es un Lead de Venta
+ */
+export const analyzeLeadIntent = async (message) => {
+    try {
+        if (!process.env.API_KEY) {
+            console.warn("⚠️ API KEY de Google no configurada. Saltando análisis de IA.");
+            return { isLead: false, summary: message };
+        }
+
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const prompt = `
+            Analiza el siguiente mensaje de WhatsApp entrante para una empresa de Aire Acondicionado llamada "SuperAir".
+            Mensaje: "${message}"
+
+            Determina la intención:
+            - SALES: Si pide precio, cotización, información de producto, instalación o mantenimiento.
+            - SUPPORT: Si reporta una falla, garantía o queja.
+            - OTHER: Saludos, spam, u otros.
+
+            Si es SALES, extrae un nombre probable (si lo menciona) y el servicio de interés.
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        intent: { type: Type.STRING, enum: ["SALES", "SUPPORT", "OTHER"] },
+                        name: { type: Type.STRING, description: "Probable name of the person if mentioned" },
+                        serviceInterest: { type: Type.STRING, description: "Short summary of what they want" },
+                        summary: { type: Type.STRING, description: "One sentence summary for CRM notes" }
+                    },
+                    required: ["intent", "summary"]
+                }
+            }
+        });
+
+        if (response.text) {
+            const data = JSON.parse(response.text);
+            return {
+                isLead: data.intent === 'SALES',
+                intent: data.intent,
+                name: data.name,
+                service: data.serviceInterest,
+                summary: data.summary
+            };
+        }
+    } catch (e) {
+        console.error("AI Analysis Error:", e);
+    }
+    return { isLead: false, summary: message };
 };

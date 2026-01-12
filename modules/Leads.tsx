@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   Magnet, Plus, Phone, MessageSquare, ArrowRight, UserPlus, 
@@ -142,8 +143,10 @@ const Leads: React.FC = () => {
   };
 
   const getSourceIcon = (source: string) => {
-      if(source === 'Facebook' || source === 'Instagram') return <Facebook size={12} className="text-blue-600"/>;
-      if(source === 'Google') return <Globe size={12} className="text-red-500"/>;
+      const s = source.toLowerCase();
+      if(s.includes('facebook') || s.includes('fb') || s.includes('instagram')) return <Facebook size={12} className="text-blue-600"/>;
+      if(s.includes('google') || s.includes('adwords')) return <Globe size={12} className="text-orange-500"/>;
+      if(s.includes('whatsapp') || s.includes('wa')) return <MessageSquare size={12} className="text-emerald-500"/>;
       return <UserPlus size={12} className="text-slate-400"/>;
   };
 
@@ -162,7 +165,7 @@ const Leads: React.FC = () => {
             onClick={() => setShowWebhookInfo(true)}
             className="flex items-center gap-2 px-6 py-3 bg-white text-slate-600 border border-slate-200 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 transition-all shadow-sm"
           >
-            <LinkIcon size={18} /> Webhook Ads
+            <LinkIcon size={18} /> Webhook & IA
           </button>
           <button 
             onClick={handleOpenCreate}
@@ -208,11 +211,18 @@ const Leads: React.FC = () => {
                                 className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md hover:border-sky-200 cursor-grab active:cursor-grabbing transition-all group relative"
                               >
                                   <div className="flex justify-between items-start mb-2">
-                                      <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
-                                          {getSourceIcon(lead.source)}
-                                          <span className="text-[9px] font-bold text-slate-500 uppercase">{lead.source}</span>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                          <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
+                                              {getSourceIcon(lead.source)}
+                                              <span className="text-[9px] font-bold text-slate-500 uppercase max-w-[80px] truncate">{lead.source}</span>
+                                          </div>
+                                          {lead.campaign && (
+                                              <span className="text-[8px] font-black uppercase tracking-wide bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-100 max-w-[100px] truncate">
+                                                  {lead.campaign}
+                                              </span>
+                                          )}
                                       </div>
-                                      <div className="flex gap-1">
+                                      <div className="flex gap-1 shrink-0">
                                           <button onClick={() => handleOpenEdit(lead)} className="text-slate-300 hover:text-sky-500 p-1"><Edit3 size={12}/></button>
                                           <button onClick={() => handleDeleteLead(lead.id)} className="text-slate-300 hover:text-rose-500 p-1"><Trash2 size={12}/></button>
                                       </div>
@@ -220,10 +230,6 @@ const Leads: React.FC = () => {
                                   
                                   <h4 className="font-bold text-slate-800 text-sm mb-1 truncate">{lead.name}</h4>
                                   
-                                  {lead.campaign && (
-                                      <p className="text-[9px] text-slate-400 mb-3 truncate">Camp: {lead.campaign}</p>
-                                  )}
-
                                   <div className="flex items-center justify-between mt-4 border-t border-slate-50 pt-3">
                                       <div className="flex gap-2">
                                           {lead.phone && (
@@ -281,6 +287,10 @@ const Leads: React.FC = () => {
                           </select>
                       </div>
                       <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Campaña (Opcional)</label>
+                          <input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none" placeholder="Ej: Verano 2025" value={leadForm.campaign || ''} onChange={e => setLeadForm({...leadForm, campaign: e.target.value})} />
+                      </div>
+                      <div className="space-y-1">
                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Notas</label>
                           <textarea className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none h-20 resize-none" value={leadForm.notes} onChange={e => setLeadForm({...leadForm, notes: e.target.value})} />
                       </div>
@@ -300,28 +310,41 @@ const Leads: React.FC = () => {
                   <div className="flex items-center gap-4 mb-6">
                       <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl"><LinkIcon size={24}/></div>
                       <div>
-                          <h3 className="font-black text-xl text-slate-900 uppercase tracking-tight">Conexión de Anuncios</h3>
-                          <p className="text-slate-400 text-xs">Integra Facebook & Google Lead Forms</p>
+                          <h3 className="font-black text-xl text-slate-900 uppercase tracking-tight">Conexión de Anuncios & IA</h3>
+                          <p className="text-slate-400 text-xs">Integra Facebook, Google & WhatsApp</p>
                       </div>
                   </div>
                   
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 mb-6">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Tu URL de Webhook (POST)</p>
-                      <div className="flex items-center gap-2 bg-white border border-slate-200 p-3 rounded-xl">
-                          <code className="text-xs font-mono text-slate-600 truncate flex-1">
-                              {window.location.origin}/api/webhooks/leads
-                          </code>
-                          <button className="text-sky-600 hover:text-sky-700" onClick={() => navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/leads`)}>
-                              <Copy size={16} />
-                          </button>
+                  <div className="space-y-4">
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Webhook de Anuncios (Leads)</p>
+                          <div className="flex items-center gap-2 bg-white border border-slate-200 p-3 rounded-xl">
+                              <code className="text-xs font-mono text-slate-600 truncate flex-1">
+                                  {window.location.origin}/api/webhooks/leads
+                              </code>
+                              <button className="text-sky-600 hover:text-sky-700" onClick={() => navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/leads`)}>
+                                  <Copy size={16} />
+                              </button>
+                          </div>
                       </div>
-                      <p className="text-[10px] text-slate-400 mt-3 leading-relaxed">
-                          Configura este endpoint en Zapier o n8n. El sistema espera un JSON con: 
-                          <span className="font-mono text-slate-600"> name, email, phone_number, platform, campaign_name</span>.
-                      </p>
+
+                      <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-6">
+                          <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Webhook de WhatsApp (Inteligente)</p>
+                          <div className="flex items-center gap-2 bg-white border border-emerald-100 p-3 rounded-xl">
+                              <code className="text-xs font-mono text-slate-600 truncate flex-1">
+                                  {window.location.origin}/api/webhooks/chat-incoming
+                              </code>
+                              <button className="text-emerald-600 hover:text-emerald-700" onClick={() => navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/chat-incoming`)}>
+                                  <Copy size={16} />
+                              </button>
+                          </div>
+                          <p className="text-[10px] text-emerald-600 mt-2 font-medium">
+                              Conecta este endpoint a tu proveedor de WhatsApp. La IA de Gemini leerá los mensajes y creará leads automáticamente si detecta intención de compra.
+                          </p>
+                      </div>
                   </div>
 
-                  <div className="flex justify-end">
+                  <div className="flex justify-end mt-6">
                       <button onClick={() => setShowWebhookInfo(false)} className="px-8 py-3 bg-slate-900 text-white rounded-xl font-black uppercase tracking-widest text-[10px] hover:bg-slate-800">Entendido</button>
                   </div>
               </div>

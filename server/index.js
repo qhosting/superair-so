@@ -13,7 +13,7 @@ import cron from 'node-cron';
 import { google } from 'googleapis';
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from 'openai';
-import { sendWhatsApp, sendChatwootMessage } from './services.js';
+import { sendWhatsApp, sendChatwootMessage, analyzeLeadIntent } from './services.js';
 
 // --- CONFIG & HANDLERS ---
 process.on('uncaughtException', (err) => console.error('❌ CRITICAL:', err));
@@ -88,6 +88,7 @@ const authenticateToken = (req, res, next) => {
     '/api/cms/content', 
     '/api/webhooks/leads',
     '/api/webhooks/invoices',
+    '/api/webhooks/chat-incoming', // Allow WhatsApp webhooks
     '/api/settings/public'
   ];
 
@@ -317,7 +318,8 @@ app.get('/api/leads', async (req, res) => { try { const r = await db.query('SELE
 app.post('/api/leads', async (req, res) => { 
     const l = req.body; 
     try { 
-        const r = await db.query("INSERT INTO leads (name, email, phone, source, status, notes) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *", [l.name, l.email, l.phone, l.source || 'Manual', l.status || 'Nuevo', l.notes]); 
+        // Modified to include campaign support
+        const r = await db.query("INSERT INTO leads (name, email, phone, source, campaign, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *", [l.name, l.email, l.phone, l.source || 'Manual', l.campaign || '', l.status || 'Nuevo', l.notes]); 
         if (!req.user) await db.query("INSERT INTO notifications (title, message, type) VALUES ($1, $2, 'info')", ['Nuevo Lead Web', `Prospecto: ${l.name} (${l.source})`]);
         res.json(r.rows[0]); 
     } catch(e){res.status(500).json({error:e.message});} 
@@ -336,6 +338,43 @@ app.delete('/api/leads/:id', authorize(['Admin', 'Super Admin']), async (req, re
         await db.query("DELETE FROM leads WHERE id=$1", [req.params.id]); 
         res.json({success:true}); 
     } catch(e){res.status(500).json({error:e.message});} 
+});
+
+// --- NEW: WHATSAPP WEBHOOK (Simulated) ---
+app.post('/api/webhooks/chat-incoming', async (req, res) => {
+    const { from, body } = req.body; // Expects { from: "52442...@c.us", body: "Hola..." }
+    if (!from || !body) return res.status(400).json({error: 'Missing from or body'});
+
+    try {
+        // Clean Phone Number (Remove @c.us and non-digits)
+        // This ensures the DB stores clean numbers like '5214423325814' instead of '5214423325814@c.us'
+        const cleanPhone = from.replace(/\D/g, '');
+
+        // 1. Check if it's already a lead or client
+        const existingLead = await db.query("SELECT id FROM leads WHERE phone = $1 OR phone LIKE $2", [cleanPhone, `%${cleanPhone}%`]);
+        const existingClient = await db.query("SELECT id FROM clients WHERE phone = $1 OR phone LIKE $2", [cleanPhone, `%${cleanPhone}%`]);
+
+        // 2. Analyze intent with AI
+        const analysis = await analyzeLeadIntent(body);
+        
+        if (analysis.isLead && existingLead.rows.length === 0 && existingClient.rows.length === 0) {
+            // Create New Lead automatically with CLEAN phone
+            const leadName = analysis.name || `Prospecto WA ${cleanPhone.slice(-4)}`;
+            await db.query(
+                "INSERT INTO leads (name, phone, source, status, notes) VALUES ($1, $2, 'WhatsApp IA', 'Nuevo', $3)",
+                [leadName, cleanPhone, `${analysis.summary} (Auto-generado por Gemini)`]
+            );
+            await db.query("INSERT INTO notifications (title, message, type) VALUES ($1, $2, 'success')", ['Lead de WhatsApp', `IA detectó venta: ${analysis.summary}`]);
+        } else if (existingLead.rows.length > 0) {
+            // Update existing lead notes
+            await db.query("UPDATE leads SET notes = notes || $1 WHERE id = $2", [`\n[WA]: ${body}`, existingLead.rows[0].id]);
+        }
+
+        res.json({ success: true, analysis });
+    } catch (e) {
+        console.error("Webhook Error:", e);
+        res.status(500).json({error: e.message});
+    }
 });
 
 app.post('/api/leads/:id/convert', authorize(['Admin', 'Super Admin']), async (req, res) => { 

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   Wind, 
@@ -18,7 +19,7 @@ import {
   Clock,
   MapPin
 } from 'lucide-react';
-import { Link } from '../context/AuthContext';
+import { Link, useLocation } from '../context/AuthContext';
 import { LandingSection } from '../types';
 
 const LandingPage: React.FC = () => {
@@ -27,7 +28,11 @@ const LandingPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const location = useLocation();
   
+  // Marketing State
+  const [utmData, setUtmData] = useState({ source: 'Web', campaign: '' });
+
   // Appointment Form State
   const [appointmentForm, setAppointmentForm] = useState({
     name: '',
@@ -48,7 +53,29 @@ const LandingPage: React.FC = () => {
   const [loadingCms, setLoadingCms] = useState(true);
 
   useEffect(() => {
-    // Intentar cargar contenido del CMS y Configuración Pública
+    // 1. Detect UTMs from URL
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const source = params.get('utm_source');
+        const campaign = params.get('utm_campaign');
+        const medium = params.get('utm_medium');
+        
+        if (source) {
+            let finalSource = 'Web';
+            if (source.toLowerCase().includes('facebook') || source.toLowerCase().includes('fb')) finalSource = 'Facebook';
+            else if (source.toLowerCase().includes('google') || source.toLowerCase().includes('adwords')) finalSource = 'Google';
+            else if (source.toLowerCase().includes('instagram') || source.toLowerCase().includes('ig')) finalSource = 'Instagram';
+            else if (medium === 'cpc' || medium === 'paid') finalSource = 'Google';
+
+            setUtmData({ 
+                source: finalSource, 
+                campaign: campaign || '' 
+            });
+            console.log("🎯 Marketing Tracked:", finalSource, campaign);
+        }
+    } catch (e) { console.error("Error parsing UTMs", e); }
+
+    // 2. Load CMS & Settings
     Promise.all([
         fetch('/api/cms/content').then(r => r.ok ? r.json() : null),
         fetch('/api/settings/public').then(r => r.ok ? r.json() : null)
@@ -77,7 +104,6 @@ const LandingPage: React.FC = () => {
 
   const scrollToSection = (id: string) => {
     setMobileMenuOpen(false);
-    // Pequeño timeout para permitir que el DOM se estabilice si hubo cambios
     setTimeout(() => {
         if (id === 'hero') {
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -86,8 +112,6 @@ const LandingPage: React.FC = () => {
         const element = document.getElementById(id);
         if (element) {
           element.scrollIntoView({ behavior: 'smooth' });
-        } else {
-            console.warn(`Sección con id '${id}' no encontrada.`);
         }
     }, 100);
   };
@@ -103,7 +127,8 @@ const LandingPage: React.FC = () => {
             body: JSON.stringify({
                 name: contactForm.name,
                 phone: contactForm.phone,
-                source: 'Web',
+                source: utmData.source, // Uses detected source
+                campaign: utmData.campaign, // Uses detected campaign
                 notes: `Interesado en: ${contactForm.service}`
             })
         });
@@ -133,7 +158,8 @@ const LandingPage: React.FC = () => {
             body: JSON.stringify({
                 name: appointmentForm.name,
                 phone: appointmentForm.phone,
-                source: 'Web (Cita)',
+                source: utmData.source === 'Web' ? 'Web (Cita)' : utmData.source,
+                campaign: utmData.campaign,
                 notes: `Solicitud de Cita para: ${appointmentForm.service}. Fecha preferida: ${appointmentForm.date}`
             })
         });
