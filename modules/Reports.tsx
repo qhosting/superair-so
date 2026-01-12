@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   BarChart3, TrendingUp, TrendingDown, PieChart, Calendar, Download, 
   BrainCircuit, Loader2, FileSpreadsheet, FileText, DollarSign, 
-  Briefcase, Users, AlertCircle, Zap, Package
+  Briefcase, Users, AlertCircle, Zap, Package, CheckCircle2
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
@@ -63,7 +64,7 @@ const Reports: React.FC = () => {
 
     quotes.forEach(q => {
       if (q.status === 'Aceptada' || q.status === 'Completado') {
-        const date = new Date(q.created_at);
+        const date = new Date(q.created_at || q.createdAt || new Date()); // Fallback date
         const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
         if (monthsMap.has(key)) {
            const current = monthsMap.get(key);
@@ -77,18 +78,24 @@ const Reports: React.FC = () => {
     return Array.from(monthsMap.values());
   }, [quotes, dateRange]);
 
-  // 2. Datos Operativos (Citas por Técnico)
+  // 2. Datos Operativos (Citas por Técnico) - 100% REAL
   const technicianPerformance = useMemo(() => {
-    const techMap: Record<string, number> = {};
+    const techMap: Record<string, { total: number, completed: number }> = {};
+    
     appointments.forEach(a => {
       const tech = a.technician || 'Sin Asignar';
-      techMap[tech] = (techMap[tech] || 0) + 1;
+      if (!techMap[tech]) techMap[tech] = { total: 0, completed: 0 };
+      
+      techMap[tech].total += 1;
+      if (a.status === 'Completada') {
+          techMap[tech].completed += 1;
+      }
     });
 
-    return Object.entries(techMap).map(([name, servicios]) => ({
+    return Object.entries(techMap).map(([name, stats]) => ({
       name,
-      servicios,
-      satisfaccion: (4 + Math.random()).toFixed(1) // Simulado hasta tener sistema de encuestas
+      servicios: stats.total,
+      eficiencia: stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0
     })).sort((a,b) => b.servicios - a.servicios);
   }, [appointments]);
 
@@ -129,8 +136,6 @@ const Reports: React.FC = () => {
     return { totalRevenue, totalServices, inventoryValue };
   }, [financialData, appointments, products]);
 
-  // ... (Rest of UI is fine, it depends on data state)
-
   const generateAiAnalysis = async () => {
     setLoadingAi(true);
     setAiAnalysis(null);
@@ -140,7 +145,7 @@ const Reports: React.FC = () => {
       const contextData = {
         periodo: `Últimos ${dateRange} meses`,
         financiero: financialData.map(d => ({ Mes: d.name, Ingresos: d.ingresos, MargenEstimado: d.ingresos - d.gastos })),
-        operativo: { totalServicios: stats.totalServices, topTecnicos: technicianPerformance.slice(0,3) },
+        operativo: { totalServicios: stats.totalServices, desempenoTecnico: technicianPerformance.slice(0,3) },
         inventario: { valorTotal: stats.inventoryValue, categorias: inventoryData }
       };
 
@@ -152,7 +157,7 @@ const Reports: React.FC = () => {
         Formato de respuesta (HTML simple):
         <ul>
           <li><strong>Insight Financiero:</strong> [Análisis de tendencia de ingresos]</li>
-          <li><strong>Eficiencia Operativa:</strong> [Comentario sobre carga de trabajo técnica]</li>
+          <li><strong>Eficiencia Operativa:</strong> [Comentario sobre técnicos y tasa de finalización]</li>
           <li><strong>Acción Recomendada:</strong> [Una acción concreta para mejorar rentabilidad]</li>
         </ul>
         Mantén el tono profesional y directo.
@@ -179,8 +184,8 @@ const Reports: React.FC = () => {
       headers = 'Mes,Ingresos,Gastos Estimados,Margen\n';
       rows = financialData.map(d => `${d.name},${d.ingresos},${d.gastos},${d.ingresos - d.gastos}`);
     } else if (activeTab === 'operational') {
-      headers = 'Tecnico,Servicios Totales,Satisfaccion Estimada\n';
-      rows = technicianPerformance.map(d => `${d.name},${d.servicios},${d.satisfaccion}`);
+      headers = 'Tecnico,Servicios Asignados,Tasa Finalizacion (%)\n';
+      rows = technicianPerformance.map(d => `${d.name},${d.servicios},${d.eficiencia}`);
     } else {
       headers = 'Categoria,Valor de Inventario\n';
       rows = inventoryData.map(d => `${d.name},${d.value}`);
@@ -327,7 +332,7 @@ const Reports: React.FC = () => {
               <div className="flex items-center justify-between mb-8">
                 <div>
                   <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter">Carga de Trabajo</h3>
-                  <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Servicios por Técnico</p>
+                  <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Servicios Asignados vs Finalizados</p>
                 </div>
               </div>
               <div className="h-80 w-full">
@@ -337,8 +342,12 @@ const Reports: React.FC = () => {
                       <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
                       <XAxis type="number" hide />
                       <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11, fontWeight: 700}} width={80} />
-                      <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '12px'}} />
-                      <Bar dataKey="servicios" name="Servicios Asignados" fill="#0ea5e9" radius={[0, 4, 4, 0]} barSize={20} />
+                      <Tooltip 
+                        cursor={{fill: '#f8fafc'}} 
+                        contentStyle={{borderRadius: '12px'}}
+                        formatter={(value, name) => [value, name === 'servicios' ? 'Total Asignado' : 'Eficiencia %']}
+                      />
+                      <Bar dataKey="servicios" name="Servicios" fill="#0ea5e9" radius={[0, 4, 4, 0]} barSize={20} />
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
@@ -347,6 +356,16 @@ const Reports: React.FC = () => {
                       <p className="text-xs font-bold uppercase">Sin datos de técnicos</p>
                    </div>
                 )}
+              </div>
+              {/* Efficiency Legend */}
+              <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {technicianPerformance.map((tech, idx) => (
+                      <div key={idx} className="flex items-center gap-2 text-[10px] bg-slate-50 p-2 rounded-lg">
+                          <CheckCircle2 size={12} className={tech.eficiencia > 80 ? 'text-emerald-500' : 'text-amber-500'}/>
+                          <span className="font-bold text-slate-600">{tech.name}:</span>
+                          <span className="font-black text-slate-900">{tech.eficiencia}% Completado</span>
+                      </div>
+                  ))}
               </div>
             </div>
           )}
