@@ -2,7 +2,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   User, Search, Plus, MapPin, Phone, Mail, FileText, Trash2, 
-  Loader2, UploadCloud, CheckCircle2, AlertCircle, X, BrainCircuit, ExternalLink
+  Loader2, UploadCloud, CheckCircle2, AlertCircle, X, BrainCircuit, ExternalLink,
+  Edit3
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { Client } from '../types';
@@ -13,6 +14,9 @@ const Clients: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   
+  // Edit State
+  const [isEditing, setIsEditing] = useState(false);
+
   // IA Analysis State
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
@@ -37,21 +41,46 @@ const Clients: React.FC = () => {
     }
   };
 
+  const handleOpenCreate = () => {
+      setNewClient({ name: '', email: '', phone: '', address: '', rfc: '', type: 'Residencial', status: 'Prospecto', notes: '' });
+      setIsEditing(false);
+      setShowAddModal(true);
+  };
+
+  const handleOpenEdit = (client: Client) => {
+      setNewClient(client);
+      setIsEditing(true);
+      setShowAddModal(true);
+  };
+
   const handleSaveClient = async () => {
     if (!newClient.name) return;
     try {
-      const res = await fetch('/api/clients', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newClient)
-      });
+      let res;
+      if (isEditing && newClient.id) {
+          // Update Mode
+          res = await fetch(`/api/clients/${newClient.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newClient)
+          });
+      } else {
+          // Create Mode
+          res = await fetch('/api/clients', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newClient)
+          });
+      }
+
       if (res.ok) {
         setShowAddModal(false);
-        setNewClient({ name: '', email: '', phone: '', address: '', rfc: '', type: 'Residencial', status: 'Prospecto', notes: '' });
-        fetchClients();
+        fetchClients(); // Refresh list to get updated/new data
+      } else {
+          alert('Error al guardar. Verifique los datos.');
       }
     } catch (e) {
-      alert('Error guardando cliente');
+      alert('Error de conexión');
     }
   };
 
@@ -156,7 +185,7 @@ const Clients: React.FC = () => {
           <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">Cartera de Clientes</h2>
           <p className="text-slate-500 text-sm font-medium">Gestión de contactos y datos fiscales.</p>
         </div>
-        <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-sky-700 shadow-xl shadow-sky-600/20 transition-all">
+        <button onClick={handleOpenCreate} className="flex items-center gap-2 px-6 py-3 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-sky-700 shadow-xl shadow-sky-600/20 transition-all">
             <Plus size={18} /> Nuevo Cliente
         </button>
       </div>
@@ -214,7 +243,10 @@ const Clients: React.FC = () => {
                              </td>
                              <td className="px-8 py-5 text-xs font-mono font-bold text-slate-500">{client.rfc || 'N/A'}</td>
                              <td className="px-8 py-5 text-right">
-                                 <button onClick={() => handleDeleteClient(client.id)} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"><Trash2 size={16}/></button>
+                                 <div className="flex justify-end gap-1">
+                                     <button onClick={() => handleOpenEdit(client)} className="p-2 text-slate-300 hover:text-sky-500 hover:bg-sky-50 rounded-lg transition-all"><Edit3 size={16}/></button>
+                                     <button onClick={() => handleDeleteClient(client.id)} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"><Trash2 size={16}/></button>
+                                 </div>
                              </td>
                          </tr>
                      ))}
@@ -228,7 +260,9 @@ const Clients: React.FC = () => {
               <div className="bg-white w-full max-w-2xl rounded-[3.5rem] shadow-2xl p-10 animate-in zoom-in duration-300">
                   <div className="flex justify-between items-center mb-8">
                       <div>
-                          <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Registrar Cliente</h3>
+                          <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">
+                              {isEditing ? 'Editar Cliente' : 'Registrar Cliente'}
+                          </h3>
                           <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Manual o vía Constancia Fiscal</p>
                       </div>
                       <button onClick={() => setShowAddModal(false)} className="p-2 hover:bg-slate-100 rounded-xl"><X size={20}/></button>
@@ -247,6 +281,10 @@ const Clients: React.FC = () => {
                           <div className="space-y-1">
                               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email</label>
                               <input value={newClient.email} onChange={e => setNewClient({...newClient, email: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" />
+                          </div>
+                          <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Teléfono</label>
+                              <input value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" />
                           </div>
                       </div>
                       
@@ -287,11 +325,22 @@ const Clients: React.FC = () => {
                                   ))}
                               </div>
                            </div>
+
+                           <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Dirección</label>
+                              <textarea 
+                                value={newClient.address} 
+                                onChange={e => setNewClient({...newClient, address: e.target.value})} 
+                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-sm h-24 resize-none"
+                              />
+                           </div>
                       </div>
                   </div>
 
                   <div className="mt-8 pt-8 border-t border-slate-100 flex gap-4">
-                      <button onClick={handleSaveClient} className="flex-1 py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-sky-700">Guardar Cliente</button>
+                      <button onClick={handleSaveClient} className="flex-1 py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-sky-700">
+                          {isEditing ? 'Guardar Cambios' : 'Guardar Cliente'}
+                      </button>
                   </div>
               </div>
           </div>

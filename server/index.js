@@ -404,6 +404,22 @@ app.post('/api/clients', authorize(['Admin', 'Super Admin']), async (req, res) =
     } catch(e){res.status(500).json({error:e.message});} 
 });
 
+// Endpoint agregado para editar clientes
+app.put('/api/clients/:id', authorize(['Admin', 'Super Admin']), async (req, res) => {
+    const { id } = req.params;
+    const c = req.body;
+    try {
+        await db.query(
+            "UPDATE clients SET name=$1, email=$2, phone=$3, address=$4, rfc=$5, type=$6, notes=$7 WHERE id=$8",
+            [c.name, c.email, c.phone, c.address, c.rfc, c.type, c.notes, id]
+        );
+        const updated = await db.query("SELECT * FROM clients WHERE id=$1", [id]);
+        res.json(updated.rows[0]);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.delete('/api/clients/:id', authorize(['Admin', 'Super Admin']), async (req, res) => { 
     try { 
         await db.query("DELETE FROM clients WHERE id=$1", [req.params.id]); 
