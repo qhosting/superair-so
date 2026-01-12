@@ -4,7 +4,7 @@ import {
   Plus, Trash2, Save, Eye, Type as TypeIcon, Layout as LayoutIcon, Smartphone,
   Monitor, CheckCircle2, Wind, History, MapPin, Globe, Lock, ChevronUp,
   ChevronDown, Edit3, Image as ImageIcon, Palette, Phone, Mail, AlertTriangle, Loader2,
-  Zap
+  Zap, Star
 } from 'lucide-react';
 import { LandingSection, SectionType } from '../types';
 
@@ -23,21 +23,21 @@ const LandingBuilder: React.FC = () => {
         if (data && Array.isArray(data) && data.length > 0) {
           setSections(data);
         } else {
-          // Default SuperAir Template if DB is empty
+          // Default SuperAir Template if DB is empty - SYNCHRONIZED WITH STATIC DESIGN
           setSections([
             { 
                 id: 'hero-def', 
                 type: 'hero', 
-                title: 'Climatización Profesional en México', 
-                subtitle: 'Instalación y mantenimiento de aire acondicionado residencial y comercial. Técnicos certificados y garantía por escrito.', 
-                buttonText: 'Solicitar Cotización', 
-                imageUrl: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e' 
+                title: 'El clima perfecto existe.', 
+                subtitle: 'Expertos en instalación, reparación y mantenimiento de aire acondicionado. Servicio residencial y comercial con garantía por escrito.', 
+                buttonText: 'Cotizar Ahora', 
+                imageUrl: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=2069' 
             },
             { 
                 id: 'serv-def', 
                 type: 'services', 
-                title: 'Soluciones Integrales', 
-                subtitle: 'Desde Mini Splits hasta sistemas VRF industriales.', 
+                title: 'Nuestros Servicios', 
+                subtitle: 'Soluciones integrales diseñadas para maximizar la eficiencia energética y el confort de tu espacio.', 
                 buttonText: 'Ver Servicios' 
             },
             { 
@@ -45,7 +45,7 @@ const LandingBuilder: React.FC = () => {
                 type: 'cta', 
                 title: '¿Tu equipo falla?', 
                 subtitle: 'Servicio de emergencia 24/7 disponible en zona metropolitana.', 
-                buttonText: 'Llamar al Técnico' 
+                buttonText: 'Contactar' 
             }
           ]);
         }
@@ -130,6 +130,18 @@ const LandingBuilder: React.FC = () => {
                   className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm h-32 resize-none focus:ring-2 focus:ring-sky-500 outline-none"
                 />
               </div>
+              {/* Image Input for Hero */}
+              {activeSection.type === 'hero' && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">URL Imagen de Fondo</label>
+                    <input 
+                      value={activeSection.imageUrl || ''}
+                      onChange={(e) => updateSection(activeSection.id, { imageUrl: e.target.value })}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono outline-none"
+                      placeholder="https://..."
+                    />
+                  </div>
+              )}
               {(activeSection.type === 'hero' || activeSection.type === 'cta') && (
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Texto del Botón</label>
@@ -201,7 +213,7 @@ const LandingBuilder: React.FC = () => {
 
         <div className="flex-1 bg-slate-200 rounded-[2.5rem] overflow-hidden relative border-[12px] border-slate-300 transition-all mx-auto shadow-2xl flex flex-col w-full">
             <div className={`h-full bg-white overflow-y-auto custom-scrollbar mx-auto transition-all duration-500 ${previewMode === 'mobile' ? 'w-[375px] border-x border-slate-200' : 'w-full'}`}>
-                {/* Visual Preview Logic */}
+                {/* Visual Preview Logic - SYNCHRONIZED WITH LANDINGPAGE RENDERER */}
                 {sections.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-slate-400 p-10 text-center">
                         <LayoutIcon size={48} className="mb-4 text-slate-300" />
@@ -209,22 +221,47 @@ const LandingBuilder: React.FC = () => {
                         <p className="text-sm">Agrega secciones desde el panel izquierdo.</p>
                     </div>
                 ) : (
-                    sections.map(s => (
-                        <div key={s.id} className={`border-b border-dashed border-slate-200 relative group ${s.type === 'hero' ? 'bg-slate-900 text-white py-20' : 'py-16'}`}>
-                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 bg-sky-600 text-white text-[9px] font-bold px-2 py-1 rounded">
-                                {s.type.toUpperCase()}
+                    sections.map(s => {
+                        if (s.type === 'hero') {
+                            return (
+                                <div key={s.id} className="relative h-[400px] flex items-center overflow-hidden">
+                                     <img src={s.imageUrl || "https://images.unsplash.com/photo-1621905251189-08b45d6a269e"} className="absolute inset-0 w-full h-full object-cover" />
+                                     <div className="absolute inset-0 bg-slate-900/60" />
+                                     <div className="relative z-10 px-8 text-center w-full">
+                                         <span className="inline-block px-3 py-1 mb-4 rounded-full bg-sky-500/20 text-sky-300 text-[10px] font-black uppercase tracking-widest border border-sky-400/30">Vista Previa</span>
+                                         <h2 className="text-3xl font-black text-white mb-4 uppercase tracking-tighter drop-shadow-lg">{s.title}</h2>
+                                         <p className="text-slate-200 text-sm max-w-lg mx-auto mb-6">{s.subtitle}</p>
+                                         <button className="px-6 py-2 bg-sky-600 text-white font-black rounded-xl uppercase text-xs">{s.buttonText || 'Botón'}</button>
+                                     </div>
+                                </div>
+                            );
+                        }
+                        if (s.type === 'services') {
+                            return (
+                                <div key={s.id} className="py-16 px-8 text-center bg-white">
+                                    <h2 className="text-3xl font-black text-slate-900 mb-4 uppercase tracking-tighter">{s.title}</h2>
+                                    <p className="text-slate-500 text-sm max-w-xl mx-auto mb-10">{s.subtitle}</p>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 opacity-50 pointer-events-none">
+                                        {[1,2,3].map(i => (
+                                            <div key={i} className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                                                <div className="w-10 h-10 bg-slate-200 rounded-xl mb-4 mx-auto"/>
+                                                <div className="h-4 w-24 bg-slate-200 rounded mx-auto mb-2"/>
+                                                <div className="h-2 w-32 bg-slate-200 rounded mx-auto"/>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p className="mt-4 text-[10px] text-slate-400 font-medium italic">* Los servicios se muestran completos en el sitio público</p>
+                                </div>
+                            )
+                        }
+                        return (
+                            <div key={s.id} className="py-16 px-8 text-center bg-sky-600 text-white">
+                                <h2 className="text-3xl font-black mb-4 uppercase tracking-tighter">{s.title}</h2>
+                                <p className="text-sky-100 text-sm max-w-xl mx-auto mb-8">{s.subtitle}</p>
+                                <button className="px-6 py-2 bg-white text-sky-600 font-black rounded-xl uppercase text-xs">{s.buttonText || 'Botón'}</button>
                             </div>
-                            <div className="px-8 text-center max-w-4xl mx-auto">
-                                <h2 className={`text-3xl font-black mb-4 ${s.type === 'hero' ? 'text-white' : 'text-slate-900'}`}>{s.title}</h2>
-                                <p className={`mb-8 text-lg ${s.type === 'hero' ? 'text-slate-300' : 'text-slate-500'}`}>{s.subtitle}</p>
-                                {s.buttonText && (
-                                    <button className="px-8 py-3 bg-sky-600 text-white font-bold rounded-full text-xs uppercase shadow-lg">
-                                        {s.buttonText}
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    ))
+                        );
+                    })
                 )}
             </div>
         </div>

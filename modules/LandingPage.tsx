@@ -15,9 +15,7 @@ import {
   Zap,
   Loader2,
   CheckCircle2,
-  Calendar,
-  Clock,
-  MapPin
+  Calendar
 } from 'lucide-react';
 import { Link, useLocation } from '../context/AuthContext';
 import { LandingSection } from '../types';
@@ -127,8 +125,8 @@ const LandingPage: React.FC = () => {
             body: JSON.stringify({
                 name: contactForm.name,
                 phone: contactForm.phone,
-                source: utmData.source, // Uses detected source
-                campaign: utmData.campaign, // Uses detected campaign
+                source: utmData.source, 
+                campaign: utmData.campaign, 
                 notes: `Interesado en: ${contactForm.service}`
             })
         });
@@ -186,49 +184,72 @@ const LandingPage: React.FC = () => {
 
   const brands = ["Carrier", "York", "Trane", "Mirage", "Daikin", "LG"];
 
-  // --- RENDERIZADO DINÁMICO (Si hay datos en CMS) ---
+  // --- RENDERIZADO DINÁMICO (Sincronizado con DB) ---
   const renderDynamicSection = (section: LandingSection) => {
       switch(section.type) {
           case 'hero':
               return (
-                <header key={section.id} id="hero" className="relative pt-32 pb-20">
-                    <div className="relative h-[600px] md:h-[700px] flex items-center overflow-hidden rounded-[3rem] mx-4 md:mx-6 shadow-2xl">
-                        <img src={section.imageUrl || "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=2069"} className="absolute inset-0 w-full h-full object-cover" alt="Hero Background" />
-                        <div className="absolute inset-0 bg-slate-900/60" />
-                        <div className="relative z-10 max-w-7xl mx-auto px-6 w-full text-center md:text-left">
-                            <h1 className="text-4xl md:text-7xl font-black text-white mb-6 uppercase tracking-tighter leading-none animate-in slide-in-from-bottom-5 duration-700">
-                                {section.title}
-                            </h1>
-                            <p className="text-slate-300 text-lg md:text-xl mb-10 leading-relaxed font-medium max-w-2xl mx-auto md:mx-0 animate-in slide-in-from-bottom-8 duration-700 delay-100">
-                                {section.subtitle}
-                            </p>
-                            {section.buttonText && (
-                                <button onClick={() => setShowAppointmentModal(true)} className="inline-flex items-center gap-2 px-8 py-4 bg-sky-600 text-white font-black rounded-2xl hover:bg-sky-500 transition-all shadow-xl shadow-sky-600/20 uppercase tracking-widest text-xs animate-in zoom-in duration-500 delay-200">
-                                    <Zap size={16} /> {section.buttonText}
-                                </button>
-                            )}
+                <header key={section.id} id="hero" className="relative pt-32 pb-10 px-4">
+                    <div className="relative h-[650px] flex items-center overflow-hidden rounded-[3.5rem] shadow-2xl mx-auto max-w-[1400px]">
+                        <img src={section.imageUrl || "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=2069"} className="absolute inset-0 w-full h-full object-cover transform hover:scale-105 transition-transform duration-[20s]" alt="Hero Background" />
+                        <div className="absolute inset-0 bg-gradient-to-r from-slate-900/90 via-slate-900/50 to-transparent" />
+                        
+                        <div className="relative z-10 max-w-7xl mx-auto px-10 w-full grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+                            <div className="text-center md:text-left animate-in slide-in-from-bottom-8 duration-700">
+                                <div className="inline-flex items-center gap-2 px-4 py-2 bg-sky-500/20 border border-sky-400/30 rounded-full text-sky-300 text-[10px] font-black uppercase tracking-widest mb-6 backdrop-blur-md">
+                                    <Star size={12} fill="currentColor" /> #1 En Climatización
+                                </div>
+                                <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-white mb-6 uppercase tracking-tighter leading-none drop-shadow-lg">
+                                    {section.title}
+                                </h1>
+                                <p className="text-slate-300 text-lg mb-10 leading-relaxed font-medium max-w-xl mx-auto md:mx-0">
+                                    {section.subtitle}
+                                </p>
+                                <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
+                                    <button onClick={() => setShowAppointmentModal(true)} className="px-10 py-4 bg-sky-600 text-white font-black rounded-2xl hover:bg-sky-500 transition-all shadow-xl shadow-sky-600/30 uppercase tracking-widest text-xs flex items-center justify-center gap-2 hover:-translate-y-1">
+                                      <Zap size={16} /> {section.buttonText || 'Cotizar Ahora'}
+                                    </button>
+                                    <a href="tel:4423325814" className="px-10 py-4 bg-white/10 backdrop-blur-md border border-white/20 text-white font-black rounded-2xl hover:bg-white hover:text-slate-900 transition-all shadow-xl uppercase tracking-widest text-xs flex items-center justify-center gap-2">
+                                      <Phone size={16} /> Llamar
+                                    </a>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </header>
               );
           case 'services':
               return (
-                  <section key={section.id} id="services" className="py-24 px-6 bg-slate-50">
-                      <div className="max-w-7xl mx-auto text-center">
-                          <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-6 uppercase tracking-tighter">{section.title}</h2>
-                          <p className="text-slate-500 text-lg max-w-2xl mx-auto mb-16">{section.subtitle}</p>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                              {['Instalación', 'Mantenimiento', 'Reparación'].map((s, i) => (
-                                  <div key={i} className="bg-white p-8 rounded-[2rem] shadow-lg border border-slate-100 hover:-translate-y-2 transition-transform duration-300 flex flex-col items-center text-center">
-                                      <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center mb-6 mx-auto"><Wrench size={24}/></div>
-                                      <h3 className="text-xl font-black text-slate-900 mb-3 uppercase tracking-tight">{s}</h3>
-                                      <p className="text-slate-500 text-sm mb-6">Servicio profesional certificado.</p>
-                                      <button onClick={() => setShowAppointmentModal(true)} className="mt-auto inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-sky-600 hover:text-sky-700">
-                                          Solicitar Cita <ArrowRight size={14} />
-                                      </button>
+                  <section key={section.id} id="services" className="py-24 px-6 max-w-7xl mx-auto">
+                      <div className="text-center mb-20">
+                          <h2 className="text-4xl md:text-5xl font-black text-slate-900 mb-6 uppercase tracking-tighter">{section.title}</h2>
+                          <p className="text-slate-500 text-lg max-w-2xl mx-auto">{section.subtitle}</p>
+                      </div>
+                      
+                      {/* Servicios fijos por diseño (El usuario edita el título/subtítulo) */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                          {[
+                          { title: 'Instalación', desc: 'Instalación profesional de equipos Mini Split, Multisplit y Paquetes con los más altos estándares.', icon: Wrench, img: 'https://images.unsplash.com/photo-1621905252507-b354bcadcabc?q=80&w=2070' },
+                          { title: 'Mantenimiento', desc: 'Limpieza profunda, revisión de presiones y diagnóstico preventivo para alargar la vida de tu equipo.', icon: ShieldCheck, img: 'https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?q=80&w=2070' },
+                          { title: 'Reparación', desc: 'Diagnóstico preciso y reparación de fallas con refacciones originales y garantía de servicio.', icon: Zap, img: 'https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?q=80&w=2070' },
+                          ].map((service, idx) => (
+                          <div key={idx} className="group rounded-[2.5rem] overflow-hidden border border-slate-100 shadow-xl hover:shadow-2xl transition-all duration-300 bg-white">
+                              <div className="h-48 overflow-hidden relative">
+                                  <img src={service.img} alt={service.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                                  <div className="absolute inset-0 bg-slate-900/20 group-hover:bg-transparent transition-colors" />
+                              </div>
+                              <div className="p-8">
+                                  <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center mb-6">
+                                      <service.icon size={24} />
                                   </div>
-                              ))}
+                                  <h3 className="text-2xl font-black text-slate-900 mb-3 uppercase tracking-tight">{service.title}</h3>
+                                  <p className="text-slate-500 text-sm leading-relaxed mb-6">{service.desc}</p>
+                                  <button onClick={() => setShowAppointmentModal(true)} className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-sky-600 hover:text-sky-700">
+                                      Solicitar Cita <ArrowRight size={14} />
+                                  </button>
+                              </div>
                           </div>
+                          ))}
                       </div>
                   </section>
               );
@@ -238,7 +259,7 @@ const LandingPage: React.FC = () => {
                       <div className="max-w-4xl mx-auto">
                           <h2 className="text-3xl md:text-5xl font-black mb-6 uppercase tracking-tighter">{section.title}</h2>
                           <p className="text-sky-100 text-lg mb-10">{section.subtitle}</p>
-                          <button onClick={() => setShowAppointmentModal(true)} className="inline-block bg-white text-sky-600 px-10 py-4 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-sky-50 transition-all shadow-xl">
+                          <button onClick={() => setShowAppointmentModal(true)} className="inline-block bg-white text-sky-600 px-10 py-4 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-sky-50 transition-all shadow-xl hover:scale-105">
                               {section.buttonText || 'Contactar'}
                           </button>
                       </div>
@@ -250,7 +271,7 @@ const LandingPage: React.FC = () => {
   };
 
 
-  // --- LAYOUT COMÚN (Navbar, Footer, Contact) ---
+  // --- LAYOUT COMÚN ---
   return (
     <div className="bg-white font-sans text-slate-900 scroll-smooth selection:bg-sky-100 selection:text-sky-900">
       {/* Floating WhatsApp */}
@@ -367,6 +388,42 @@ const LandingPage: React.FC = () => {
           // RENDERIZADO DINÁMICO (CMS)
           <div className="pt-0">
               {cmsSections.map(section => renderDynamicSection(section))}
+              
+              {/* Brands Section (Siempre Visible) */}
+              <div className="bg-slate-50 border-y border-slate-200 py-10 overflow-hidden">
+                <div className="max-w-7xl mx-auto px-6">
+                    <p className="text-center text-[10px] font-black text-slate-400 uppercase tracking-widest mb-8">Trabajamos con las mejores marcas del mercado</p>
+                    <div className="flex flex-wrap justify-center gap-12 md:gap-20 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
+                    {brands.map(brand => (
+                        <span key={brand} className="text-2xl md:text-3xl font-black text-slate-400 hover:text-slate-800 cursor-default select-none">{brand}</span>
+                    ))}
+                    </div>
+                </div>
+              </div>
+
+              {/* FAQ Section */}
+              <section id="faq" className="py-24 px-6 max-w-4xl mx-auto">
+                <h2 className="text-3xl md:text-4xl font-black text-slate-900 mb-12 text-center uppercase tracking-tighter">Preguntas Frecuentes</h2>
+                <div className="space-y-4">
+                    {faqs.map((item, idx) => (
+                    <div key={idx} className="border border-slate-200 rounded-2xl overflow-hidden">
+                        <button 
+                            onClick={() => toggleFaq(idx)}
+                            className="w-full flex items-center justify-between p-6 bg-white hover:bg-slate-50 transition-colors text-left"
+                        >
+                            <span className="font-bold text-slate-800">{item.q}</span>
+                            <ChevronDown size={20} className={`text-slate-400 transition-transform ${activeFaq === idx ? 'rotate-180' : ''}`} />
+                        </button>
+                        {activeFaq === idx && (
+                            <div className="p-6 bg-slate-50 text-slate-600 text-sm leading-relaxed border-t border-slate-100">
+                                {item.a}
+                            </div>
+                        )}
+                    </div>
+                    ))}
+                </div>
+              </section>
+
               {/* Sección de contacto siempre visible al final */}
               <section id="contact" className="py-24 bg-sky-50 px-6">
                 <div className="max-w-5xl mx-auto bg-white rounded-[3rem] shadow-2xl overflow-hidden flex flex-col md:flex-row">
@@ -442,196 +499,13 @@ const LandingPage: React.FC = () => {
               </section>
           </div>
       ) : (
-          // FALLBACK: DISEÑO ESTÁTICO (Original High Quality)
-          <>
-            <header id="hero" className="relative pt-32 pb-10 px-4">
-                <div className="relative h-[650px] flex items-center overflow-hidden rounded-[3.5rem] shadow-2xl mx-auto max-w-[1400px]">
-                    <img src="https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=2069" className="absolute inset-0 w-full h-full object-cover transform hover:scale-105 transition-transform duration-[20s]" alt="Hero Background" />
-                    <div className="absolute inset-0 bg-gradient-to-r from-slate-900/90 via-slate-900/50 to-transparent" />
-                    
-                    <div className="relative z-10 max-w-7xl mx-auto px-10 w-full grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-                        <div className="text-center md:text-left animate-in slide-in-from-bottom-8 duration-700">
-                            <div className="inline-flex items-center gap-2 px-4 py-2 bg-sky-500/20 border border-sky-400/30 rounded-full text-sky-300 text-[10px] font-black uppercase tracking-widest mb-6 backdrop-blur-md">
-                                <Star size={12} fill="currentColor" /> #1 En Climatización Querétaro
-                            </div>
-                            <h1 className="text-5xl md:text-7xl font-black text-white mb-6 uppercase tracking-tighter leading-none drop-shadow-lg">
-                                El clima perfecto <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-cyan-300">existe</span>.
-                            </h1>
-                            <p className="text-slate-300 text-lg mb-10 leading-relaxed font-medium max-w-xl mx-auto md:mx-0">
-                                Expertos en instalación, reparación y mantenimiento de aire acondicionado. Servicio residencial y comercial con garantía por escrito.
-                            </p>
-                            <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
-                                <button onClick={() => setShowAppointmentModal(true)} className="px-10 py-4 bg-sky-600 text-white font-black rounded-2xl hover:bg-sky-500 transition-all shadow-xl shadow-sky-600/30 uppercase tracking-widest text-xs flex items-center justify-center gap-2 hover:-translate-y-1">
-                                <Zap size={16} /> Cotizar Ahora
-                                </button>
-                                <a href="tel:4423325814" className="px-10 py-4 bg-white/10 backdrop-blur-md border border-white/20 text-white font-black rounded-2xl hover:bg-white hover:text-slate-900 transition-all shadow-xl uppercase tracking-widest text-xs flex items-center justify-center gap-2">
-                                <Phone size={16} /> Llamar
-                                </a>
-                            </div>
-                            
-                            <div className="mt-12 flex items-center justify-center md:justify-start gap-8">
-                                <div className="flex items-center gap-2 text-white/80">
-                                    <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400"><ShieldCheck size={20} /></div>
-                                    <div className="text-left">
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Garantía</p>
-                                        <p className="text-xs font-bold">Por Escrito</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2 text-white/80">
-                                    <div className="p-2 bg-amber-500/10 rounded-lg text-amber-400"><Wrench size={20} /></div>
-                                    <div className="text-left">
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-400">Técnicos</p>
-                                        <p className="text-xs font-bold">Certificados</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            {/* Brands Section */}
-            <div className="bg-slate-50 border-y border-slate-200 py-10 overflow-hidden">
-                <div className="max-w-7xl mx-auto px-6">
-                    <p className="text-center text-[10px] font-black text-slate-400 uppercase tracking-widest mb-8">Trabajamos con las mejores marcas del mercado</p>
-                    <div className="flex flex-wrap justify-center gap-12 md:gap-20 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
-                    {brands.map(brand => (
-                        <span key={brand} className="text-2xl md:text-3xl font-black text-slate-400 hover:text-slate-800 cursor-default select-none">{brand}</span>
-                    ))}
-                    </div>
-                </div>
-            </div>
-
-            {/* Services Section */}
-            <section id="services" className="py-24 px-6 max-w-7xl mx-auto">
-                <div className="text-center mb-20">
-                    <h2 className="text-4xl md:text-5xl font-black text-slate-900 mb-6 uppercase tracking-tighter">Nuestros Servicios</h2>
-                    <p className="text-slate-500 text-lg max-w-2xl mx-auto">Soluciones integrales diseñadas para maximizar la eficiencia energética y el confort de tu espacio.</p>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    {[
-                    { title: 'Instalación', desc: 'Instalación profesional de equipos Mini Split, Multisplit y Paquetes con los más altos estándares.', icon: Wrench, img: 'https://images.unsplash.com/photo-1621905252507-b354bcadcabc?q=80&w=2070' },
-                    { title: 'Mantenimiento', desc: 'Limpieza profunda, revisión de presiones y diagnóstico preventivo para alargar la vida de tu equipo.', icon: ShieldCheck, img: 'https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?q=80&w=2070' },
-                    { title: 'Reparación', desc: 'Diagnóstico preciso y reparación de fallas con refacciones originales y garantía de servicio.', icon: Zap, img: 'https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?q=80&w=2070' },
-                    ].map((service, idx) => (
-                    <div key={idx} className="group rounded-[2.5rem] overflow-hidden border border-slate-100 shadow-xl hover:shadow-2xl transition-all duration-300 bg-white">
-                        <div className="h-48 overflow-hidden relative">
-                            <img src={service.img} alt={service.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
-                            <div className="absolute inset-0 bg-slate-900/20 group-hover:bg-transparent transition-colors" />
-                        </div>
-                        <div className="p-8">
-                            <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center mb-6">
-                                <service.icon size={24} />
-                            </div>
-                            <h3 className="text-2xl font-black text-slate-900 mb-3 uppercase tracking-tight">{service.title}</h3>
-                            <p className="text-slate-500 text-sm leading-relaxed mb-6">{service.desc}</p>
-                            <button onClick={() => setShowAppointmentModal(true)} className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-sky-600 hover:text-sky-700">
-                                Solicitar Cita <ArrowRight size={14} />
-                            </button>
-                        </div>
-                    </div>
-                    ))}
-                </div>
-            </section>
-
-            {/* FAQ */}
-            <section id="faq" className="py-24 px-6 max-w-4xl mx-auto">
-                <h2 className="text-3xl md:text-4xl font-black text-slate-900 mb-12 text-center uppercase tracking-tighter">Preguntas Frecuentes</h2>
-                <div className="space-y-4">
-                    {faqs.map((item, idx) => (
-                    <div key={idx} className="border border-slate-200 rounded-2xl overflow-hidden">
-                        <button 
-                            onClick={() => toggleFaq(idx)}
-                            className="w-full flex items-center justify-between p-6 bg-white hover:bg-slate-50 transition-colors text-left"
-                        >
-                            <span className="font-bold text-slate-800">{item.q}</span>
-                            <ChevronDown size={20} className={`text-slate-400 transition-transform ${activeFaq === idx ? 'rotate-180' : ''}`} />
-                        </button>
-                        {activeFaq === idx && (
-                            <div className="p-6 bg-slate-50 text-slate-600 text-sm leading-relaxed border-t border-slate-100">
-                                {item.a}
-                            </div>
-                        )}
-                    </div>
-                    ))}
-                </div>
-            </section>
-
-            {/* Contact Form */}
-            <section id="contact" className="py-24 bg-sky-50 px-6">
-                <div className="max-w-5xl mx-auto bg-white rounded-[3rem] shadow-2xl overflow-hidden flex flex-col md:flex-row">
-                    <div className="p-12 md:w-1/2 bg-slate-900 text-white flex flex-col justify-between">
-                        <div>
-                        <h3 className="text-3xl font-black uppercase tracking-tighter mb-6">Contáctanos</h3>
-                        <p className="text-slate-400 mb-8 leading-relaxed">Estamos listos para atenderte.</p>
-                        <div className="space-y-6">
-                            <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-sky-400"><Phone size={20}/></div>
-                                <div><p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Llámanos</p><p className="font-bold text-lg">442 332 5814</p></div>
-                            </div>
-                            <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-emerald-400"><MessageCircle size={20}/></div>
-                                <div><p className="text-[10px] font-black uppercase tracking-widest text-slate-500">WhatsApp</p><p className="font-bold text-lg">442 332 5814</p></div>
-                            </div>
-                            <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-rose-400"><Mail size={20}/></div>
-                                <div><p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Email</p><p className="font-bold text-lg">contacto@superair.com.mx</p></div>
-                            </div>
-                        </div>
-                        </div>
-                        
-                        <div className="mt-12 flex gap-4 opacity-50">
-                        <div className="w-8 h-8 bg-white/20 rounded-full" />
-                        <div className="w-8 h-8 bg-white/20 rounded-full" />
-                        <div className="w-8 h-8 bg-white/20 rounded-full" />
-                        </div>
-                    </div>
-                    
-                    <div className="p-12 md:w-1/2">
-                        <form className="space-y-6" onSubmit={handleContactSubmit}>
-                            <div>
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Nombre</label>
-                                <input 
-                                    required 
-                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" 
-                                    value={contactForm.name}
-                                    onChange={e => setContactForm({...contactForm, name: e.target.value})}
-                                />
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Teléfono</label>
-                                <input 
-                                    required 
-                                    type="tel" 
-                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" 
-                                    placeholder="10 dígitos" 
-                                    value={contactForm.phone}
-                                    onChange={e => setContactForm({...contactForm, phone: e.target.value})}
-                                />
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Servicio Requerido</label>
-                                <select 
-                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
-                                    value={contactForm.service}
-                                    onChange={e => setContactForm({...contactForm, service: e.target.value})}
-                                >
-                                    <option>Mantenimiento Preventivo</option>
-                                    <option>Reparación / Diagnóstico</option>
-                                    <option>Instalación Nueva</option>
-                                    <option>Cotización de Equipo</option>
-                                </select>
-                            </div>
-                            <button type="submit" disabled={isSubmitting} className="w-full py-5 bg-sky-600 text-white font-black rounded-2xl uppercase tracking-widest text-xs flex items-center justify-center gap-2 disabled:opacity-70">
-                                {isSubmitting ? <Loader2 className="animate-spin" size={16}/> : <Zap size={16}/>}
-                                {isSubmitting ? 'Enviando...' : 'Enviar Mensaje'}
-                            </button>
-                        </form>
-                    </div>
-                </div>
-              </section>
-          </>
+          // FALLBACK SI TODO FALLA (VACÍO)
+          <div className="h-screen flex items-center justify-center">
+             <div className="text-center">
+                 <Loader2 className="animate-spin text-slate-300 mx-auto mb-4" size={48} />
+                 <p className="text-slate-400 font-bold">Cargando Contenido...</p>
+             </div>
+          </div>
       )}
 
       {/* MODAL DE AGENDAR CITA */}

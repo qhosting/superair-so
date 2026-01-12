@@ -40,6 +40,7 @@ ENV HOST=0.0.0.0
 # Default Integrations URLs (Can be overridden by docker-compose)
 ENV WAHA_URL=http://waha:3000
 ENV CHATWOOT_URL=https://app.chatwoot.com
+ENV N8N_WEBHOOK_URL=http://n8n:5678/webhook/process-cfdi
 
 # Copy package files
 COPY package*.json ./
