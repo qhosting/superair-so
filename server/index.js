@@ -30,7 +30,7 @@ const UPLOAD_DIR = path.join(__dirname, '../uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // Increased limit for bulk CSV
 app.use('/uploads', express.static(UPLOAD_DIR));
 
 const PORT = process.env.PORT || 3000;
@@ -139,6 +139,9 @@ const runMigrations = async () => {
         await db.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS location TEXT`);
         await db.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS duration INTEGER DEFAULT 0`);
         
+        // New Migration for Code/SKU
+        await db.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS code TEXT`);
+        
         await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS rfc TEXT`);
         await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'Residencial'`);
         await db.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS cfdi_status TEXT DEFAULT 'Pendiente'`);
@@ -154,7 +157,7 @@ const initDB = async () => {
   try {
     await db.query(`CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'Admin', status TEXT DEFAULT 'Activo', last_login TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS clients (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT, phone TEXT, address TEXT, rfc TEXT, type TEXT DEFAULT 'Residencial', status TEXT DEFAULT 'Prospecto', notes TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
-    await db.query(`CREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, name TEXT NOT NULL, description TEXT, price NUMERIC, stock INTEGER DEFAULT 0, category TEXT, min_stock INTEGER DEFAULT 5, cost NUMERIC DEFAULT 0, type TEXT DEFAULT 'product', price_wholesale NUMERIC DEFAULT 0, price_vip NUMERIC DEFAULT 0, location TEXT, duration INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
+    await db.query(`CREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, code TEXT, name TEXT NOT NULL, description TEXT, price NUMERIC, stock INTEGER DEFAULT 0, category TEXT, min_stock INTEGER DEFAULT 5, cost NUMERIC DEFAULT 0, type TEXT DEFAULT 'product', price_wholesale NUMERIC DEFAULT 0, price_vip NUMERIC DEFAULT 0, location TEXT, duration INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS cms_content (id SERIAL PRIMARY KEY, section_id TEXT UNIQUE, content JSONB, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS appointments (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id), technician TEXT, date DATE, time TIME, type TEXT, status TEXT, duration INTEGER DEFAULT 60, google_event_link TEXT)`);
     await db.query(`CREATE TABLE IF NOT EXISTS quotes (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id), client_name TEXT, total NUMERIC, status TEXT DEFAULT 'Borrador', items JSONB, payment_terms TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
@@ -464,9 +467,9 @@ app.delete('/api/users/:id', authorize(['Super Admin', 'Admin']), async (req, re
 
 
 // --- PRODUCTS ---
-app.get('/api/products', async (req, res) => { try { const r = await db.query('SELECT * FROM products ORDER BY name ASC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
+app.get('/api/products', async (req, res) => { try { const r = await db.query('SELECT * FROM products ORDER BY id DESC'); res.json(r.rows); } catch (e) { res.status(500).json({ error: e.message }); } });
 
-// Updated Product POST to include location and duration
+// Updated Product POST to include location, duration AND CODE
 app.post('/api/products', authorize(['Admin', 'Super Admin']), async (req, res) => {
     const p = req.body;
     try {
@@ -479,13 +482,13 @@ app.post('/api/products', authorize(['Admin', 'Super Admin']), async (req, res) 
                 }
             }
             await db.query(
-                `UPDATE products SET name=$1, description=$2, price=$3, stock=$4, category=$5, min_stock=$6, cost=$7, type=$8, price_wholesale=$9, price_vip=$10, location=$11, duration=$12 WHERE id=$13`, 
-                [p.name, p.description, p.price, p.stock, p.category, p.min_stock, p.cost, p.type, p.price_wholesale, p.price_vip, p.location, p.duration, p.id]
+                `UPDATE products SET name=$1, description=$2, price=$3, stock=$4, category=$5, min_stock=$6, cost=$7, type=$8, price_wholesale=$9, price_vip=$10, location=$11, duration=$12, code=$13 WHERE id=$14`, 
+                [p.name, p.description, p.price, p.stock, p.category, p.min_stock, p.cost, p.type, p.price_wholesale, p.price_vip, p.location, p.duration, p.code, p.id]
             );
         } else {
             const r = await db.query(
-                `INSERT INTO products (name, description, price, stock, category, min_stock, cost, type, price_wholesale, price_vip, location, duration) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`, 
-                [p.name, p.description, p.price, p.stock, p.category, p.min_stock, p.cost, p.type, p.price_wholesale, p.price_vip, p.location, p.duration]
+                `INSERT INTO products (name, description, price, stock, category, min_stock, cost, type, price_wholesale, price_vip, location, duration, code) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`, 
+                [p.name, p.description, p.price, p.stock, p.category, p.min_stock, p.cost, p.type, p.price_wholesale, p.price_vip, p.location, p.duration, p.code]
             );
             if (p.type === 'product' && p.stock > 0) {
                 await db.query("INSERT INTO inventory_movements (product_id, user_name, type, quantity, reason) VALUES ($1, $2, 'Entrada', $3, 'Inventario Inicial')", [r.rows[0].id, req.user.name, p.stock]);
@@ -494,6 +497,42 @@ app.post('/api/products', authorize(['Admin', 'Super Admin']), async (req, res) 
         res.json({ success: true });
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
+
+app.post('/api/products/bulk-update', authorize(['Admin', 'Super Admin']), async (req, res) => {
+    const { items } = req.body; // Expects [{code, price, cost}, ...]
+    if (!Array.isArray(items) || items.length === 0) return res.status(400).json({error: "Lista vacía"});
+
+    try {
+        await db.query('BEGIN');
+        let updatedCount = 0;
+        
+        for (const item of items) {
+            if (!item.code && !item.name) continue; // Skip empty rows
+            
+            // Try matching by Code first, then Name
+            const result = await db.query(
+                `UPDATE products SET price = $1, cost = $2, price_wholesale = $3, price_vip = $4 WHERE code = $5 OR name = $6 RETURNING id`,
+                [
+                    item.price || 0, 
+                    item.cost || 0,
+                    (item.price || 0) * 0.9, // Auto-update Lists based on new price
+                    (item.price || 0) * 0.85,
+                    item.code,
+                    item.code // Fallback: if user puts name in code field of CSV
+                ]
+            );
+            if (result.rowCount > 0) updatedCount++;
+        }
+        
+        await db.query('COMMIT');
+        res.json({ success: true, updatedCount });
+    } catch (e) {
+        await db.query('ROLLBACK');
+        console.error("Bulk Update Error:", e);
+        res.status(500).json({ error: "Error en actualización masiva: " + e.message });
+    }
+});
+
 app.delete('/api/products/:id', authorize(['Admin', 'Super Admin']), async (req, res) => { try { await db.query("DELETE FROM products WHERE id=$1", [req.params.id]); res.json({success:true}); } catch(e) { res.status(500).json({error:e.message}); } });
 
 app.get('/api/inventory/movements', async (req, res) => {

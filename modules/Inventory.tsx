@@ -3,7 +3,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, Plus, Package, AlertTriangle, ArrowUpRight, ArrowDownLeft, 
   Edit3, Filter, X, Warehouse, Boxes, Tag, Loader2, Trash2, Printer, 
-  Calculator, FileSpreadsheet, Wrench, Briefcase, History, Download, MapPin, Clock
+  Calculator, FileSpreadsheet, Wrench, Briefcase, History, Download, MapPin, Clock,
+  UploadCloud, FileText, CheckCircle2, Barcode
 } from 'lucide-react';
 import { Product } from '../types';
 import jsPDF from 'jspdf';
@@ -28,11 +29,13 @@ const Inventory: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
   
-  // State for Print Mode
+  // State for Print Mode & Import
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   const [newProduct, setNewProduct] = useState<Partial<Product>>({
-    name: '', description: '', price: 0, cost: 0, price_wholesale: 0, price_vip: 0,
+    code: '', name: '', description: '', price: 0, cost: 0, price_wholesale: 0, price_vip: 0,
     stock: 0, category: 'Refacción', type: 'product', min_stock: 5, location: '', duration: 0
   });
 
@@ -88,7 +91,7 @@ const Inventory: React.FC = () => {
         });
         if(res.ok) {
             setShowAddModal(false);
-            setNewProduct({ name: '', description: '', price: 0, cost: 0, stock: 0, category: 'Refacción', type: 'product', min_stock: 5, price_wholesale: 0, price_vip: 0, location: '', duration: 0 });
+            setNewProduct({ code: '', name: '', description: '', price: 0, cost: 0, stock: 0, category: 'Refacción', type: 'product', min_stock: 5, price_wholesale: 0, price_vip: 0, location: '', duration: 0 });
             fetchProducts(); 
         }
     } catch(e) { alert("Error guardando producto."); }
@@ -113,6 +116,67 @@ const Inventory: React.FC = () => {
       return ((price - cost) / price) * 100;
   };
 
+  // --- BULK IMPORT LOGIC ---
+  const handleBulkImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setIsImporting(true);
+      const reader = new FileReader();
+      
+      reader.onload = async (evt) => {
+          try {
+              const text = evt.target?.result as string;
+              // Simple CSV Parsing
+              const lines = text.split('\n');
+              const items = [];
+              
+              // Skip header, start at 1
+              for (let i = 1; i < lines.length; i++) {
+                  const line = lines[i].trim();
+                  if (!line) continue;
+                  
+                  const parts = line.split(',');
+                  if (parts.length >= 3) {
+                      // Expecting: code, cost, price
+                      const code = parts[0].trim();
+                      const cost = parseFloat(parts[1]);
+                      const price = parseFloat(parts[2]);
+                      
+                      if (code && !isNaN(price)) {
+                          items.push({ code, cost, price });
+                      }
+                  }
+              }
+
+              if (items.length === 0) throw new Error("No se encontraron datos válidos en el CSV.");
+
+              // Send to backend
+              const res = await fetch('/api/products/bulk-update', {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify({ items })
+              });
+
+              if (res.ok) {
+                  const data = await res.json();
+                  alert(`✅ Actualización exitosa.\n\nSe actualizaron ${data.updatedCount} productos.`);
+                  setShowImportModal(false);
+                  fetchProducts();
+              } else {
+                  throw new Error("Error en servidor");
+              }
+
+          } catch (err: any) {
+              alert("Error importando: " + err.message);
+          } finally {
+              setIsImporting(false);
+          }
+      };
+      
+      reader.readAsText(file);
+  };
+
   // --- PDF GENERATION FOR INVENTORY SHEETS ---
   const generatePDF = () => {
       const doc = new jsPDF();
@@ -127,12 +191,12 @@ const Inventory: React.FC = () => {
       // Filter only physical products
       const itemsToPrint = products.filter(p => p.type === 'product');
 
-      const tableColumn = ["ID", "Ubicación", "Categoría", "Producto", "Sistema", "Físico (Conteo)"];
+      const tableColumn = ["SKU / Código", "Ubicación", "Categoría", "Producto", "Sistema", "Físico"];
       const tableRows: any[] = [];
 
       itemsToPrint.forEach((item) => {
           tableRows.push([
-              item.id,
+              item.code || `ID-${item.id}`,
               item.location || 'N/A',
               item.category,
               item.name,
@@ -149,7 +213,7 @@ const Inventory: React.FC = () => {
           headStyles: { fillColor: [14, 165, 233] },
           styles: { fontSize: 10, cellPadding: 3 },
           columnStyles: {
-              0: { cellWidth: 15 },
+              0: { fontStyle: 'bold', cellWidth: 30 },
               4: { halign: 'center' },
               5: { halign: 'center' }
           }
@@ -160,7 +224,11 @@ const Inventory: React.FC = () => {
   };
 
   const filteredProducts = useMemo(() => {
-    return products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    const term = searchTerm.toLowerCase();
+    return products.filter(p => 
+        p.name.toLowerCase().includes(term) || 
+        (p.code && p.code.toLowerCase().includes(term))
+    );
   }, [products, searchTerm]);
 
   const stats = {
@@ -222,14 +290,15 @@ const Inventory: React.FC = () => {
             <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-6">
                     <div className="flex gap-4">
-                        <button onClick={() => setShowPrintModal(true)} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200"><Printer size={16}/> Hojas de Conteo</button>
-                        <button onClick={() => { setNewProduct({ name: '', description: '', price: 0, cost: 0, stock: 0, category: 'Refacción', type: 'product', min_stock: 5, price_wholesale: 0, price_vip: 0, location: '', duration: 0 }); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-2 bg-sky-600 text-white rounded-xl font-bold text-xs hover:bg-sky-700 shadow-lg shadow-sky-600/20"><Plus size={16}/> Nuevo Ítem</button>
+                        <button onClick={() => setShowPrintModal(true)} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200"><Printer size={16}/> Conteo</button>
+                        <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-xl font-bold text-xs hover:bg-emerald-100"><FileSpreadsheet size={16}/> Importar Precios</button>
+                        <button onClick={() => { setNewProduct({ code: '', name: '', description: '', price: 0, cost: 0, stock: 0, category: 'Refacción', type: 'product', min_stock: 5, price_wholesale: 0, price_vip: 0, location: '', duration: 0 }); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-2 bg-sky-600 text-white rounded-xl font-bold text-xs hover:bg-sky-700 shadow-lg shadow-sky-600/20"><Plus size={16}/> Nuevo Ítem</button>
                     </div>
                     <div className="relative">
                         <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                         <input 
                         type="text" 
-                        placeholder="Buscar por nombre..." 
+                        placeholder="Buscar por nombre o código..." 
                         className="pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500 transition-all w-64"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -244,9 +313,10 @@ const Inventory: React.FC = () => {
                     <table className="w-full text-left">
                     <thead className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest">
                         <tr>
+                        <th className="px-8 py-5">Código / SKU</th>
                         <th className="px-8 py-5">Ítem</th>
                         <th className="px-8 py-5">Tipo</th>
-                        <th className="px-8 py-5">Ubicación / Duración</th>
+                        <th className="px-8 py-5">Ubicación</th>
                         <th className="px-8 py-5">Existencia</th>
                         <th className="px-8 py-5">Costo</th>
                         <th className="px-8 py-5">Precio Lista</th>
@@ -259,6 +329,11 @@ const Inventory: React.FC = () => {
                             const margin = calculateMargin(Number(p.price), Number(p.cost || 0));
                             return (
                             <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
+                                <td className="px-8 py-6">
+                                    <span className="font-mono font-bold text-slate-500 text-xs bg-slate-100 px-2 py-1 rounded-lg">
+                                        {p.code || '-'}
+                                    </span>
+                                </td>
                                 <td className="px-8 py-6">
                                 <div className="flex items-center gap-4">
                                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black ${p.type === 'service' ? 'bg-purple-50 text-purple-500' : 'bg-slate-100 text-slate-400'}`}>
@@ -374,6 +449,51 @@ const Inventory: React.FC = () => {
           </div>
       )}
 
+      {/* Import Modal */}
+      {showImportModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[120] flex items-center justify-center p-6">
+              <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-300">
+                  <div className="flex justify-between items-center mb-6">
+                      <div className="flex items-center gap-3">
+                          <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl"><FileSpreadsheet size={20}/></div>
+                          <h3 className="text-xl font-black text-slate-900 uppercase">Importar Costos</h3>
+                      </div>
+                      <button onClick={() => setShowImportModal(false)} className="p-2 hover:bg-slate-100 rounded-xl"><X size={20}/></button>
+                  </div>
+                  
+                  <div className="space-y-6">
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-xs text-slate-500">
+                          <p className="font-bold text-slate-700 mb-2">Instrucciones:</p>
+                          <ul className="list-disc pl-4 space-y-1">
+                              <li>Sube un archivo <strong>.CSV</strong> simple.</li>
+                              <li>Columnas requeridas: <code>codigo, costo, precio</code></li>
+                              <li>Si no usas código, el sistema intentará buscar por nombre exacto.</li>
+                              <li>Los precios mayoreo/vip se recalcularán automáticamente.</li>
+                          </ul>
+                      </div>
+
+                      <div className="border-2 border-dashed border-slate-200 rounded-2xl p-8 flex flex-col items-center justify-center gap-3 hover:bg-slate-50 transition-all relative">
+                          <input 
+                              type="file" 
+                              accept=".csv"
+                              className="absolute inset-0 opacity-0 cursor-pointer"
+                              onChange={handleBulkImport}
+                              disabled={isImporting}
+                          />
+                          {isImporting ? (
+                              <Loader2 className="animate-spin text-emerald-600" size={32} />
+                          ) : (
+                              <UploadCloud className="text-slate-400" size={32} />
+                          )}
+                          <p className="font-bold text-slate-600 text-sm">
+                              {isImporting ? 'Procesando...' : 'Arrastra tu CSV aquí'}
+                          </p>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* Print Modal */}
       {showPrintModal && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[120] flex items-center justify-center p-6">
@@ -418,7 +538,19 @@ const Inventory: React.FC = () => {
               </div>
               <div className="p-10 space-y-6 overflow-y-auto custom-scrollbar">
                  {/* Row 1: Basic Info */}
-                 <div className="grid grid-cols-3 gap-6">
+                 <div className="grid grid-cols-4 gap-6">
+                     <div className="col-span-1 space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Código / SKU</label>
+                        <div className="relative">
+                            <Barcode size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+                            <input 
+                                value={newProduct.code || ''}
+                                onChange={e => setNewProduct({...newProduct, code: e.target.value})}
+                                className="w-full pl-9 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 font-mono text-sm uppercase" 
+                                placeholder="AUT-001"
+                            />
+                        </div>
+                     </div>
                      <div className="col-span-2 space-y-1">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nombre del Producto / Servicio</label>
                         <input 

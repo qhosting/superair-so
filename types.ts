@@ -15,6 +15,7 @@ export interface Client {
 
 export interface Product {
   id: string;
+  code?: string; // SKU / Código Interno
   name: string;
   description: string;
   price: number; // Precio Público Base (Precio de Lista)
