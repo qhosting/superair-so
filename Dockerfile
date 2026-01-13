@@ -1,0 +1,84 @@
+
+# Stage 1: Build the React Application
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Define build arguments for frontend environment variables
+# These are baked into the React app by Vite at build time
+ARG API_KEY
+ENV API_KEY=$API_KEY
+
+# Force development environment to ensure devDependencies (Vite, TypeScript, etc.) are installed
+ENV NODE_ENV=development
+
+# Copy package files first to leverage Docker cache
+COPY package*.json ./
+
+# Install all dependencies
+RUN npm install
+
+# Copy the rest of the application code
+COPY . .
+
+# Build the React app (Output goes to /app/dist)
+RUN npm run build
+
+# Stage 2: Production Server
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install system dependencies
+# tzdata: Required for correct CronJob timing (Timezone)
+RUN apk add --no-cache tzdata
+
+# Set Timezone explicitly
+ENV TZ=America/Mexico_City
+
+# Production environment settings
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOST=0.0.0.0
+
+# API Key for Runtime (Backend AI)
+ARG API_KEY
+ENV API_KEY=$API_KEY
+
+# Default Integrations URLs (Override in docker-compose)
+ENV WAHA_URL=http://waha:3000
+ENV CHATWOOT_URL=https://app.chatwoot.com
+ENV N8N_WEBHOOK_URL=http://n8n:5678/webhook/process-cfdi
+
+# Email Configuration Defaults
+ENV SMTP_HOST=smtp.gmail.com
+ENV SMTP_PORT=587
+ENV SMTP_SECURE=true
+
+# Copy package files with correct ownership
+COPY --chown=node:node package*.json ./
+
+# Install only production dependencies
+RUN npm install --omit=dev
+
+# Copy the server code
+COPY --chown=node:node server ./server
+
+# Copy the built static files from the builder stage
+COPY --chown=node:node --from=builder /app/dist ./dist
+
+# Create uploads directory and set permissions
+RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
+
+# Expose the application port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD node -e "fetch('http://localhost:3000/api/health').then((r) => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
+
+# Use non-root user for security
+USER node
+
+# Start the Express server
+CMD ["node", "server/index.js"]
