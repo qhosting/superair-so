@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   User, Search, Plus, MapPin, Phone, Mail, FileText, Trash2, 
   Loader2, UploadCloud, CheckCircle2, AlertCircle, X, BrainCircuit, ExternalLink,
-  Edit3
+  Edit3, Save
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { Client } from '../types';
@@ -16,6 +16,7 @@ const Clients: React.FC = () => {
   
   // Edit State
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // IA Analysis State
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -54,33 +55,54 @@ const Clients: React.FC = () => {
   };
 
   const handleSaveClient = async () => {
-    if (!newClient.name) return;
+    if (!newClient.name) {
+        alert("El nombre del cliente es obligatorio.");
+        return;
+    }
+    
+    setIsSaving(true);
     try {
+      // Sanitize Payload to ensure no undefined values are sent to DB
+      const payload = {
+          name: newClient.name,
+          email: newClient.email || '',
+          phone: newClient.phone || '',
+          address: newClient.address || '',
+          rfc: newClient.rfc || '',
+          type: newClient.type || 'Residencial',
+          status: newClient.status || 'Prospecto',
+          notes: newClient.notes || ''
+      };
+
       let res;
       if (isEditing && newClient.id) {
           // Update Mode
           res = await fetch(`/api/clients/${newClient.id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(newClient)
+              body: JSON.stringify(payload)
           });
       } else {
           // Create Mode
           res = await fetch('/api/clients', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(newClient)
+              body: JSON.stringify(payload)
           });
       }
+
+      const data = await res.json();
 
       if (res.ok) {
         setShowAddModal(false);
         fetchClients(); // Refresh list to get updated/new data
       } else {
-          alert('Error al guardar. Verifique los datos.');
+          alert(`Error al guardar: ${data.error || 'Verifique los datos'}`);
       }
     } catch (e) {
-      alert('Error de conexión');
+      alert('Error de conexión con el servidor.');
+    } finally {
+        setIsSaving(false);
     }
   };
 
@@ -338,7 +360,12 @@ const Clients: React.FC = () => {
                   </div>
 
                   <div className="mt-8 pt-8 border-t border-slate-100 flex gap-4">
-                      <button onClick={handleSaveClient} className="flex-1 py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-sky-700">
+                      <button 
+                        onClick={handleSaveClient} 
+                        disabled={isSaving}
+                        className="flex-1 py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-sky-700 flex items-center justify-center gap-2 disabled:opacity-70"
+                      >
+                          {isSaving ? <Loader2 className="animate-spin" size={16}/> : <Save size={16} />}
                           {isEditing ? 'Guardar Cambios' : 'Guardar Cliente'}
                       </button>
                   </div>
