@@ -76,6 +76,7 @@ const Inventory: React.FC = () => {
         return;
     }
     try {
+        // Sanitize Payload: Force numbers, no NaNs
         const payload = {
             ...newProduct,
             price: Number(newProduct.price) || 0,
@@ -83,18 +84,26 @@ const Inventory: React.FC = () => {
             stock: newProduct.type === 'service' ? 0 : (Number(newProduct.stock) || 0),
             price_wholesale: Number(newProduct.price_wholesale) || 0,
             price_vip: Number(newProduct.price_vip) || 0,
-            duration: newProduct.type === 'service' ? Number(newProduct.duration) : 0,
-            location: newProduct.type === 'product' ? newProduct.location : ''
+            duration: newProduct.type === 'service' ? (Number(newProduct.duration) || 0) : 0,
+            location: newProduct.type === 'product' ? (newProduct.location || '') : '',
+            min_stock: Number(newProduct.min_stock) || 0
         };
+
         const res = await fetch('/api/products', {
-            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'}, 
+            body: JSON.stringify(payload)
         });
+
         if(res.ok) {
             setShowAddModal(false);
             setNewProduct({ code: '', name: '', description: '', price: 0, cost: 0, stock: 0, category: 'Refacción', type: 'product', min_stock: 5, price_wholesale: 0, price_vip: 0, location: '', duration: 0 });
             fetchProducts(); 
+        } else {
+            const err = await res.json();
+            alert(`Error al guardar: ${err.error || 'Verifique los datos.'}`);
         }
-    } catch(e) { alert("Error guardando producto."); }
+    } catch(e) { alert("Error de conexión al guardar producto."); }
   };
 
   const handleDeleteProduct = async (id: string) => {

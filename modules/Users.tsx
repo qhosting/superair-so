@@ -116,9 +116,10 @@ const Users: React.FC = () => {
         setShowUserModal(false);
         fetchData(); // Refresh users and logs
       } else {
-          alert('Error en operación. Verifique datos.');
+          const err = await res.json();
+          alert(`Error al guardar: ${err.error || 'Verifique los datos'}`);
       }
-    } catch(e) { alert('Error de conexión'); }
+    } catch(e) { alert('Error de conexión con el servidor.'); }
   };
 
   const handleDeleteUser = async (id: string) => {

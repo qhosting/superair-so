@@ -79,6 +79,13 @@ const Sales: React.FC = () => {
 
   const handleRegisterPayment = async () => {
       if (!selectedOrder || !paymentAmount) return;
+      
+      const amount = parseFloat(paymentAmount);
+      if (isNaN(amount) || amount <= 0) {
+          showToast('Monto inválido', 'error');
+          return;
+      }
+
       setIsPaying(true);
       try {
           const res = await fetch('/api/orders/pay', {
@@ -86,7 +93,7 @@ const Sales: React.FC = () => {
               headers: {'Content-Type': 'application/json'},
               body: JSON.stringify({ 
                   orderId: selectedOrder.id, 
-                  amount: parseFloat(paymentAmount), 
+                  amount: amount, 
                   method: paymentMethod 
               })
           });
@@ -98,7 +105,8 @@ const Sales: React.FC = () => {
               setPaymentAmount('');
               fetchOrders();
           } else {
-              showToast('Error al registrar pago', 'error');
+              const err = await res.json();
+              showToast(err.error || 'Error al registrar pago', 'error');
           }
       } catch(e) {
           showToast('Error de conexión', 'error');

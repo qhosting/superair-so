@@ -76,12 +76,29 @@ const Appointments: React.FC = () => {
   }, []);
 
   const handleSaveAppointment = async () => {
+      if (!newApt.client_id) {
+          alert("Por favor selecciona un cliente de la lista.");
+          return;
+      }
+      if (!newApt.technician) {
+          alert("Por favor asigna un técnico responsable.");
+          return;
+      }
+
       try {
+          // Prepare safe payload
+          const payload = {
+              ...newApt,
+              client_id: parseInt(newApt.client_id, 10), // CRITICAL: Ensure INT for DB
+              duration: parseInt(newApt.duration.toString(), 10) || 60
+          };
+
           const res = await fetch('/api/appointments', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(newApt)
+              body: JSON.stringify(payload)
           });
+
           if(res.ok) {
               const savedApt = await res.json();
               const client = clients.find(c => c.id == savedApt.client_id);
@@ -89,12 +106,13 @@ const Appointments: React.FC = () => {
               setAppointments([...appointments, savedApt]);
               setShowNewAptModal(false);
               // Reset duration/time but keep technician
-              setNewApt(prev => ({...prev, duration: 60, time: '10:00'})); 
+              setNewApt(prev => ({...prev, client_id: '', duration: 60, time: '10:00'})); 
           } else {
-              throw new Error("Save Failed");
+              const err = await res.json();
+              throw new Error(err.error || "Error desconocido al guardar");
           }
-      } catch(e) {
-          alert('Error al guardar cita en base de datos.');
+      } catch(e: any) {
+          alert(`No se pudo guardar la cita: ${e.message}`);
       }
   };
 
@@ -148,7 +166,8 @@ const Appointments: React.FC = () => {
               setIsRescheduling(false);
               alert("Cita reprogramada exitosamente.");
           } else {
-              alert("Error al guardar cambios.");
+              const err = await res.json();
+              alert(`Error al guardar cambios: ${err.error}`);
           }
       } catch(e) {
           alert("Error de conexión");
