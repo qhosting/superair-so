@@ -247,8 +247,12 @@ const Quotes: React.FC = () => {
     doc.text('COTIZACIÓN', 20, 25);
     doc.setFontSize(10);
     doc.text('SuperAir S.A. de C.V.', 20, 32);
+    
+    // Metadata Header
     doc.text(`Folio: #${quote.id}`, 160, 25);
-    doc.text(`Fecha: ${new Date(quote.createdAt).toLocaleDateString()}`, 160, 32);
+    doc.text(`Fecha: ${new Date(quote.createdAt).toLocaleDateString('es-MX')}`, 160, 32);
+    doc.setFontSize(8);
+    doc.text('Moneda: Peso Mexicano (MXN)', 160, 38); // Explicit Currency in PDF
 
     doc.setTextColor(50, 50, 50);
     doc.setFontSize(12);
@@ -257,7 +261,7 @@ const Quotes: React.FC = () => {
     doc.setFont('helvetica', 'normal');
     doc.text(quote.clientName || 'Cliente General', 20, 62);
 
-    const tableColumn = ["Concepto / Producto", "Cant.", "Precio Unit.", "Total"];
+    const tableColumn = ["Concepto / Producto", "Cant.", "Precio Unit. (MXN)", "Total (MXN)"];
     const tableRows: any[] = [];
     let items: any[] = [];
     try { items = typeof quote.items === 'string' ? JSON.parse(quote.items) : quote.items; } catch (e) { items = []; }
@@ -284,7 +288,12 @@ const Quotes: React.FC = () => {
     const finalY = (doc as any).lastAutoTable.finalY + 10;
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text(`Total: $${Number(quote.total).toFixed(2)} MXN`, 140, finalY);
+    doc.text(`Total Neto: $${Number(quote.total).toFixed(2)} MXN`, 130, finalY);
+    
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(150, 150, 150);
+    doc.text('Precios sujetos a cambio sin previo aviso. Vigencia de 15 días.', 20, finalY + 20);
 
     if (returnBlob) return doc.output('blob');
     doc.save(`Cotizacion_SuperAir_${quote.id}.pdf`);
