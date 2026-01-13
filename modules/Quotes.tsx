@@ -26,6 +26,7 @@ const Quotes: React.FC = () => {
   const [showEditor, setShowEditor] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [dependenciesLoading, setDependenciesLoading] = useState(false);
   
   const [currentQuote, setCurrentQuote] = useState<Partial<Quote>>({
       clientId: '',
@@ -56,7 +57,8 @@ const Quotes: React.FC = () => {
     if (pendingClient) {
         try {
             const client = JSON.parse(pendingClient);
-            handleOpenCreate(client);
+            // Small timeout to ensure component is ready
+            setTimeout(() => handleOpenCreate(client), 500);
             localStorage.removeItem('pending_quote_client');
         } catch (e) { console.error("Error parsing pending client"); }
     }
@@ -73,20 +75,33 @@ const Quotes: React.FC = () => {
   };
 
   const loadDependencies = async () => {
-      if (clients.length === 0 || products.length === 0) {
+      // Prevent redundant loads
+      if (clients.length > 0 && products.length > 0) return;
+
+      setDependenciesLoading(true);
+      try {
           const [cliRes, prodRes] = await Promise.all([
               fetch('/api/clients'),
               fetch('/api/products')
           ]);
-          setClients(await cliRes.json());
-          setProducts(await prodRes.json());
+          
+          if (cliRes.ok) setClients(await cliRes.json());
+          if (prodRes.ok) setProducts(await prodRes.json());
+      } catch (e) {
+          console.error("Error loading dependencies", e);
+      } finally {
+          setDependenciesLoading(false);
       }
   };
 
   // --- EDITOR LOGIC ---
 
   const handleOpenCreate = async (preSelectedClient?: any) => {
-      await loadDependencies();
+      // 1. Open Modal Immediately (Prevent UI Freeze)
+      setShowEditor(true);
+      setIsEditing(false);
+      
+      // 2. Reset State securely
       setCurrentQuote({
           clientId: preSelectedClient?.id || '',
           clientName: preSelectedClient?.name || '',
@@ -95,12 +110,17 @@ const Quotes: React.FC = () => {
           items: [],
           total: 0
       });
-      setIsEditing(false);
-      setShowEditor(true);
+
+      // 3. Load Data in Background
+      await loadDependencies();
   };
 
   const handleOpenEdit = async (quote: Quote) => {
-      await loadDependencies();
+      setShowEditor(true);
+      setIsEditing(true);
+      setDependenciesLoading(true); // Show loader inside modal
+
+      // Parse items safely
       let parsedItems = quote.items;
       if (typeof quote.items === 'string') {
           try { parsedItems = JSON.parse(quote.items); } catch(e) { parsedItems = []; }
@@ -110,13 +130,13 @@ const Quotes: React.FC = () => {
           ...quote,
           items: Array.isArray(parsedItems) ? parsedItems : [] 
       });
-      setIsEditing(true);
-      setShowEditor(true);
+
+      await loadDependencies();
   };
 
   const addItem = () => {
       const newItems = [...(currentQuote.items || [])];
-      // Initialize with explicit numbers to avoid NaN
+      // Initialize with explicit numbers/strings to avoid undefined
       newItems.push({ productId: '', productName: '', quantity: 1, price: 0 });
       setCurrentQuote({ ...currentQuote, items: newItems });
   };
@@ -124,40 +144,36 @@ const Quotes: React.FC = () => {
   const removeItem = (index: number) => {
       const newItems = [...(currentQuote.items || [])];
       newItems.splice(index, 1);
-      recalculateTotal(newItems);
+      // Recalculate implicitly via re-render or explicit call if needed
+      setCurrentQuote({ ...currentQuote, items: newItems });
   };
 
   const updateItem = (index: number, field: keyof QuoteItem, value: any) => {
       const newItems = [...(currentQuote.items || [])];
-      const item = newItems[index];
+      const item = { ...newItems[index] }; // Shallow copy item
 
       if (field === 'productId') {
           const product = products.find(p => p.id.toString() === value.toString());
           if (product) {
               item.productId = product.id;
               item.productName = product.name;
-              item.price = Number(product.price);
+              item.price = Number(product.price || 0);
           } else {
               // Reset if cleared
               item.productId = '';
               item.productName = '';
               item.price = 0;
           }
-      } else if (field === 'quantity' || field === 'price') {
-          // Force number type, default to 0 if NaN
-          const numVal = parseFloat(value);
-          (item as any)[field] = isNaN(numVal) ? 0 : numVal;
+      } else if (field === 'quantity') {
+          item.quantity = Number(value) || 0;
+      } else if (field === 'price') {
+          item.price = Number(value) || 0;
       } else {
           (item as any)[field] = value;
       }
       
       newItems[index] = item;
-      recalculateTotal(newItems);
-  };
-
-  const recalculateTotal = (items: any[]) => {
-      const total = items.reduce((acc, item) => acc + (Number(item.quantity || 0) * Number(item.price || 0)), 0);
-      setCurrentQuote({ ...currentQuote, items, total });
+      setCurrentQuote({ ...currentQuote, items: newItems });
   };
 
   const handleSave = async () => {
@@ -175,18 +191,20 @@ const Quotes: React.FC = () => {
       }
 
       // Calculate final total based on valid items
-      const finalSubtotal = validItems.reduce((acc: number, item: any) => acc + (item.quantity * item.price), 0);
+      const finalSubtotal = validItems.reduce((acc: number, item: any) => acc + (Number(item.quantity) * Number(item.price)), 0);
       const finalTotal = finalSubtotal * 1.16; // Assuming 16% IVA logic is applied globally
 
-      // Prepare Payload - FIXING TYPES HERE
+      // Find client name if not set
       const client = clients.find(c => c.id.toString() === currentQuote.clientId?.toString());
       
       const payload = {
           ...currentQuote,
           clientId: parseInt(currentQuote.clientId?.toString() || '0'), // Ensure INT
-          clientName: client?.name || currentQuote.clientName,
-          items: validItems, // Backend handles stringify or use as jsonb
-          total: finalTotal
+          clientName: client?.name || currentQuote.clientName || 'Cliente',
+          items: validItems, 
+          total: finalTotal,
+          status: currentQuote.status || 'Borrador',
+          paymentTerms: currentQuote.paymentTerms || PaymentTerms.FIFTY_FIFTY
       };
 
       setIsSaving(true);
@@ -250,9 +268,10 @@ const Quotes: React.FC = () => {
     
     // Metadata Header
     doc.text(`Folio: #${quote.id}`, 160, 25);
-    doc.text(`Fecha: ${new Date(quote.createdAt).toLocaleDateString('es-MX')}`, 160, 32);
+    const dateStr = quote.createdAt ? new Date(quote.createdAt).toLocaleDateString('es-MX') : new Date().toLocaleDateString('es-MX');
+    doc.text(`Fecha: ${dateStr}`, 160, 32);
     doc.setFontSize(8);
-    doc.text('Moneda: Peso Mexicano (MXN)', 160, 38); // Explicit Currency in PDF
+    doc.text('Moneda: Peso Mexicano (MXN)', 160, 38);
 
     doc.setTextColor(50, 50, 50);
     doc.setFontSize(12);
@@ -266,15 +285,19 @@ const Quotes: React.FC = () => {
     let items: any[] = [];
     try { items = typeof quote.items === 'string' ? JSON.parse(quote.items) : quote.items; } catch (e) { items = []; }
 
-    items.forEach((item: any) => {
-      const itemTotal = item.price * item.quantity;
-      tableRows.push([
-        item.productName || `ID: ${item.productId}`,
-        item.quantity,
-        `$${Number(item.price).toFixed(2)}`,
-        `$${itemTotal.toFixed(2)}`
-      ]);
-    });
+    if (Array.isArray(items)) {
+        items.forEach((item: any) => {
+          const qty = Number(item.quantity) || 0;
+          const price = Number(item.price) || 0;
+          const itemTotal = qty * price;
+          tableRows.push([
+            item.productName || `ID: ${item.productId}`,
+            qty,
+            `$${price.toFixed(2)}`,
+            `$${itemTotal.toFixed(2)}`
+          ]);
+        });
+    }
 
     (doc as any).autoTable({
       head: [tableColumn],
@@ -288,7 +311,7 @@ const Quotes: React.FC = () => {
     const finalY = (doc as any).lastAutoTable.finalY + 10;
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text(`Total Neto: $${Number(quote.total).toFixed(2)} MXN`, 130, finalY);
+    doc.text(`Total Neto: $${Number(quote.total || 0).toFixed(2)} MXN`, 130, finalY);
     
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
@@ -423,7 +446,7 @@ const Quotes: React.FC = () => {
                           {/* Live Total Display */}
                           <div className="text-right mr-4">
                               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Estimado</p>
-                              <p className="text-2xl font-black text-slate-900">${total.toFixed(2)}</p>
+                              <p className="text-2xl font-black text-slate-900">${(total || 0).toFixed(2)}</p>
                           </div>
 
                           {isEditing && currentQuote.status === 'Aceptada' && (
@@ -437,143 +460,150 @@ const Quotes: React.FC = () => {
 
                   {/* Body */}
                   <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                      <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200 space-y-8">
-                          
-                          {/* Top Controls Grid */}
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                              <div className="space-y-1">
-                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-1"><User size={12}/> Cliente</label>
-                                  <select 
-                                      className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 focus:ring-2 focus:ring-sky-500 transition-all"
-                                      value={currentQuote.clientId}
-                                      onChange={e => setCurrentQuote({...currentQuote, clientId: e.target.value})}
-                                  >
-                                      <option value="">Seleccionar Cliente...</option>
-                                      {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                  </select>
-                              </div>
-                              <div className="space-y-1">
-                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-1"><Wallet size={12}/> Condiciones</label>
-                                  <select 
-                                      className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 focus:ring-2 focus:ring-sky-500 transition-all"
-                                      value={currentQuote.paymentTerms}
-                                      onChange={e => setCurrentQuote({...currentQuote, paymentTerms: e.target.value as any})}
-                                  >
-                                      {Object.values(PaymentTerms).map(t => <option key={t} value={t}>{t}</option>)}
-                                  </select>
-                              </div>
-                              <div className="space-y-1">
-                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-1"><CheckCircle2 size={12}/> Estatus</label>
-                                  <select 
-                                      value={currentQuote.status}
-                                      onChange={e => setCurrentQuote({...currentQuote, status: e.target.value as any})}
-                                      className={`w-full p-4 rounded-2xl outline-none font-bold border focus:ring-2 focus:ring-sky-500 transition-all ${
-                                          currentQuote.status === 'Aceptada' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-700 border-slate-200'
-                                      }`}
-                                  >
-                                      <option>Borrador</option>
-                                      <option>Enviada</option>
-                                      <option>Aceptada</option>
-                                      <option>Rechazada</option>
-                                  </select>
-                              </div>
+                      {dependenciesLoading ? (
+                          <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-4">
+                              <Loader2 className="animate-spin text-sky-600" size={48} />
+                              <p className="text-xs font-bold uppercase tracking-widest">Cargando catálogo...</p>
                           </div>
-
-                          {/* Items Table */}
-                          <div>
-                              <div className="flex justify-between items-center mb-4 px-2">
-                                  <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">Partidas de la Cotización</h4>
-                                  <span className="text-xs font-bold text-slate-400">{(currentQuote.items || []).length} Ítems</span>
-                              </div>
+                      ) : (
+                          <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200 space-y-8">
                               
-                              <div className="border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
-                                  <table className="w-full text-left">
-                                      <thead className="bg-slate-50 border-b border-slate-200">
-                                          <tr>
-                                              <th className="p-4 pl-6 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[40%]">Producto / Servicio</th>
-                                              <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[15%] text-center">Cantidad</th>
-                                              <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[20%]">Precio Unitario</th>
-                                              <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[20%] text-right">Subtotal</th>
-                                              <th className="p-4 w-[5%]"></th>
-                                          </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-100">
-                                          {(currentQuote.items || []).map((item: any, idx: number) => (
-                                              <tr key={idx} className="group hover:bg-slate-50 transition-colors">
-                                                  <td className="p-3 pl-6">
-                                                      <select 
-                                                          className="w-full p-3 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-sky-500 outline-none text-sm font-bold text-slate-700 transition-all rounded-lg"
-                                                          value={item.productId}
-                                                          onChange={e => updateItem(idx, 'productId', e.target.value)}
-                                                      >
-                                                          <option value="">Seleccionar Producto...</option>
-                                                          {products.map(p => (
-                                                              <option key={p.id} value={p.id}>{p.code ? `[${p.code}] ` : ''}{p.name} - ${p.stock} disp.</option>
-                                                          ))}
-                                                      </select>
-                                                  </td>
-                                                  <td className="p-3">
-                                                      <input 
-                                                          type="number" 
-                                                          className="w-full p-2 bg-slate-100 border border-transparent focus:bg-white focus:border-sky-500 rounded-xl outline-none text-sm font-bold text-center transition-all"
-                                                          value={item.quantity}
-                                                          onChange={e => updateItem(idx, 'quantity', e.target.value)}
-                                                          min="1"
-                                                      />
-                                                  </td>
-                                                  <td className="p-3">
-                                                      <div className="relative">
-                                                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">$</span>
+                              {/* Top Controls Grid */}
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                  <div className="space-y-1">
+                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-1"><User size={12}/> Cliente</label>
+                                      <select 
+                                          className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 focus:ring-2 focus:ring-sky-500 transition-all"
+                                          value={currentQuote.clientId || ''}
+                                          onChange={e => setCurrentQuote({...currentQuote, clientId: e.target.value})}
+                                      >
+                                          <option value="">Seleccionar Cliente...</option>
+                                          {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                      </select>
+                                  </div>
+                                  <div className="space-y-1">
+                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-1"><Wallet size={12}/> Condiciones</label>
+                                      <select 
+                                          className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 focus:ring-2 focus:ring-sky-500 transition-all"
+                                          value={currentQuote.paymentTerms || PaymentTerms.FIFTY_FIFTY}
+                                          onChange={e => setCurrentQuote({...currentQuote, paymentTerms: e.target.value as any})}
+                                      >
+                                          {Object.values(PaymentTerms).map(t => <option key={t} value={t}>{t}</option>)}
+                                      </select>
+                                  </div>
+                                  <div className="space-y-1">
+                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-1"><CheckCircle2 size={12}/> Estatus</label>
+                                      <select 
+                                          value={currentQuote.status || 'Borrador'}
+                                          onChange={e => setCurrentQuote({...currentQuote, status: e.target.value as any})}
+                                          className={`w-full p-4 rounded-2xl outline-none font-bold border focus:ring-2 focus:ring-sky-500 transition-all ${
+                                              currentQuote.status === 'Aceptada' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-700 border-slate-200'
+                                          }`}
+                                      >
+                                          <option>Borrador</option>
+                                          <option>Enviada</option>
+                                          <option>Aceptada</option>
+                                          <option>Rechazada</option>
+                                      </select>
+                                  </div>
+                              </div>
+
+                              {/* Items Table */}
+                              <div>
+                                  <div className="flex justify-between items-center mb-4 px-2">
+                                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">Partidas de la Cotización</h4>
+                                      <span className="text-xs font-bold text-slate-400">{(currentQuote.items || []).length} Ítems</span>
+                                  </div>
+                                  
+                                  <div className="border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
+                                      <table className="w-full text-left">
+                                          <thead className="bg-slate-50 border-b border-slate-200">
+                                              <tr>
+                                                  <th className="p-4 pl-6 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[40%]">Producto / Servicio</th>
+                                                  <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[15%] text-center">Cantidad</th>
+                                                  <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[20%]">Precio Unitario</th>
+                                                  <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[20%] text-right">Subtotal</th>
+                                                  <th className="p-4 w-[5%]"></th>
+                                              </tr>
+                                          </thead>
+                                          <tbody className="divide-y divide-slate-100">
+                                              {(currentQuote.items || []).map((item: any, idx: number) => (
+                                                  <tr key={idx} className="group hover:bg-slate-50 transition-colors">
+                                                      <td className="p-3 pl-6">
+                                                          <select 
+                                                              className="w-full p-3 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-sky-500 outline-none text-sm font-bold text-slate-700 transition-all rounded-lg"
+                                                              value={item.productId || ''}
+                                                              onChange={e => updateItem(idx, 'productId', e.target.value)}
+                                                          >
+                                                              <option value="">Seleccionar Producto...</option>
+                                                              {products.map(p => (
+                                                                  <option key={p.id} value={p.id}>{p.code ? `[${p.code}] ` : ''}{p.name} {p.type === 'product' ? `(${p.stock} disp.)` : ''}</option>
+                                                              ))}
+                                                          </select>
+                                                      </td>
+                                                      <td className="p-3">
                                                           <input 
                                                               type="number" 
-                                                              className="w-full pl-6 p-2 bg-slate-100 border border-transparent focus:bg-white focus:border-sky-500 rounded-xl outline-none text-sm font-bold transition-all"
-                                                              value={item.price}
-                                                              onChange={e => updateItem(idx, 'price', e.target.value)}
+                                                              className="w-full p-2 bg-slate-100 border border-transparent focus:bg-white focus:border-sky-500 rounded-xl outline-none text-sm font-bold text-center transition-all"
+                                                              value={item.quantity}
+                                                              onChange={e => updateItem(idx, 'quantity', e.target.value)}
+                                                              min="1"
                                                           />
-                                                      </div>
-                                                  </td>
-                                                  <td className="p-3 pr-6 text-right font-black text-slate-800 text-sm">
-                                                      ${(item.quantity * item.price).toFixed(2)}
-                                                  </td>
-                                                  <td className="p-3 text-center">
-                                                      <button onClick={() => removeItem(idx)} className="text-slate-300 hover:text-rose-500 hover:bg-rose-50 p-2 rounded-xl transition-all"><Trash2 size={16}/></button>
-                                                  </td>
-                                              </tr>
-                                          ))}
-                                          {(!currentQuote.items || currentQuote.items.length === 0) && (
-                                              <tr>
-                                                  <td colSpan={5} className="p-8 text-center text-slate-400 text-sm font-medium">
-                                                      No hay productos agregados. Haz clic en "Agregar Partida".
-                                                  </td>
-                                              </tr>
-                                          )}
-                                      </tbody>
-                                  </table>
-                                  <button onClick={addItem} className="w-full py-4 bg-slate-50 text-slate-500 text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 hover:text-sky-600 transition-all flex items-center justify-center gap-2 border-t border-slate-100">
-                                      <Plus size={16} /> Agregar Partida
-                                  </button>
+                                                      </td>
+                                                      <td className="p-3">
+                                                          <div className="relative">
+                                                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">$</span>
+                                                              <input 
+                                                                  type="number" 
+                                                                  className="w-full pl-6 p-2 bg-slate-100 border border-transparent focus:bg-white focus:border-sky-500 rounded-xl outline-none text-sm font-bold transition-all"
+                                                                  value={item.price}
+                                                                  onChange={e => updateItem(idx, 'price', e.target.value)}
+                                                              />
+                                                          </div>
+                                                      </td>
+                                                      <td className="p-3 pr-6 text-right font-black text-slate-800 text-sm">
+                                                          ${(Number(item.quantity || 0) * Number(item.price || 0)).toFixed(2)}
+                                                      </td>
+                                                      <td className="p-3 text-center">
+                                                          <button onClick={() => removeItem(idx)} className="text-slate-300 hover:text-rose-500 hover:bg-rose-50 p-2 rounded-xl transition-all"><Trash2 size={16}/></button>
+                                                      </td>
+                                                  </tr>
+                                              ))}
+                                              {(!currentQuote.items || currentQuote.items.length === 0) && (
+                                                  <tr>
+                                                      <td colSpan={5} className="p-8 text-center text-slate-400 text-sm font-medium">
+                                                          No hay productos agregados. Haz clic en "Agregar Partida".
+                                                      </td>
+                                                  </tr>
+                                              )}
+                                          </tbody>
+                                      </table>
+                                      <button onClick={addItem} className="w-full py-4 bg-slate-50 text-slate-500 text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 hover:text-sky-600 transition-all flex items-center justify-center gap-2 border-t border-slate-100">
+                                          <Plus size={16} /> Agregar Partida
+                                      </button>
+                                  </div>
                               </div>
-                          </div>
 
-                          {/* Footer Totals */}
-                          <div className="flex justify-end pt-4">
-                              <div className="w-72 bg-slate-50 p-6 rounded-3xl border border-slate-200 space-y-4">
-                                  <div className="flex justify-between text-xs font-bold text-slate-500">
-                                      <span>Subtotal</span>
-                                      <span>${subtotal.toFixed(2)}</span>
-                                  </div>
-                                  <div className="flex justify-between text-xs font-bold text-slate-500">
-                                      <span>IVA (16%)</span>
-                                      <span>${iva.toFixed(2)}</span>
-                                  </div>
-                                  <div className="w-full h-px bg-slate-200"></div>
-                                  <div className="flex justify-between items-center">
-                                      <span className="text-sm font-black text-slate-900 uppercase">Total Neto (MXN)</span>
-                                      <span className="text-xl font-black text-sky-600">${total.toFixed(2)}</span>
+                              {/* Footer Totals */}
+                              <div className="flex justify-end pt-4">
+                                  <div className="w-72 bg-slate-50 p-6 rounded-3xl border border-slate-200 space-y-4">
+                                      <div className="flex justify-between text-xs font-bold text-slate-500">
+                                          <span>Subtotal</span>
+                                          <span>${subtotal.toFixed(2)}</span>
+                                      </div>
+                                      <div className="flex justify-between text-xs font-bold text-slate-500">
+                                          <span>IVA (16%)</span>
+                                          <span>${iva.toFixed(2)}</span>
+                                      </div>
+                                      <div className="w-full h-px bg-slate-200"></div>
+                                      <div className="flex justify-between items-center">
+                                          <span className="text-sm font-black text-slate-900 uppercase">Total Neto (MXN)</span>
+                                          <span className="text-xl font-black text-sky-600">${total.toFixed(2)}</span>
+                                      </div>
                                   </div>
                               </div>
                           </div>
-                      </div>
+                      )}
                   </div>
 
                   {/* Footer Actions */}
