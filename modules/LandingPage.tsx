@@ -65,10 +65,8 @@ const LandingPage: React.FC = () => {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const location = useLocation();
   
-  // Marketing State
   const [utmData, setUtmData] = useState({ source: 'Web', campaign: '' });
 
-  // Appointment Form State
   const [appointmentForm, setAppointmentForm] = useState({
     name: '',
     phone: '',
@@ -83,12 +81,11 @@ const LandingPage: React.FC = () => {
       service: 'Mantenimiento Preventivo'
   });
 
-  // CMS Data State
-  const [cmsSections, setCmsSections] = useState<LandingSection[] | null>(null);
+  // CMS Data State - Start with default content to ensure immediate visibility
+  const [cmsSections, setCmsSections] = useState<LandingSection[]>(DEFAULT_LANDING_CONTENT);
   const [loadingCms, setLoadingCms] = useState(true);
 
   useEffect(() => {
-    // 1. Detect UTMs from URL
     try {
         const params = new URLSearchParams(window.location.search);
         const source = params.get('utm_source');
@@ -106,22 +103,17 @@ const LandingPage: React.FC = () => {
                 source: finalSource, 
                 campaign: campaign || '' 
             });
-            console.log("🎯 Marketing Tracked:", finalSource, campaign);
         }
     } catch (e) { console.error("Error parsing UTMs", e); }
 
-    // 2. Load CMS & Settings
+    // Load CMS & Settings
     Promise.all([
         fetch('/api/cms/content').then(r => r.ok ? r.json() : null),
         fetch('/api/settings/public').then(r => r.ok ? r.json() : null)
     ])
     .then(([cmsData, settingsData]) => {
-        // Use CMS data if available, otherwise use DEFAULT_LANDING_CONTENT
         if (cmsData && Array.isArray(cmsData) && cmsData.length > 0) {
           setCmsSections(cmsData);
-        } else {
-          console.log("CMS Empty: Using Default Template");
-          setCmsSections(DEFAULT_LANDING_CONTENT);
         }
         
         if (settingsData && settingsData.logoUrl) {
@@ -129,8 +121,7 @@ const LandingPage: React.FC = () => {
         }
     })
     .catch(err => {
-        console.log("API Error: Usando diseño estático por defecto");
-        setCmsSections(DEFAULT_LANDING_CONTENT);
+        console.warn("API Error: Using default static template.");
     })
     .finally(() => setLoadingCms(false));
   }, []);
@@ -223,7 +214,6 @@ const LandingPage: React.FC = () => {
 
   const brands = ["Carrier", "York", "Trane", "Mirage", "Daikin", "LG"];
 
-  // Helper to map string icon names to components
   const renderIcon = (iconName?: string) => {
       const size = 24;
       switch(iconName) {
@@ -240,7 +230,6 @@ const LandingPage: React.FC = () => {
       }
   };
 
-  // --- RENDERIZADO DINÁMICO (Sincronizado con DB) ---
   const renderDynamicSection = (section: LandingSection) => {
       switch(section.type) {
           case 'hero':
@@ -275,7 +264,6 @@ const LandingPage: React.FC = () => {
                 </header>
               );
           case 'services':
-              // Default items if legacy data exists without items
               const defaultItems = [
                   { title: 'Instalación', desc: 'Instalación profesional de equipos Mini Split, Multisplit y Paquetes.', icon: 'wrench', image: 'https://images.unsplash.com/photo-1621905252507-b354bcadcabc?q=80&w=2070' },
                   { title: 'Mantenimiento', desc: 'Limpieza profunda y revisión de presiones.', icon: 'shield', image: 'https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?q=80&w=2070' },
@@ -329,16 +317,12 @@ const LandingPage: React.FC = () => {
       }
   };
 
-
-  // --- LAYOUT COMÚN ---
   return (
     <div className="bg-white font-sans text-slate-900 scroll-smooth selection:bg-sky-100 selection:text-sky-900">
-      {/* Floating WhatsApp */}
       <a href="https://wa.me/524423325814" target="_blank" rel="noreferrer" className="fixed bottom-6 right-6 z-[60] w-14 h-14 bg-emerald-500 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-emerald-600 hover:scale-110 transition-all duration-300 animate-bounce">
         <MessageCircle size={28} />
       </a>
 
-      {/* Floating Island Navigation */}
       <nav className="fixed top-6 left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
         <div 
             className={`
@@ -349,7 +333,6 @@ const LandingPage: React.FC = () => {
             `}
         >
             <div className="flex items-center justify-between px-2 pl-6 pr-3 h-20">
-                {/* Logo */}
                 <div 
                     className="flex items-center gap-3 font-black text-2xl text-slate-800 tracking-tighter cursor-pointer group" 
                     onClick={() => { window.scrollTo({top:0, behavior:'smooth'}); setMobileMenuOpen(false); }}
@@ -366,7 +349,6 @@ const LandingPage: React.FC = () => {
                     )}
                 </div>
 
-                {/* Desktop Links (Pill Style) */}
                 <div className="hidden md:flex items-center gap-1 bg-slate-100/80 p-1.5 rounded-full border border-slate-200/50 absolute left-1/2 -translate-x-1/2">
                     {[
                         { id: 'hero', label: 'Inicio' },
@@ -383,7 +365,6 @@ const LandingPage: React.FC = () => {
                     ))}
                 </div>
 
-                {/* Desktop Actions */}
                 <div className="hidden md:flex items-center gap-3">
                      <Link to="/login" className="text-[10px] font-black text-slate-400 hover:text-sky-600 transition-colors uppercase tracking-widest px-2">
                         Acceso Staff
@@ -396,7 +377,6 @@ const LandingPage: React.FC = () => {
                      </button>
                 </div>
 
-                {/* Mobile Toggle */}
                 <div className="md:hidden flex items-center gap-3">
                     <button 
                         onClick={() => setShowAppointmentModal(true)}
@@ -413,7 +393,6 @@ const LandingPage: React.FC = () => {
                 </div>
             </div>
 
-            {/* Mobile Content (Expanded) */}
             <div className={`md:hidden px-6 pb-8 space-y-2 transition-all duration-500 ${mobileMenuOpen ? 'opacity-100 delay-100' : 'opacity-0 pointer-events-none'}`}>
                  <div className="w-full h-px bg-slate-100 mb-6"></div>
                  {[
@@ -439,133 +418,116 @@ const LandingPage: React.FC = () => {
         </div>
       </nav>
 
-      {/* RENDERIZADO DINÁMICO CON FALLBACK */}
-      {/* Si loadingCms es true, muestra loader. Si hay cmsSections, renderiza. Si no (y ya terminó de cargar), usa DEFAULT_LANDING_CONTENT implícitamente vía estado */}
-      
-      {cmsSections ? (
-          <div className="pt-0">
-              {cmsSections.map(section => renderDynamicSection(section))}
-              
-              {/* Brands Section (Siempre Visible) */}
-              <div className="bg-slate-50 border-y border-slate-200 py-10 overflow-hidden">
-                <div className="max-w-7xl mx-auto px-6">
-                    <p className="text-center text-[10px] font-black text-slate-400 uppercase tracking-widest mb-8">Trabajamos con las mejores marcas del mercado</p>
-                    <div className="flex flex-wrap justify-center gap-12 md:gap-20 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
-                    {brands.map(brand => (
-                        <span key={brand} className="text-2xl md:text-3xl font-black text-slate-400 hover:text-slate-800 cursor-default select-none">{brand}</span>
-                    ))}
-                    </div>
+      <div className="pt-0">
+          {cmsSections.map(section => renderDynamicSection(section))}
+          
+          <div className="bg-slate-50 border-y border-slate-200 py-10 overflow-hidden">
+            <div className="max-w-7xl mx-auto px-6">
+                <p className="text-center text-[10px] font-black text-slate-400 uppercase tracking-widest mb-8">Trabajamos con las mejores marcas del mercado</p>
+                <div className="flex flex-wrap justify-center gap-12 md:gap-20 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
+                {brands.map(brand => (
+                    <span key={brand} className="text-2xl md:text-3xl font-black text-slate-400 hover:text-slate-800 cursor-default select-none">{brand}</span>
+                ))}
                 </div>
-              </div>
+            </div>
+          </div>
 
-              {/* FAQ Section */}
-              <section id="faq" className="py-24 px-6 max-w-4xl mx-auto">
-                <h2 className="text-3xl md:text-4xl font-black text-slate-900 mb-12 text-center uppercase tracking-tighter">Preguntas Frecuentes</h2>
-                <div className="space-y-4">
-                    {faqs.map((item, idx) => (
-                    <div key={idx} className="border border-slate-200 rounded-2xl overflow-hidden">
-                        <button 
-                            onClick={() => toggleFaq(idx)}
-                            className="w-full flex items-center justify-between p-6 bg-white hover:bg-slate-50 transition-colors text-left"
-                        >
-                            <span className="font-bold text-slate-800">{item.q}</span>
-                            <ChevronDown size={20} className={`text-slate-400 transition-transform ${activeFaq === idx ? 'rotate-180' : ''}`} />
-                        </button>
-                        {activeFaq === idx && (
-                            <div className="p-6 bg-slate-50 text-slate-600 text-sm leading-relaxed border-t border-slate-100">
-                                {item.a}
-                            </div>
-                        )}
-                    </div>
-                    ))}
+          <section id="faq" className="py-24 px-6 max-w-4xl mx-auto">
+            <h2 className="text-3xl md:text-4xl font-black text-slate-900 mb-12 text-center uppercase tracking-tighter">Preguntas Frecuentes</h2>
+            <div className="space-y-4">
+                {faqs.map((item, idx) => (
+                <div key={idx} className="border border-slate-200 rounded-2xl overflow-hidden">
+                    <button 
+                        onClick={() => toggleFaq(idx)}
+                        className="w-full flex items-center justify-between p-6 bg-white hover:bg-slate-50 transition-colors text-left"
+                    >
+                        <span className="font-bold text-slate-800">{item.q}</span>
+                        <ChevronDown size={20} className={`text-slate-400 transition-transform ${activeFaq === idx ? 'rotate-180' : ''}`} />
+                    </button>
+                    {activeFaq === idx && (
+                        <div className="p-6 bg-slate-50 text-slate-600 text-sm leading-relaxed border-t border-slate-100">
+                            {item.a}
+                        </div>
+                    )}
                 </div>
-              </section>
+                ))}
+            </div>
+          </section>
 
-              {/* Sección de contacto siempre visible al final */}
-              <section id="contact" className="py-24 bg-sky-50 px-6">
-                <div className="max-w-5xl mx-auto bg-white rounded-[3rem] shadow-2xl overflow-hidden flex flex-col md:flex-row">
-                    <div className="p-12 md:w-1/2 bg-slate-900 text-white flex flex-col justify-between">
-                        <div>
-                        <h3 className="text-3xl font-black uppercase tracking-tighter mb-6">Contáctanos</h3>
-                        <p className="text-slate-400 mb-8 leading-relaxed">Estamos listos para atenderte.</p>
-                        <div className="space-y-6">
-                            <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-sky-400"><Phone size={20}/></div>
-                                <div><p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Llámanos</p><p className="font-bold text-lg">442 332 5814</p></div>
-                            </div>
-                            <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-emerald-400"><MessageCircle size={20}/></div>
-                                <div><p className="text-[10px] font-black uppercase tracking-widest text-slate-500">WhatsApp</p><p className="font-bold text-lg">442 332 5814</p></div>
-                            </div>
-                            <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-rose-400"><Mail size={20}/></div>
-                                <div><p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Email</p><p className="font-bold text-lg">contacto@superair.com.mx</p></div>
-                            </div>
+          <section id="contact" className="py-24 bg-sky-50 px-6">
+            <div className="max-w-5xl mx-auto bg-white rounded-[3rem] shadow-2xl overflow-hidden flex flex-col md:flex-row">
+                <div className="p-12 md:w-1/2 bg-slate-900 text-white flex flex-col justify-between">
+                    <div>
+                    <h3 className="text-3xl font-black uppercase tracking-tighter mb-6">Contáctanos</h3>
+                    <p className="text-slate-400 mb-8 leading-relaxed">Estamos listos para atenderte.</p>
+                    <div className="space-y-6">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-sky-400"><Phone size={20}/></div>
+                            <div><p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Llámanos</p><p className="font-bold text-lg">442 332 5814</p></div>
                         </div>
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-emerald-400"><MessageCircle size={20}/></div>
+                            <div><p className="text-[10px] font-black uppercase tracking-widest text-slate-500">WhatsApp</p><p className="font-bold text-lg">442 332 5814</p></div>
                         </div>
-                        
-                        <div className="mt-12 flex gap-4 opacity-50">
-                        <div className="w-8 h-8 bg-white/20 rounded-full" />
-                        <div className="w-8 h-8 bg-white/20 rounded-full" />
-                        <div className="w-8 h-8 bg-white/20 rounded-full" />
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-rose-400"><Mail size={20}/></div>
+                            <div><p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Email</p><p className="font-bold text-lg">contacto@superair.com.mx</p></div>
                         </div>
+                    </div>
                     </div>
                     
-                    <div className="p-12 md:w-1/2">
-                        <form className="space-y-6" onSubmit={handleContactSubmit}>
-                            <div>
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Nombre</label>
-                                <input 
-                                    required 
-                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" 
-                                    value={contactForm.name}
-                                    onChange={e => setContactForm({...contactForm, name: e.target.value})}
-                                />
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Teléfono</label>
-                                <input 
-                                    required 
-                                    type="tel" 
-                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" 
-                                    placeholder="10 dígitos" 
-                                    value={contactForm.phone}
-                                    onChange={e => setContactForm({...contactForm, phone: e.target.value})}
-                                />
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Servicio Requerido</label>
-                                <select 
-                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
-                                    value={contactForm.service}
-                                    onChange={e => setContactForm({...contactForm, service: e.target.value})}
-                                >
-                                    <option>Mantenimiento Preventivo</option>
-                                    <option>Reparación / Diagnóstico</option>
-                                    <option>Instalación Nueva</option>
-                                    <option>Cotización de Equipo</option>
-                                </select>
-                            </div>
-                            <button type="submit" disabled={isSubmitting} className="w-full py-5 bg-sky-600 text-white font-black rounded-2xl uppercase tracking-widest text-xs flex items-center justify-center gap-2 disabled:opacity-70">
-                                {isSubmitting ? <Loader2 className="animate-spin" size={16}/> : <Zap size={16}/>}
-                                {isSubmitting ? 'Enviando...' : 'Enviar Mensaje'}
-                            </button>
-                        </form>
+                    <div className="mt-12 flex gap-4 opacity-50">
+                        <div className="w-8 h-8 bg-white/20 rounded-full" />
+                        <div className="w-8 h-8 bg-white/20 rounded-full" />
+                        <div className="w-8 h-8 bg-white/20 rounded-full" />
                     </div>
                 </div>
-              </section>
-          </div>
-      ) : (
-          // SOLO SE MUESTRA SI TODO FALLA Y AUN ESTA CARGANDO (Raro caso)
-          <div className="h-screen flex items-center justify-center">
-             <div className="text-center">
-                 <Loader2 className="animate-spin text-slate-300 mx-auto mb-4" size={48} />
-                 <p className="text-slate-400 font-bold">Iniciando Servidores...</p>
-             </div>
-          </div>
-      )}
+                
+                <div className="p-12 md:w-1/2">
+                    <form className="space-y-6" onSubmit={handleContactSubmit}>
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Nombre</label>
+                            <input 
+                                required 
+                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" 
+                                value={contactForm.name}
+                                onChange={e => setContactForm({...contactForm, name: e.target.value})}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Teléfono</label>
+                            <input 
+                                required 
+                                type="tel" 
+                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" 
+                                placeholder="10 dígitos" 
+                                value={contactForm.phone}
+                                onChange={e => setContactForm({...contactForm, phone: e.target.value})}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Servicio Requerido</label>
+                            <select 
+                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                                value={contactForm.service}
+                                onChange={e => setContactForm({...contactForm, service: e.target.value})}
+                            >
+                                <option>Mantenimiento Preventivo</option>
+                                <option>Reparación / Diagnóstico</option>
+                                <option>Instalación Nueva</option>
+                                <option>Cotización de Equipo</option>
+                            </select>
+                        </div>
+                        <button type="submit" disabled={isSubmitting} className="w-full py-5 bg-sky-600 text-white font-black rounded-2xl uppercase tracking-widest text-xs flex items-center justify-center gap-2 disabled:opacity-70">
+                            {isSubmitting ? <Loader2 className="animate-spin" size={16}/> : <Zap size={16}/>}
+                            {isSubmitting ? 'Enviando...' : 'Enviar Mensaje'}
+                        </button>
+                    </form>
+                </div>
+            </div>
+          </section>
+      </div>
 
-      {/* MODAL DE AGENDAR CITA */}
       {showAppointmentModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-6">
            <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300">

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -7,67 +8,83 @@ if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
-// --- GLOBAL FETCH INTERCEPTOR (SECURITY PATCH) ---
-const originalFetch = window.fetch;
+// --- GLOBAL FETCH INTERCEPTOR (SAFE PATCH) ---
+(function applyInterceptor() {
+    const originalFetch = window.fetch;
+    if (!originalFetch) return;
 
-// Use Object.defineProperty to override window.fetch safely
-// This bypasses the "setting getter-only property" error in strict environments
-try {
-    Object.defineProperty(window, 'fetch', {
-        value: async (input: RequestInfo | URL, init?: RequestInit) => {
-            // Determine URL string to check for /api prefix
-            let urlString = '';
-            if (typeof input === 'string') {
-                urlString = input;
-            } else if (input instanceof URL) {
-                urlString = input.toString();
-            } else if (input instanceof Request) {
-                urlString = input.url;
-            }
+    const wrappedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        let url = '';
 
-            // Only intercept calls to our own API (relative paths starting with /api)
-            if (urlString.startsWith('/api') || urlString.includes(window.location.origin + '/api')) {
-                let authHeader: Record<string, string> = {};
-                
-                // Try to get token from storage
-                try {
-                    const token = localStorage.getItem('superair_token') || sessionStorage.getItem('superair_token');
-                    if (token) {
-                        authHeader = { 'Authorization': `Bearer ${token}` };
-                    }
-                } catch (e) {
-                    // Ignore storage errors
-                }
+        if (typeof input === 'string') {
+            url = input;
+        } else if (input instanceof URL) {
+            url = input.toString();
+        } else if (input instanceof Request) {
+            url = input.url;
+        }
 
-                const newConfig: RequestInit = {
-                    ...init,
-                    headers: {
-                        ...authHeader,
-                        ...(init?.headers || {})
-                    }
-                };
-                
-                const response = await originalFetch(input, newConfig);
-                
-                // Global 401/403 Handling
-                if (response.status === 401 || response.status === 403) {
-                    // Avoid redirects if already on login or public pages
-                    if (!window.location.hash.includes('/login')) {
-                        // Optional: trigger logout
-                    }
-                }
-                
-                return response;
-            }
+        // Only intercept calls to our internal API
+        const isApiCall = url.startsWith('/api') || url.includes('/api/');
+        
+        if (isApiCall) {
+            const token = localStorage.getItem('superair_token') || sessionStorage.getItem('superair_token');
             
-            return originalFetch(input, init);
-        },
-        writable: true,
-        configurable: true
-    });
-} catch (e) {
-    console.error("Failed to install fetch interceptor:", e);
-}
+            if (token) {
+                // If it is NOT a Request object, we safely inject headers via the init object
+                if (!(input instanceof Request)) {
+                    init = init || {};
+                    const headers = new Headers(init.headers || {});
+                    
+                    if (!headers.has('Authorization')) {
+                        headers.set('Authorization', `Bearer ${token}`);
+                    }
+                    init.headers = headers;
+                } else {
+                    // For instances where input is a Request object
+                    try {
+                        if (!input.headers.has('Authorization')) {
+                            input.headers.set('Authorization', `Bearer ${token}`);
+                        }
+                    } catch (e) {
+                        // Request headers might be immutable in some environments
+                    }
+                }
+            }
+        }
+
+        // Forwarding original input to preserve all Request features
+        const response = await originalFetch(input, init);
+
+        // Global 401/403 Handling: If session is dead, clean up (unless we are already at login)
+        if ((response.status === 401 || response.status === 403) && !url.includes('/api/auth/login')) {
+            if (!window.location.hash.includes('/login')) {
+                console.warn("🔐 Session expired or invalid. Token removed.");
+                localStorage.removeItem('superair_token');
+                localStorage.removeItem('superair_user');
+            }
+        }
+
+        return response;
+    };
+
+    try {
+        // Attempt simple reassignment first
+        window.fetch = wrappedFetch;
+    } catch (e) {
+        // If fetch is a getter-only property, Object.defineProperty is required to redefine it
+        try {
+            Object.defineProperty(window, 'fetch', {
+                value: wrappedFetch,
+                configurable: true,
+                writable: true,
+                enumerable: true
+            });
+        } catch (defineError) {
+            console.error("Fetch interceptor could not be applied due to environment restrictions.", defineError);
+        }
+    }
+})();
 
 const root = ReactDOM.createRoot(rootElement);
 root.render(

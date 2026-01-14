@@ -1,8 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from '../context/AuthContext';
 import { 
   LayoutDashboard, Construction, Users, FileText, Package, Calendar, Settings, Menu, X, Wind,
-  ShieldCheck, ShoppingBag, BarChart3, LogOut, Bell, CheckCircle2, AlertTriangle, Info, Magnet
+  ShieldCheck, ShoppingBag, BarChart3, LogOut, Bell, CheckCircle2, AlertTriangle, Info, Magnet,
+  Truck, Warehouse, ShoppingCart
 } from 'lucide-react';
 import { AppRoute } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -29,11 +31,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const menuItems = [
     { name: 'Dashboard', icon: LayoutDashboard, route: AppRoute.DASHBOARD },
-    { name: 'Leads y Prospectos', icon: Magnet, route: AppRoute.LEADS }, // Menu Item Priority 2
+    { name: 'Leads y Prospectos', icon: Magnet, route: AppRoute.LEADS },
     { name: 'Clientes', icon: Users, route: AppRoute.CLIENTS },
     { name: 'Cotizaciones', icon: FileText, route: AppRoute.QUOTES },
+    { name: 'Compras', icon: ShoppingCart, route: AppRoute.PURCHASES },
     { name: 'Ventas y Órdenes', icon: ShoppingBag, route: AppRoute.SALES },
     { name: 'Inventario', icon: Package, route: AppRoute.INVENTORY },
+    { name: 'Almacenes / Unidades', icon: Warehouse, route: AppRoute.WAREHOUSES },
     { name: 'Citas e Instalación', icon: Calendar, route: AppRoute.APPOINTMENTS },
     { name: 'Reportes e Insights', icon: BarChart3, route: AppRoute.REPORTS },
     { name: 'Constructor Web', icon: Construction, route: AppRoute.BUILDER },
@@ -57,8 +61,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900 relative">
-      
-      {/* TOAST CONTAINER */}
       <div className="fixed bottom-6 right-6 z-[60] flex flex-col gap-3 pointer-events-none">
         {toasts.map(t => (
           <div 
@@ -109,7 +111,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 className={`flex items-center gap-3 p-3 rounded-xl transition-all duration-200 ${isActive ? 'bg-sky-500 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
               >
                 <Icon size={20} className="shrink-0" />
-                {isSidebarOpen && <span className="font-medium truncate">{item.name}</span>}
+                {isSidebarOpen && <span className="font-medium truncate text-xs">{item.name}</span>}
               </Link>
             );
           })}
@@ -121,7 +123,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 className="w-full flex items-center gap-3 p-3 rounded-xl text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-all"
             >
                 <LogOut size={20} className="shrink-0" />
-                {isSidebarOpen && <span className="font-bold text-sm">Cerrar Sesión</span>}
+                {isSidebarOpen && <span className="font-bold text-sm">Salir</span>}
             </button>
         </div>
       </aside>
@@ -147,7 +149,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     </div>
                     <div className="max-h-80 overflow-y-auto custom-scrollbar">
                       {notifications.length === 0 ? (
-                        <div className="p-8 text-center text-slate-400 text-xs">Sin notificaciones recientes</div>
+                        <div className="p-8 text-center text-slate-400 text-xs">Sin notificaciones</div>
                       ) : (
                         notifications.map(n => (
                           <div key={n.id} className={`p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors ${!n.isRead ? 'bg-sky-50/30' : ''}`}>
@@ -175,7 +177,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </header>
         <section className="flex-1 overflow-y-auto p-8 bg-slate-50 relative">
           <div className="max-w-7xl mx-auto">{children}</div>
-          <AdminChat /> {/* Floating Admin AI Chat */}
+          <AdminChat />
         </section>
       </main>
     </div>

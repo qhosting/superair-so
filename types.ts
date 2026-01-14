@@ -5,7 +5,7 @@ export interface Client {
   email: string;
   phone: string;
   address: string;
-  rfc?: string; // Nuevo campo fiscal
+  rfc?: string;
   type: 'Residencial' | 'Comercial';
   status: 'Prospecto' | 'Activo' | 'Inactivo';
   notes?: string;
@@ -15,20 +15,49 @@ export interface Client {
 
 export interface Product {
   id: string;
-  code?: string; // SKU / Código Interno
+  code?: string;
   name: string;
   description: string;
-  price: number; // Precio Público Base (Precio de Lista)
-  cost?: number; // Costo Unitario
-  price_wholesale?: number; // Precio Mayoreo
-  price_vip?: number; // Precio VIP/Distribuidor
-  stock: number;
+  price: number;
+  cost?: number;
+  price_wholesale?: number;
+  price_vip?: number;
+  stock: number; // Aggregate stock
   category: 'Unidad AC' | 'Refacción' | 'Servicio' | 'Insumo' | 'Herramienta';
   type?: 'product' | 'service'; 
   btu?: number;
   min_stock?: number;
-  location?: string; // Ubicación en almacén (Ej: Pasillo A-1)
-  duration?: number; // Duración estimada en minutos (Solo servicios)
+  location?: string;
+  duration?: number;
+  requires_serial?: boolean; // New: To track serial numbers
+}
+
+export interface Vendor {
+  id: string;
+  name: string;
+  rfc: string;
+  contact_name?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  credit_days?: number;
+}
+
+export interface Warehouse {
+  id: string;
+  name: string;
+  type: 'Central' | 'Unidad Móvil' | 'Garantías';
+  responsible_id?: string; // Links to a User (Installer)
+}
+
+export interface Purchase {
+  id: string;
+  vendor_id: string;
+  vendor_name?: string;
+  total: number;
+  status: 'Borrador' | 'Pendiente' | 'Recibido' | 'Cancelado';
+  items: { product_id: string; product_name?: string; quantity: number; cost: number; serials?: string[] }[];
+  created_at: string;
 }
 
 export enum PaymentTerms {
@@ -49,15 +78,15 @@ export interface Quote {
   createdAt: string;
 }
 
+// Fix for modules/Sales.tsx: Define FiscalData type
 export interface FiscalData {
   uuid: string;
   rfc: string;
   legalName?: string;
-  amount?: number;
-  xmlUrl?: string;
+  originEmail?: string;
+  amount: number;
+  issuedAt: string;
   pdfUrl?: string;
-  issuedAt?: string;
-  originEmail?: string; 
 }
 
 export interface Order {
@@ -69,6 +98,7 @@ export interface Order {
   status: 'Pendiente' | 'Instalando' | 'Completado' | 'Cancelado';
   installationDate?: string;
   cfdiStatus?: 'Pendiente' | 'Timbrado' | 'Error';
+  // Fix for modules/Sales.tsx: Add fiscalData property to Order
   fiscalData?: FiscalData;
 }
 
@@ -99,15 +129,7 @@ export interface User {
   lastLogin: string;
 }
 
-export interface Template {
-  id: string;
-  code: 'email_quote' | 'email_invoice' | 'pdf_quote_layout';
-  name: string;
-  subject?: string;
-  content: string; 
-  variables: string[]; 
-}
-
+// Fix for modules/Leads.tsx: Define LeadStatus type
 export type LeadStatus = 'Nuevo' | 'Contactado' | 'Calificado' | 'Cotizado' | 'Ganado' | 'Perdido';
 
 export interface Lead {
@@ -117,16 +139,18 @@ export interface Lead {
   phone?: string;
   source: 'Facebook' | 'Google' | 'Instagram' | 'Manual' | 'Web';
   campaign?: string; 
+  // Update status to use LeadStatus alias
   status: LeadStatus;
   notes?: string;
   createdAt: string;
 }
 
+// Fix for context/NotificationContext.tsx: Define AppNotification type
 export interface AppNotification {
   id: number;
   title: string;
   message: string;
-  type: 'info' | 'success' | 'warning' | 'error';
+  type: 'success' | 'error' | 'info' | 'warning';
   isRead: boolean;
   createdAt: string;
 }
@@ -138,28 +162,25 @@ export enum AppRoute {
   CLIENTS = 'clients',
   QUOTES = 'quotes',
   SALES = 'sales',
+  PURCHASES = 'purchases',
   INVENTORY = 'inventory',
+  WAREHOUSES = 'warehouses',
   APPOINTMENTS = 'appointments',
   USERS = 'users',
   SETTINGS = 'settings',
   REPORTS = 'reports'
 }
 
+// Fix for modules/LandingBuilder.tsx: Define SectionType type
 export type SectionType = 'hero' | 'about' | 'services' | 'history' | 'cta' | 'footer';
-
-export interface LandingItem {
-  title: string;
-  desc: string;
-  icon?: string; 
-  image?: string;
-}
 
 export interface LandingSection {
   id: string;
+  // Update type to use SectionType alias
   type: SectionType;
   title: string;
   subtitle: string;
   buttonText?: string;
   imageUrl?: string;
-  items?: LandingItem[]; 
+  items?: any[]; 
 }

@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   Wind, Lock, Mail, ChevronRight, AlertCircle, ArrowLeft, Loader2, 
-  CheckCircle2, Eye, EyeOff, HelpCircle, X, Send
+  CheckCircle2, Eye, EyeOff, HelpCircle, X, Send, Key
 } from 'lucide-react';
 import { Link, useNavigate } from '../context/AuthContext';
 import { useAuth } from '../context/AuthContext';
@@ -23,13 +24,10 @@ const Login: React.FC = () => {
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [isRecovering, setIsRecovering] = useState(false);
   
-  // Custom Logo
   const [logoUrl, setLogoUrl] = useState<string | null>(localStorage.getItem('superair_logo'));
 
   useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/dashboard');
-    }
+    if (isAuthenticated) navigate('/dashboard');
   }, [isAuthenticated, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -46,12 +44,17 @@ const Login: React.FC = () => {
         body: JSON.stringify({ email, password })
       });
 
-      const data = await response.json();
+      const text = await response.text();
+      let data;
+      try {
+          data = JSON.parse(text);
+      } catch (e) {
+          throw new Error("El servidor devolvió una respuesta no válida. Verifique que el backend esté corriendo.");
+      }
 
       if (response.ok && data.user) {
         setSuccess(true);
         setTimeout(() => {
-            // Updated: Pass the whole data object (contains token)
             login(data, rememberMe); 
         }, 800);
       } else {
@@ -60,7 +63,7 @@ const Login: React.FC = () => {
       }
     } catch (err: any) {
       console.error("Login Error:", err);
-      setError('Error de conexión con el servidor de producción.');
+      setError(err.message || 'Error de conexión con el servidor. ¿Está el backend encendido?');
       setLoading(false);
     }
   };
@@ -114,7 +117,7 @@ const Login: React.FC = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-12 pr-4 py-4 bg-slate-900/50 border border-slate-700 rounded-2xl text-white outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all placeholder:text-slate-600"
-                  placeholder="usuario@superair.com.mx"
+                  placeholder="admin@superair.com.mx"
                   required
                 />
               </div>
@@ -158,7 +161,10 @@ const Login: React.FC = () => {
             {error && (
               <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3 animate-in shake duration-500">
                 <AlertCircle className="text-red-500 shrink-0" size={18} />
-                <p className="text-red-400 text-xs font-medium leading-relaxed">{error}</p>
+                <div>
+                  <p className="text-red-400 text-xs font-black uppercase tracking-widest">Error de Acceso</p>
+                  <p className="text-red-300/80 text-[10px] font-medium leading-relaxed mt-1">{error}</p>
+                </div>
               </div>
             )}
 
@@ -175,7 +181,7 @@ const Login: React.FC = () => {
                 success ? (
                     <>
                         <CheckCircle2 size={20} className="animate-bounce" />
-                        ACCESO AUTORIZADO
+                        AUTORIZADO
                     </>
                 ) : (
                     <Loader2 className="animate-spin" size={20} />
@@ -188,10 +194,15 @@ const Login: React.FC = () => {
             </button>
           </form>
 
-          <div className="mt-10 pt-8 border-t border-slate-700/50 flex flex-col gap-4">
-            <p className="text-[10px] text-slate-600 text-center font-bold uppercase tracking-[0.2em]">
-              SuperAir Production System v3.0
-            </p>
+          {/* Dev Mode Helper */}
+          <div className="mt-8 pt-6 border-t border-slate-700/50">
+             <div className="flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/10">
+                <Key className="text-sky-400" size={18}/>
+                <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Credenciales Dev</p>
+                    <p className="text-xs font-mono text-slate-200">admin@superair.com.mx / admin123</p>
+                </div>
+             </div>
           </div>
         </div>
       </div>
