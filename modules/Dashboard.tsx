@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useMemo } from 'react';
 import { 
   TrendingUp, 
@@ -18,7 +19,12 @@ import {
   ArrowRight,
   Briefcase,
   Magnet,
-  BarChart3
+  BarChart3,
+  Truck,
+  Package,
+  BookOpen,
+  /* Added missing icon import */
+  CheckCircle2
 } from 'lucide-react';
 import { 
   XAxis, 
@@ -30,11 +36,12 @@ import {
   Cell
 } from 'recharts';
 import { GoogleGenAI } from "@google/genai";
-import { useNavigate } from '../context/AuthContext';
-import { User, Appointment, Quote, Lead } from '../types';
+import { useNavigate, useAuth } from '../context/AuthContext';
+import { User, Appointment, Quote, Lead, UserRole } from '../types';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   
   // Real Data State
@@ -42,6 +49,7 @@ const Dashboard: React.FC = () => {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [staff, setStaff] = useState<User[]>([]);
+  const [vanInventory, setVanInventory] = useState<any[]>([]);
   
   // AI & Weather State
   const [aiLoading, setAiLoading] = useState(false);
@@ -63,8 +71,17 @@ const Dashboard: React.FC = () => {
       setAppointments(Array.isArray(aptsRes) ? aptsRes : []);
       setQuotes(Array.isArray(quotesRes) ? quotesRes : []);
       setLeads(Array.isArray(leadsRes) ? leadsRes : []);
-      // Filter users to find technicians/installers/admins who might have tasks
       setStaff(Array.isArray(usersRes) ? usersRes : []);
+
+      // If installer, fetch their assigned warehouse inventory
+      if (user?.role === UserRole.INSTALLER) {
+          const warehouses = await fetch('/api/warehouses').then(r => r.json());
+          const myWarehouse = warehouses.find((w: any) => w.responsible_id === user.id);
+          if (myWarehouse) {
+              const levels = await fetch(`/api/inventory/levels/${myWarehouse.id}`).then(r => r.json());
+              setVanInventory(levels.filter((l: any) => l.stock > 0).slice(0, 5));
+          }
+      }
 
     } catch (err: any) {
       console.error("Dashboard API Error:", err);
@@ -122,31 +139,32 @@ const Dashboard: React.FC = () => {
       
       const todayStr = new Date().toISOString().split('T')[0];
       const todaysApts = appointments.filter(a => a.date?.startsWith(todayStr));
+      const myApts = user?.role === UserRole.INSTALLER 
+        ? todaysApts.filter(a => a.technician === user.name)
+        : todaysApts;
+
       const pendingQuotes = quotes.filter(q => q.status === 'Enviada' || q.status === 'Borrador');
       const pendingAmount = pendingQuotes.reduce((acc, q) => acc + Number(q.total), 0);
       const newLeadsCount = leads.filter(l => l.status === 'Nuevo').length;
       
-      // If absolutely no data, don't ask AI to hallucinate
-      if (todaysApts.length === 0 && pendingQuotes.length === 0 && !weather.temp) {
+      if (myApts.length === 0 && pendingQuotes.length === 0 && !weather.temp) {
           setAiBriefing("Sin actividad reciente registrada. ¡Buen momento para prospectar clientes!");
           setAiLoading(false);
           return;
       }
 
-      const prompt = `
-        Eres el jefe de operaciones de "SuperAir" (Aire Acondicionado).
-        Analiza estos DATOS REALES:
-        - Citas para HOY: ${todaysApts.length} ${todaysApts.length > 0 ? `(${todaysApts.map(a => a.type).join(', ')})` : ''}.
-        - Pipeline Ventas (Pendiente): $${pendingAmount} MXN en ${pendingQuotes.length} cotizaciones.
-        - Nuevos Prospectos (Leads): ${newLeadsCount} pendientes de contacto.
-        - Temperatura Actual Exterior: ${weather.temp ? weather.temp + '°C' : 'No disponible'}.
-        
-        Genera un resumen operativo de 2 frases.
-        Si hace calor (>25°C) y hay pocas citas, sugiere contactar clientes para mantenimiento.
-        Si hay mucho dinero pendiente, sugiere seguimiento de ventas.
-        Si hay leads nuevos, sugiere llamar urgente.
-        Usa emojis.
-      `;
+      const prompt = user?.role === UserRole.INSTALLER 
+        ? `Eres el asistente de "SuperAir" para técnicos.
+           Dato: Tienes ${myApts.length} servicios para hoy. 
+           Temperatura exterior: ${weather.temp}°C.
+           Saluda a ${user.name} y dale una frase de motivación técnica breve.`
+        : `Eres el jefe de operaciones de "SuperAir".
+           Analiza estos DATOS REALES:
+           - Citas para HOY: ${todaysApts.length} ${todaysApts.length > 0 ? `(${todaysApts.map(a => a.type).join(', ')})` : ''}.
+           - Pipeline Ventas (Pendiente): $${pendingAmount} MXN.
+           - Nuevos Prospectos: ${newLeadsCount}.
+           - Temp: ${weather.temp}°C.
+           Genera un resumen operativo de 2 frases con emojis.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -155,17 +173,16 @@ const Dashboard: React.FC = () => {
 
       setAiBriefing(response.text);
     } catch (e) {
-      // Fail silently or show generic msg
       setAiBriefing(null); 
     } finally {
       setAiLoading(false);
     }
   };
 
-  // --- 4. CALCULATIONS ---
   const stats = useMemo(() => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const todayStr = now.toISOString().split('T')[0];
 
     const monthlyRevenue = quotes
       .filter(q => q.status === 'Aceptada' && new Date(q.createdAt || new Date()) >= startOfMonth)
@@ -175,16 +192,14 @@ const Dashboard: React.FC = () => {
         .filter(q => q.status === 'Enviada' || q.status === 'Borrador')
         .reduce((acc, curr) => acc + Number(curr.total || 0), 0);
 
-    const todayStr = now.toISOString().split('T')[0];
     const appointmentsToday = appointments.filter(a => a.date?.startsWith(todayStr));
+    const myAptsToday = appointmentsToday.filter(a => a.technician === user?.name);
 
-    // Determine Demand Index based on REAL weather
     let demandIndex = 'Baja';
     if (weather.temp > 25) demandIndex = 'Media';
     if (weather.temp > 30) demandIndex = 'Alta';
     if (weather.temp > 35) demandIndex = 'Crítica';
 
-    // Lead Stats
     const newLeads = leads.filter(l => l.status === 'Nuevo').length;
     const wonLeads = leads.filter(l => l.status === 'Ganado').length;
     const conversionRate = leads.length > 0 ? (wonLeads / leads.length) * 100 : 0;
@@ -193,74 +208,156 @@ const Dashboard: React.FC = () => {
         revenue: monthlyRevenue, 
         pipeline: pipelineValue, 
         appointmentsToday,
+        myAptsToday,
         demandIndex,
         newLeads,
         conversionRate
     };
-  }, [quotes, appointments, weather, leads]);
+  }, [quotes, appointments, weather, leads, user]);
 
-  // --- 5. REAL TECHNICIAN STATUS ---
   const technicianStatus = useMemo(() => {
-    // Only users with role containing relevant keywords or generally all staff if small team
-    const relevantStaff = staff.filter(u => 
-        u.role === 'Instalador' || u.role === 'Admin' || u.role === 'Super Admin'
-    );
-
+    const relevantStaff = staff.filter(u => u.role === 'Instalador' || u.role === 'Admin');
     const todayStr = new Date().toISOString().split('T')[0];
 
-    return relevantStaff.map(user => {
-      // Find active appointment for this user TODAY
-      const activeJob = appointments.find(a => 
-        a.technician === user.name && 
-        a.date?.startsWith(todayStr) && 
-        (a.status === 'En Proceso' || a.status === 'Programada')
-      );
-      
+    return relevantStaff.map(u => {
+      const activeJob = appointments.find(a => a.technician === u.name && a.date?.startsWith(todayStr) && (a.status === 'En Proceso' || a.status === 'Programada'));
       return {
-        id: user.id,
-        name: user.name,
-        // If they have a job today that is 'En Proceso', they are On Site.
-        // If 'Programada', they are Assigned. Otherwise Available.
+        id: u.id,
+        name: u.name,
         status: activeJob ? (activeJob.status === 'En Proceso' ? 'En Sitio' : 'Asignado') : 'Disponible',
-        // If user status is 'Inactivo', override everything
-        systemStatus: user.status, 
         currentLocation: activeJob ? `Cliente #${activeJob.clientId}` : 'Base',
-        jobType: activeJob?.type
       };
-    }).filter(u => u.systemStatus === 'Activo'); // Only show active users in dashboard
-  }, [staff, appointments]);
-
-  const chartData = [
-      { name: 'Cerrado', value: stats.revenue, color: '#10b981' }, 
-      { name: 'En Proceso', value: stats.pipeline, color: '#f59e0b' }
-  ];
+    }).filter(u => u.id !== user?.id); // Don't show self in status list
+  }, [staff, appointments, user]);
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(val);
-
-  const getWeatherDescription = (code: number) => {
-      if (code === 0) return "Cielo Despejado";
-      if (code >= 1 && code <= 3) return "Parcialmente Nublado";
-      if (code >= 45 && code <= 48) return "Niebla";
-      if (code >= 51 && code <= 67) return "Lluvia Ligera";
-      if (code >= 80 && code <= 99) return "Tormenta / Chubascos";
-      return "Normal";
-  };
 
   if (loading) {
     return (
       <div className="h-[80vh] flex flex-col items-center justify-center text-slate-400">
         <Loader2 className="animate-spin mb-4 text-sky-600" size={48} />
-        <p className="font-bold text-sm uppercase tracking-widest">Sincronizando Operaciones...</p>
+        <p className="font-bold text-sm uppercase tracking-widest">Sincronizando ERP...</p>
       </div>
     );
   }
 
+  // --- RENDER TECHNICIAN VIEW ---
+  if (user?.role === UserRole.INSTALLER) {
+      return (
+          <div className="space-y-8 animate-in fade-in duration-500 pb-20">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Weather & AI Greeting */}
+                  <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-xl relative overflow-hidden flex flex-col justify-center min-h-[220px]">
+                      <div className="absolute top-0 right-0 p-8 opacity-10"><BrainCircuit size={100} /></div>
+                      <div className="relative z-10">
+                          <h2 className="text-2xl font-black mb-2">Hola, {user.name.split(' ')[0]} 🛠️</h2>
+                          <div className="bg-white/5 rounded-2xl p-4 border border-white/10 backdrop-blur-sm mt-4">
+                            {aiLoading ? <div className="flex gap-2 animate-pulse"><div className="w-2 h-2 bg-sky-400 rounded-full"></div><div className="w-2 h-2 bg-sky-400 rounded-full delay-75"></div></div> : <p className="text-sm font-medium text-slate-200">{aiBriefing}</p>}
+                          </div>
+                      </div>
+                  </div>
+
+                  <div className="bg-gradient-to-br from-sky-500 to-indigo-600 rounded-[2.5rem] p-8 text-white shadow-xl flex items-center justify-between">
+                      <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-1">Tu Agenda Hoy</p>
+                          <h3 className="text-5xl font-black">{stats.myAptsToday.length}</h3>
+                          <p className="text-xs font-bold text-sky-100 mt-1 uppercase tracking-tighter">Servicios Asignados</p>
+                      </div>
+                      <div className="text-right">
+                          <p className="text-3xl font-black">{weather.temp}°C</p>
+                          <p className="text-[10px] font-bold opacity-70">Exterior</p>
+                      </div>
+                  </div>
+              </div>
+
+              {/* Next Task Card */}
+              <div className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="font-black text-slate-900 text-lg uppercase tracking-tight flex items-center gap-2">
+                          <Calendar size={20} className="text-sky-500" /> Próximo Servicio
+                      </h3>
+                      <button onClick={() => navigate('/appointments')} className="text-[10px] font-black text-sky-600 uppercase tracking-widest">Ver Agenda Completa</button>
+                  </div>
+
+                  {stats.myAptsToday.length > 0 ? (
+                      <div className="p-6 bg-slate-50 rounded-3xl border-2 border-slate-100 flex flex-col md:flex-row gap-6 items-center">
+                          <div className="w-20 h-20 bg-white rounded-[2rem] shadow-sm flex items-center justify-center font-black text-2xl text-sky-600 shrink-0">
+                              {stats.myAptsToday[0].time}
+                          </div>
+                          <div className="flex-1 text-center md:text-left">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{stats.myAptsToday[0].type}</p>
+                              <h4 className="text-2xl font-black text-slate-900">{stats.myAptsToday[0].client_name}</h4>
+                              <p className="text-sm text-slate-500 font-medium">Ubicación registrada en CRM</p>
+                          </div>
+                          <button 
+                            onClick={() => navigate('/appointments')}
+                            className="px-8 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-sky-600 transition-all shadow-lg flex items-center gap-2"
+                          >
+                             <Truck size={16} /> Iniciar Ruta
+                          </button>
+                      </div>
+                  ) : (
+                      <div className="p-10 text-center text-slate-400 border-2 border-dashed border-slate-100 rounded-3xl">
+                          <CheckCircle2 size={40} className="mx-auto mb-4 opacity-20" />
+                          <p className="font-bold">¡Día libre o sin citas pendientes!</p>
+                      </div>
+                  )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* My Van Stock */}
+                  <div className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm flex flex-col">
+                      <div className="flex justify-between items-center mb-6">
+                          <h3 className="font-black text-slate-900 text-lg uppercase tracking-tight flex items-center gap-2">
+                              <Package size={20} className="text-amber-500" /> Stock en mi Unidad
+                          </h3>
+                          <button onClick={() => navigate('/inventory')} className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Inventario Total</button>
+                      </div>
+                      <div className="space-y-3">
+                          {vanInventory.length > 0 ? vanInventory.map((l: any) => (
+                              <div key={l.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                                  <div>
+                                      <p className="text-xs font-bold text-slate-800">{l.name}</p>
+                                      <p className="text-[9px] font-mono text-slate-400">{l.category}</p>
+                                  </div>
+                                  <span className="font-black text-lg text-slate-900">{l.stock}</span>
+                              </div>
+                          )) : (
+                              <p className="text-xs text-slate-400 text-center py-4">No hay stock registrado en tu unidad móvil.</p>
+                          )}
+                      </div>
+                  </div>
+
+                  {/* Manual Quick Access */}
+                  <div className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm">
+                      <h3 className="font-black text-slate-900 text-lg uppercase tracking-tight mb-6 flex items-center gap-2">
+                          <BookOpen size={20} className="text-purple-500" /> Manual Operativo
+                      </h3>
+                      <div className="grid grid-cols-2 gap-4">
+                          <button onClick={() => navigate('/manual')} className="p-4 bg-purple-50 border border-purple-100 rounded-2xl text-left hover:bg-purple-100 transition-all">
+                              <Wrench size={24} className="text-purple-600 mb-2" />
+                              <p className="text-[10px] font-black text-purple-900 uppercase tracking-widest">Instalación</p>
+                          </button>
+                          <button onClick={() => navigate('/manual')} className="p-4 bg-rose-50 border border-rose-100 rounded-2xl text-left hover:bg-rose-100 transition-all">
+                              <AlertTriangle size={24} className="text-rose-600 mb-2" />
+                              <p className="text-[10px] font-black text-rose-900 uppercase tracking-widest">Seguridad</p>
+                          </button>
+                      </div>
+                      <button onClick={() => navigate('/manual')} className="w-full mt-4 py-3 bg-slate-50 text-slate-500 rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2">
+                          Consultar Base de Conocimientos <ArrowRight size={14} />
+                      </button>
+                  </div>
+              </div>
+          </div>
+      );
+  }
+
+  // --- RENDER ADMIN VIEW ---
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       
-      {/* TOP SECTION: WEATHER & AI */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Weather Card - Real Data */}
+        {/* Weather Card */}
         <div className="bg-gradient-to-br from-sky-500 to-indigo-600 rounded-[2.5rem] p-8 text-white shadow-xl shadow-sky-600/20 relative overflow-hidden flex flex-col justify-between min-h-[240px]">
             <div className="absolute top-0 right-0 p-6 opacity-20">
                 <ThermometerSun size={120} />
@@ -278,7 +375,7 @@ const Dashboard: React.FC = () => {
                 ) : weather.temp !== 0 ? (
                     <>
                         <h2 className="text-5xl font-black tracking-tighter">{weather.temp}°C</h2>
-                        <p className="font-medium text-sky-100">{getWeatherDescription(weather.code)}</p>
+                        <p className="font-medium text-sky-100">Temp Exterior</p>
                     </>
                 ) : (
                     <div>
@@ -296,7 +393,7 @@ const Dashboard: React.FC = () => {
             </div>
         </div>
 
-        {/* AI Briefing - Real Context */}
+        {/* AI Briefing */}
         <div className="lg:col-span-2 bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-xl relative overflow-hidden flex flex-col justify-center min-h-[240px]">
             <div className="absolute top-0 right-0 p-8 opacity-10">
                 <BrainCircuit size={140} />
@@ -321,12 +418,8 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* MIDDLE SECTION: ACTIONS & TECH STATUS */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-          
-          {/* Quick Actions & Leads Preview */}
           <div className="xl:col-span-1 flex flex-col gap-6">
-              {/* Quick Actions */}
               <div className="grid grid-cols-2 gap-4">
                   <button onClick={() => navigate('/leads')} className="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-indigo-300 transition-all group text-left relative overflow-hidden">
                       <div className="absolute top-0 right-0 p-4 opacity-5"><Magnet size={64}/></div>
@@ -345,7 +438,7 @@ const Dashboard: React.FC = () => {
                       </div>
                       <p className="font-black text-slate-800 text-sm">Cotizar</p>
                       <div className="flex items-baseline gap-1 mt-1">
-                          <span className="text-xs font-bold text-slate-400 uppercase">Ver pendientes</span>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Pendientes</span>
                       </div>
                   </button>
                   <button onClick={() => navigate('/clients')} className="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-emerald-300 transition-all group text-left">
@@ -362,7 +455,6 @@ const Dashboard: React.FC = () => {
                   </button>
               </div>
 
-              {/* Conversion Rate Card */}
               <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex items-center justify-between">
                   <div>
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Conversión Leads</p>
@@ -374,7 +466,6 @@ const Dashboard: React.FC = () => {
               </div>
           </div>
 
-          {/* Technician Live Status - Driven by DB */}
           <div className="xl:col-span-2 bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm flex flex-col">
               <div className="flex justify-between items-center mb-6">
                   <h3 className="font-black text-slate-900 text-lg uppercase tracking-tight flex items-center gap-2">
@@ -388,29 +479,15 @@ const Dashboard: React.FC = () => {
               {technicianStatus.length === 0 ? (
                   <div className="flex-1 flex flex-col items-center justify-center text-slate-300 border-2 border-dashed border-slate-100 rounded-3xl p-8">
                       <Users size={32} className="mb-2 opacity-50" />
-                      <p className="text-xs font-bold uppercase">No hay staff activo registrado</p>
-                      <button onClick={() => navigate('/users')} className="mt-4 text-[10px] text-sky-600 font-bold underline">
-                          Gestionar Usuarios
-                      </button>
+                      <p className="text-xs font-bold uppercase">Sin más staff activo hoy</p>
                   </div>
               ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {technicianStatus.map((tech) => (
-                          <div key={tech.id} className={`p-5 rounded-3xl border-2 transition-all ${
-                              tech.status === 'En Sitio' 
-                              ? 'bg-sky-50 border-sky-100' 
-                              : tech.status === 'Asignado'
-                              ? 'bg-amber-50/50 border-amber-100'
-                              : 'bg-slate-50 border-slate-100'
-                          }`}>
+                          <div key={tech.id} className={`p-5 rounded-3xl border-2 transition-all ${tech.status === 'En Sitio' ? 'bg-sky-50 border-sky-100' : 'bg-slate-50 border-slate-100'}`}>
                               <div className="flex justify-between items-start mb-3">
-                                  <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center font-black text-slate-700 text-xs">
-                                      {tech.name.substring(0,2).toUpperCase()}
-                                  </div>
-                                  <div className={`w-3 h-3 rounded-full ${
-                                      tech.status === 'En Sitio' ? 'bg-sky-500 animate-pulse' : 
-                                      tech.status === 'Asignado' ? 'bg-amber-400' : 'bg-emerald-400'
-                                  }`} />
+                                  <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center font-black text-slate-700 text-xs">{tech.name.substring(0,2).toUpperCase()}</div>
+                                  <div className={`w-3 h-3 rounded-full ${tech.status === 'En Sitio' ? 'bg-sky-500 animate-pulse' : 'bg-emerald-400'}`} />
                               </div>
                               <h4 className="font-bold text-slate-900 text-sm truncate">{tech.name}</h4>
                               <p className="text-xs text-slate-500 font-medium mb-2">{tech.status}</p>
@@ -425,109 +502,6 @@ const Dashboard: React.FC = () => {
               )}
           </div>
       </div>
-
-      {/* BOTTOM SECTION: FINANCIALS & ALERTS */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Revenue Chart */}
-          <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
-              <div className="flex items-center justify-between mb-8">
-                  <div>
-                      <h3 className="font-black text-lg text-slate-900 uppercase tracking-tight">Rendimiento Financiero</h3>
-                      <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Mes Actual (Datos Reales)</p>
-                  </div>
-                  <div className="text-right">
-                      <p className="text-2xl font-black text-slate-900">{formatCurrency(stats.revenue)}</p>
-                      <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">Cobrado</p>
-                  </div>
-              </div>
-              
-              <div className="h-48 w-full">
-                  {stats.revenue === 0 && stats.pipeline === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center text-slate-300">
-                          <TrendingUp size={48} className="mb-2 opacity-50" />
-                          <p className="text-xs font-bold uppercase">Sin movimientos financieros este mes</p>
-                      </div>
-                  ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                        <BarChart layout="vertical" data={chartData} barSize={40}>
-                            <XAxis type="number" hide />
-                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11, fontWeight: 800}} width={100} />
-                            <Tooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
-                            <Bar dataKey="value" radius={[0, 10, 10, 0]}>
-                                {chartData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={entry.color} />
-                                ))}
-                            </Bar>
-                        </BarChart>
-                    </ResponsiveContainer>
-                  )}
-              </div>
-              <div className="mt-4 flex gap-6 justify-center">
-                  <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-emerald-500 rounded-full" />
-                      <span className="text-xs font-bold text-slate-600">Cerrado ({formatCurrency(stats.revenue)})</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-amber-500 rounded-full" />
-                      <span className="text-xs font-bold text-slate-600">Pipeline ({formatCurrency(stats.pipeline)})</span>
-                  </div>
-              </div>
-          </div>
-
-          {/* Critical Alerts - Real Data Driven */}
-          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col">
-              <h3 className="font-black text-lg text-slate-900 uppercase tracking-tight mb-6 flex items-center gap-2">
-                  <AlertTriangle size={20} className="text-rose-500" /> Atención Requerida
-              </h3>
-              <div className="flex-1 space-y-4 overflow-y-auto pr-2 custom-scrollbar max-h-64">
-                  {stats.newLeads > 0 && (
-                      <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-2xl flex gap-3">
-                          <div className="mt-1"><Magnet size={16} className="text-indigo-600" /></div>
-                          <div>
-                              <p className="text-xs font-bold text-slate-800">Nuevos Leads</p>
-                              <p className="text-[10px] text-slate-500 mt-1">Tienes {stats.newLeads} prospectos sin contactar. ¡Llama ahora!</p>
-                          </div>
-                      </div>
-                  )}
-                  {stats.appointmentsToday.length > 0 && (
-                      <div className="p-4 bg-sky-50 border border-sky-100 rounded-2xl flex gap-3">
-                          <div className="mt-1"><Clock size={16} className="text-sky-600" /></div>
-                          <div>
-                              <p className="text-xs font-bold text-slate-800">Citas para Hoy</p>
-                              <p className="text-[10px] text-slate-500 mt-1">Tienes {stats.appointmentsToday.length} citas programadas que requieren atención.</p>
-                          </div>
-                      </div>
-                  )}
-                  {stats.pipeline > 0 && (
-                      <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl flex gap-3">
-                          <div className="mt-1"><Briefcase size={16} className="text-amber-500" /></div>
-                          <div>
-                              <p className="text-xs font-bold text-slate-800">Cotizaciones Pendientes</p>
-                              <p className="text-[10px] text-slate-500 mt-1">Hay {formatCurrency(stats.pipeline)} esperando cierre. ¡Haz seguimiento!</p>
-                          </div>
-                      </div>
-                  )}
-                  {stats.demandIndex === 'Alta' && (
-                      <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex gap-3">
-                          <div className="mt-1"><ThermometerSun size={16} className="text-rose-500" /></div>
-                          <div>
-                              <p className="text-xs font-bold text-slate-800">Alta Demanda Térmica</p>
-                              <p className="text-[10px] text-slate-500 mt-1">El clima indica alta probabilidad de llamadas de emergencia.</p>
-                          </div>
-                      </div>
-                  )}
-                  {stats.appointmentsToday.length === 0 && stats.pipeline === 0 && stats.newLeads === 0 && (
-                      <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl text-center text-slate-400 text-xs">
-                          Sin alertas críticas por el momento.
-                      </div>
-                  )}
-              </div>
-              <button onClick={() => navigate('/reports')} className="mt-6 w-full py-3 bg-slate-50 text-slate-600 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 transition-all flex items-center justify-center gap-2">
-                  Ver Reportes Completos <ArrowRight size={14} />
-              </button>
-          </div>
-      </div>
-
     </div>
   );
 };

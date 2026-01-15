@@ -6,7 +6,7 @@ import {
   ShieldCheck, ShoppingBag, BarChart3, LogOut, Bell, CheckCircle2, AlertTriangle, Info, Magnet,
   Truck, Warehouse, ShoppingCart, BookOpen
 } from 'lucide-react';
-import { AppRoute } from '../types';
+import { AppRoute, UserRole } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import AdminChat from './AdminChat';
@@ -29,22 +29,24 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
-  const menuItems = [
-    { name: 'Dashboard', icon: LayoutDashboard, route: AppRoute.DASHBOARD },
-    { name: 'Leads y Prospectos', icon: Magnet, route: AppRoute.LEADS },
-    { name: 'Clientes', icon: Users, route: AppRoute.CLIENTS },
-    { name: 'Cotizaciones', icon: FileText, route: AppRoute.QUOTES },
-    { name: 'Compras', icon: ShoppingCart, route: AppRoute.PURCHASES },
-    { name: 'Ventas y Órdenes', icon: ShoppingBag, route: AppRoute.SALES },
-    { name: 'Inventario', icon: Package, route: AppRoute.INVENTORY },
-    { name: 'Almacenes / Unidades', icon: Warehouse, route: AppRoute.WAREHOUSES },
-    { name: 'Citas e Instalación', icon: Calendar, route: AppRoute.APPOINTMENTS },
-    { name: 'Reportes e Insights', icon: BarChart3, route: AppRoute.REPORTS },
-    { name: 'Manual Operativo', icon: BookOpen, route: AppRoute.MANUAL },
-    { name: 'Constructor Web', icon: Construction, route: AppRoute.BUILDER },
-    { name: 'Usuarios y Roles', icon: ShieldCheck, route: AppRoute.USERS },
-    { name: 'Configuración', icon: Settings, route: AppRoute.SETTINGS },
+  const allMenuItems = [
+    { name: 'Dashboard', icon: LayoutDashboard, route: AppRoute.DASHBOARD, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.INSTALLER] },
+    { name: 'Leads y Prospectos', icon: Magnet, route: AppRoute.LEADS, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN] },
+    { name: 'Clientes', icon: Users, route: AppRoute.CLIENTS, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.INSTALLER] },
+    { name: 'Cotizaciones', icon: FileText, route: AppRoute.QUOTES, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN] },
+    { name: 'Compras', icon: ShoppingCart, route: AppRoute.PURCHASES, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN] },
+    { name: 'Ventas y Órdenes', icon: ShoppingBag, route: AppRoute.SALES, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN] },
+    { name: 'Mi Inventario', icon: Package, route: AppRoute.INVENTORY, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.INSTALLER] },
+    { name: 'Almacenes / Unidades', icon: Warehouse, route: AppRoute.WAREHOUSES, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN] },
+    { name: 'Citas e Instalación', icon: Calendar, route: AppRoute.APPOINTMENTS, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.INSTALLER] },
+    { name: 'Reportes e Insights', icon: BarChart3, route: AppRoute.REPORTS, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN] },
+    { name: 'Manual Operativo', icon: BookOpen, route: AppRoute.MANUAL, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.INSTALLER] },
+    { name: 'Constructor Web', icon: Construction, route: AppRoute.BUILDER, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN] },
+    { name: 'Usuarios y Roles', icon: ShieldCheck, route: AppRoute.USERS, roles: [UserRole.SUPER_ADMIN] },
+    { name: 'Configuración', icon: Settings, route: AppRoute.SETTINGS, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN] },
   ];
+
+  const menuItems = allMenuItems.filter(item => user && item.roles.includes(user.role as UserRole));
 
   const currentPath = location.pathname.split('/').filter(Boolean)[0];
   const activeRoute = currentPath || AppRoute.DASHBOARD;
@@ -178,7 +180,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </header>
         <section className="flex-1 overflow-y-auto p-8 bg-slate-50 relative">
           <div className="max-w-7xl mx-auto">{children}</div>
-          <AdminChat />
+          {user?.role !== UserRole.INSTALLER && <AdminChat />}
         </section>
       </main>
     </div>
