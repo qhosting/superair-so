@@ -50,12 +50,9 @@ const Login: React.FC = () => {
 
       if (response.ok && data.user) {
         setSuccess(true);
-        // Pequeño retardo visual para feedback de "AUTORIZADO"
-        setTimeout(() => {
-            login(data, rememberMe); 
-            // Forzar navegación inmediata tras actualizar contexto
-            navigate('/dashboard');
-        }, 600);
+        // Login directo sin esperas innecesarias
+        login(data, rememberMe); 
+        navigate('/dashboard');
       } else {
         setError(data.error || 'Credenciales incorrectas');
         setLoading(false);

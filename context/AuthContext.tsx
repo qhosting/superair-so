@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, UserRole } from '../types';
 
@@ -106,27 +107,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const localUser = localStorage.getItem('superair_user');
-    if (localUser) {
-      try {
-        setUser(JSON.parse(localUser));
-      } catch (e) {
-        localStorage.removeItem('superair_user');
-      }
-      setIsLoading(false);
-      return;
-    }
+    const initAuth = () => {
+        const localUser = localStorage.getItem('superair_user');
+        if (localUser) {
+          try {
+            setUser(JSON.parse(localUser));
+          } catch (e) {
+            localStorage.removeItem('superair_user');
+          }
+        } else {
+            const sessionUser = sessionStorage.getItem('superair_user');
+            if (sessionUser) {
+              try {
+                setUser(JSON.parse(sessionUser));
+              } catch (e) {
+                sessionStorage.removeItem('superair_user');
+              }
+            }
+        }
+        setIsLoading(false);
+    };
 
-    const sessionUser = sessionStorage.getItem('superair_user');
-    if (sessionUser) {
-      try {
-        setUser(JSON.parse(sessionUser));
-      } catch (e) {
-        sessionStorage.removeItem('superair_user');
-      }
-    }
-    
-    setIsLoading(false);
+    initAuth();
   }, []);
 
   const login = (data: { user: User, token?: string }, remember: boolean) => {
@@ -142,8 +144,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // Clean other storage
-    (remember ? sessionStorage : localStorage).removeItem('superair_user');
-    (remember ? sessionStorage : localStorage).removeItem('superair_token');
+    const otherStorage = remember ? sessionStorage : localStorage;
+    otherStorage.removeItem('superair_user');
+    otherStorage.removeItem('superair_token');
   };
 
   const logout = () => {

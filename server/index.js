@@ -89,17 +89,25 @@ const initDB = async () => {
         "INSERT INTO users (name, email, password, role, status) VALUES ($1, $2, $3, $4, $5)",
         ['Administrador SuperAir', 'admin@superair.com.mx', hashedPassword, 'Super Admin', 'Activo']
       );
-      console.log("✅ Admin creado: admin@superair.com.mx / admin123");
+      console.log("✅ Admin creado satisfactoriamente.");
     }
 
     // Seed Data: Almacén Central
     await db.query("INSERT INTO warehouses (name, type) SELECT 'Bodega Central', 'Central' WHERE NOT EXISTS (SELECT 1 FROM warehouses WHERE id = 1)");
 
-    console.log('✅ Base de datos SuperAir lista para producción.');
+    console.log('✅ Base de datos SuperAir lista.');
   } catch (err) { console.error('❌ DB INIT ERROR:', err.message); }
 };
 
-db.checkConnection().then(connected => { if(connected) initDB(); });
+// Asegurar que el seeding ocurra antes de que el servidor escuche
+db.checkConnection().then(async connected => { 
+  if(connected) {
+    await initDB();
+    app.listen(PORT, HOST, () => console.log(`🚀 SUPERAIR Server running on http://${HOST}:${PORT}`));
+  } else {
+    console.error("❌ No se puede iniciar el servidor sin base de datos.");
+  }
+});
 
 // --- API ENDPOINTS ---
 
@@ -108,6 +116,7 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 // Auth
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
+  console.log(`🔐 Intento de login para: ${email}`);
   try {
     const r = await db.query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
     if (r.rows.length > 0) {
@@ -116,15 +125,20 @@ app.post('/api/auth/login', async (req, res) => {
       if (isMatch) {
         const token = jwt.sign({ id: user.id, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '24h' });
         await db.query('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
+        console.log(`✅ Login exitoso: ${email}`);
         res.json({ success: true, token, user: { id: user.id, name: user.name, role: user.role } });
-      } else res.status(401).json({ error: 'Contraseña incorrecta' });
-    } else res.status(401).json({ error: 'Usuario no encontrado' });
+      } else {
+        console.warn(`❌ Contraseña incorrecta para: ${email}`);
+        res.status(401).json({ error: 'Contraseña incorrecta' });
+      }
+    } else {
+      console.warn(`❌ Usuario no encontrado: ${email}`);
+      res.status(401).json({ error: 'Usuario no encontrado' });
+    }
   } catch (err) { 
-    console.error("Login Error:", err);
+    console.error("🔥 Error interno en Login:", err);
     res.status(500).json({ error: 'Error interno del servidor' }); 
   }
 });
 
-// ... resto de endpoints se mantienen igual ...
-
-app.listen(PORT, HOST, () => console.log(`🚀 SUPERAIR Server running on http://${HOST}:${PORT}`));
+// ... resto de endpoints ...
