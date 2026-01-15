@@ -4,12 +4,9 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Argumentos de construcción para variables de entorno de frontend (Vite)
-# La API_KEY de Gemini es necesaria en el build si se inyecta vía Define
+# La API_KEY de Gemini es necesaria durante el build para ser inyectada en el cliente
 ARG API_KEY
 ENV API_KEY=$API_KEY
-
-# Forzar entorno de desarrollo momentáneamente para instalar devDependencies
-ENV NODE_ENV=development
 
 # Caché de dependencias para acelerar el despliegue
 COPY package*.json ./
