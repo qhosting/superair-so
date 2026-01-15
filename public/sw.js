@@ -1,6 +1,6 @@
 
-const CACHE_NAME = 'superair-erp-v4'; // Version Bumped to fix Menu Cache
-const DYNAMIC_CACHE = 'superair-assets-v4'; // Version Bumped
+const CACHE_NAME = 'superair-erp-v5'; // Versión actualizada para forzar refresco
+const DYNAMIC_CACHE = 'superair-assets-v5'; 
 
 // App Shell: Archivos mínimos para que la app arranque
 const STATIC_ASSETS = [
@@ -11,10 +11,10 @@ const STATIC_ASSETS = [
 
 // INSTALACIÓN
 self.addEventListener('install', (event) => {
-  self.skipWaiting(); // Forzar activación inmediata
+  self.skipWaiting(); // Forzar activación inmediata para que el usuario vea los cambios
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('📦 [SW] Pre-caching App Shell');
+      console.log('📦 [SW] Pre-caching App Shell v5');
       return cache.addAll(STATIC_ASSETS);
     })
   );
@@ -34,22 +34,19 @@ self.addEventListener('activate', (event) => {
       );
     })
   );
-  self.clients.claim();
+  self.clients.claim(); // Tomar control de las pestañas abiertas inmediatamente
 });
 
 // INTERCEPTOR DE PETICIONES
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // 1. ESTRATEGIA API: Network Only
-  // Nunca guardar respuestas de la API en caché para evitar datos viejos de clientes/ventas
+  // 1. ESTRATEGIA API: Network Only (Siempre datos frescos del servidor)
   if (url.pathname.startsWith('/api')) {
     return;
   }
 
   // 2. ESTRATEGIA NAVEGACIÓN (HTML): Network First, Fallback to Cache
-  // Intenta ir a la red para obtener la versión más nueva de la app.
-  // Si no hay internet, devuelve el index.html guardado.
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
@@ -61,8 +58,6 @@ self.addEventListener('fetch', (event) => {
   }
 
   // 3. ESTRATEGIA ASSETS (JS, CSS, Imágenes): Stale-While-Revalidate
-  // Sirve rápido desde caché, pero actualiza en segundo plano.
-  // Esto permite guardar todos los archivos generados por Vite dinámicamente.
   if (event.request.destination === 'script' || 
       event.request.destination === 'style' || 
       event.request.destination === 'image') {
@@ -78,10 +73,9 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         }).catch(() => {
-           // Si falla red y no hay caché, no hacer nada
+           // Fallback silencioso si no hay red
         });
 
-        // Devolver caché si existe, si no, esperar a la red
         return cachedResponse || fetchPromise;
       })
     );
