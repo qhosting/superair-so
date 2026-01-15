@@ -50,10 +50,13 @@ export interface Warehouse {
   responsible_id?: string; // Links to a User (Installer)
 }
 
+// Added warehouse_id and warehouse_name to Purchase interface
 export interface Purchase {
   id: string;
   vendor_id: string;
   vendor_name?: string;
+  warehouse_id?: string;
+  warehouse_name?: string;
   total: number;
   status: 'Borrador' | 'Pendiente' | 'Recibido' | 'Cancelado';
   items: { product_id: string; product_name?: string; quantity: number; cost: number; serials?: string[] }[];
@@ -101,9 +104,11 @@ export interface Order {
   fiscalData?: FiscalData;
 }
 
+// Added client_name to Appointment interface
 export interface Appointment {
   id: string;
   clientId: string;
+  client_name?: string;
   technician: string;
   date: string;
   time: string;

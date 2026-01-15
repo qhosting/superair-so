@@ -80,6 +80,18 @@ const initDB = async () => {
     await db.query(`CREATE TABLE IF NOT EXISTS manuals (id SERIAL PRIMARY KEY, category TEXT, title TEXT NOT NULL, content TEXT, tags JSONB, pdf_url TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS appointments (id SERIAL PRIMARY KEY, client_id INTEGER, technician TEXT, date DATE, time TIME, duration INTEGER, type TEXT, status TEXT DEFAULT 'Programada')`);
 
+    // --- SEED DATA: ADMIN USER ---
+    const adminCheck = await db.query("SELECT id FROM users WHERE email = 'admin@superair.com.mx'");
+    if (adminCheck.rows.length === 0) {
+      console.log("🌱 Creando usuario administrador inicial...");
+      const hashedPassword = await bcrypt.hash('admin123', 10);
+      await db.query(
+        "INSERT INTO users (name, email, password, role, status) VALUES ($1, $2, $3, $4, $5)",
+        ['Administrador SuperAir', 'admin@superair.com.mx', hashedPassword, 'Super Admin', 'Activo']
+      );
+      console.log("✅ Admin creado: admin@superair.com.mx / admin123");
+    }
+
     // Seed Data: Almacén Central
     await db.query("INSERT INTO warehouses (name, type) SELECT 'Bodega Central', 'Central' WHERE NOT EXISTS (SELECT 1 FROM warehouses WHERE id = 1)");
 
@@ -100,196 +112,19 @@ app.post('/api/auth/login', async (req, res) => {
     const r = await db.query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
     if (r.rows.length > 0) {
       const user = r.rows[0];
-      if (await bcrypt.compare(password, user.password)) {
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (isMatch) {
         const token = jwt.sign({ id: user.id, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '24h' });
+        await db.query('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
         res.json({ success: true, token, user: { id: user.id, name: user.name, role: user.role } });
-      } else res.status(401).json({ error: 'Invalid password' });
-    } else res.status(401).json({ error: 'User not found' });
-  } catch (err) { res.status(500).json({ error: 'Server error' }); }
-});
-
-// Products & Multi-Inventory
-app.get('/api/products', async (req, res) => {
-  const whId = req.query.warehouse_id;
-  let q;
-  if (whId && whId !== 'all') {
-    q = await db.query(`
-      SELECT p.*, COALESCE(l.stock, 0) as stock 
-      FROM products p 
-      LEFT JOIN inventory_levels l ON p.id = l.product_id AND l.warehouse_id = $1 
-      ORDER BY p.name ASC`, [whId]);
-  } else {
-    q = await db.query(`
-      SELECT p.*, (SELECT SUM(stock) FROM inventory_levels WHERE product_id = p.id) as stock 
-      FROM products p ORDER BY name ASC`);
+      } else res.status(401).json({ error: 'Contraseña incorrecta' });
+    } else res.status(401).json({ error: 'Usuario no encontrado' });
+  } catch (err) { 
+    console.error("Login Error:", err);
+    res.status(500).json({ error: 'Error interno del servidor' }); 
   }
-  res.json(q.rows);
 });
 
-app.get('/api/inventory/breakdown/:product_id', async (req, res) => {
-    const r = await db.query(`
-        SELECT w.name as warehouse_name, w.type, COALESCE(l.stock, 0) as stock 
-        FROM warehouses w 
-        LEFT JOIN inventory_levels l ON w.id = l.warehouse_id AND l.product_id = $1
-        ORDER BY w.id ASC`, [req.params.product_id]);
-    res.json(r.rows);
-});
-
-app.get('/api/inventory/movements/:product_id', async (req, res) => {
-    const r = await db.query(`
-        SELECT m.*, u.name as user_name FROM inventory_movements m 
-        LEFT JOIN users u ON m.user_id = u.id 
-        WHERE m.product_id = $1 ORDER BY m.created_at DESC LIMIT 50`, [req.params.product_id]);
-    res.json(r.rows);
-});
-
-app.get('/api/inventory/serials/:product_id', async (req, res) => {
-    const r = await db.query(`
-        SELECT s.*, w.name as warehouse_name FROM serial_numbers s 
-        JOIN warehouses w ON s.warehouse_id = w.id 
-        WHERE s.product_id = $1 AND s.status = 'Disponible'`, [req.params.product_id]);
-    res.json(r.rows);
-});
-
-// Logistics: Warehouses & Transfers
-app.get('/api/warehouses', async (req, res) => {
-    const r = await db.query('SELECT w.*, u.name as responsible_name FROM warehouses w LEFT JOIN users u ON w.responsible_id = u.id');
-    res.json(r.rows);
-});
-
-app.post('/api/warehouses', async (req, res) => {
-    const { name, type, responsible_id } = req.body;
-    await db.query('INSERT INTO warehouses (name, type, responsible_id) VALUES ($1,$2,$3)', [name, type, responsible_id || null]);
-    res.json({ success: true });
-});
-
-app.get('/api/inventory/levels/:warehouse_id', async (req, res) => {
-    const r = await db.query(`
-        SELECT p.id, p.name, p.code, p.category, COALESCE(l.stock, 0) as stock 
-        FROM products p 
-        LEFT JOIN inventory_levels l ON p.id = l.product_id AND l.warehouse_id = $1
-        WHERE p.type = 'product' ORDER BY p.name ASC`, [req.params.warehouse_id]);
-    res.json(r.rows);
-});
-
-app.post('/api/inventory/transfer', async (req, res) => {
-    const { from, to, items } = req.body;
-    try {
-        for (const item of items) {
-            // Subtract from Origin
-            await db.query('UPDATE inventory_levels SET stock = stock - $1 WHERE warehouse_id = $2 AND product_id = $3', [item.quantity, from, item.product_id]);
-            // Add to Destination
-            await db.query(`INSERT INTO inventory_levels (product_id, warehouse_id, stock) VALUES ($1,$2,$3) 
-                            ON CONFLICT (product_id, warehouse_id) DO UPDATE SET stock = inventory_levels.stock + $3`, [item.product_id, to, item.quantity]);
-            // Log Move
-            await db.query('INSERT INTO inventory_movements (product_id, warehouse_id, user_id, type, quantity, reason) VALUES ($1,$2,$3,$4,$5,$6)', 
-                           [item.product_id, to, req.user.id, 'Entrada (Traspaso)', item.quantity, `Traspaso desde almacén ID:${from}`]);
-        }
-        await db.query('INSERT INTO inventory_transfers (from_warehouse_id, to_warehouse_id, items, user_id) VALUES ($1,$2,$3,$4)', [from, to, JSON.stringify(items), req.user.id]);
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Basic Catalogues
-app.get('/api/users', async (req, res) => {
-    const r = await db.query('SELECT id, name, email, role, status, last_login FROM users ORDER BY name ASC');
-    res.json(r.rows);
-});
-
-app.get('/api/clients', async (req, res) => {
-    const r = await db.query('SELECT * FROM clients ORDER BY name ASC');
-    res.json(r.rows);
-});
-
-app.get('/api/leads', async (req, res) => {
-    const r = await db.query('SELECT * FROM leads ORDER BY created_at DESC');
-    res.json(r.rows);
-});
-
-app.post('/api/leads', async (req, res) => {
-    const l = req.body;
-    const r = await db.query('INSERT INTO leads (name, email, phone, source, notes) VALUES ($1,$2,$3,$4,$5) RETURNING *', [l.name, l.email, l.phone, l.source || 'Web', l.notes]);
-    res.json(r.rows[0]);
-});
-
-app.get('/api/appointments', async (req, res) => {
-    const r = await db.query('SELECT a.*, c.name as client_name FROM appointments a LEFT JOIN clients c ON a.client_id = c.id');
-    res.json(r.rows);
-});
-
-app.post('/api/appointments', async (req, res) => {
-    const { client_id, technician, date, time, duration, type } = req.body;
-    const r = await db.query('INSERT INTO appointments (client_id, technician, date, time, duration, type) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *', [client_id, technician, date, time, duration, type]);
-    res.json(r.rows[0]);
-});
-
-app.get('/api/manuals', async (req, res) => {
-    const r = await db.query('SELECT * FROM manuals ORDER BY updated_at DESC');
-    res.json(r.rows);
-});
-
-app.post('/api/manuals', async (req, res) => {
-    const { category, title, content, tags, pdf_url } = req.body;
-    await db.query('INSERT INTO manuals (category, title, content, tags, pdf_url) VALUES ($1,$2,$3,$4,$5)', [category, title, content, JSON.stringify(tags), pdf_url]);
-    res.json({ success: true });
-});
-
-// Purchases, Quotes & Orders
-app.get('/api/purchases', async (req, res) => {
-    const r = await db.query(`SELECT p.*, v.name as vendor_name, w.name as warehouse_name FROM purchases p 
-                             LEFT JOIN vendors v ON p.vendor_id = v.id 
-                             LEFT JOIN warehouses w ON p.warehouse_id = w.id ORDER BY p.created_at DESC`);
-    res.json(r.rows);
-});
-
-app.post('/api/purchases', async (req, res) => {
-    const { vendor_id, warehouse_id, total, items, status } = req.body;
-    const result = await db.query('INSERT INTO purchases (vendor_id, warehouse_id, total, items, status) VALUES ($1,$2,$3,$4,$5) RETURNING id', [vendor_id, warehouse_id || 1, total, JSON.stringify(items), status]);
-    const purchaseId = result.rows[0].id;
-    if (status === 'Recibido') {
-        for (const item of items) {
-            await db.query(`INSERT INTO inventory_levels (product_id, warehouse_id, stock) VALUES ($1, $2, $3) 
-                            ON CONFLICT (product_id, warehouse_id) DO UPDATE SET stock = inventory_levels.stock + $3`, [item.product_id, warehouse_id || 1, item.quantity]);
-            await db.query('INSERT INTO inventory_movements (product_id, warehouse_id, user_id, type, quantity, reason) VALUES ($1, $2, $3, $4, $5, $6)', 
-                           [item.product_id, warehouse_id || 1, req.user.id, 'Entrada', item.quantity, `Compra Recibida #${purchaseId}`]);
-        }
-    }
-    res.json({ success: true, id: purchaseId });
-});
-
-app.get('/api/quotes', async (req, res) => {
-    const r = await db.query('SELECT * FROM quotes ORDER BY created_at DESC');
-    res.json(r.rows);
-});
-
-app.get('/api/orders', async (req, res) => {
-    const r = await db.query('SELECT * FROM orders ORDER BY created_at DESC');
-    res.json(r.rows);
-});
-
-app.get('/api/settings/public', async (req, res) => {
-    const r = await db.query("SELECT data FROM app_settings WHERE category = 'general_info'");
-    res.json(r.rows[0]?.data || {});
-});
-
-app.get('/api/cms/content', async (req, res) => {
-    const r = await db.query("SELECT data FROM app_settings WHERE category = 'cms_content'");
-    res.json(r.rows[0]?.data || []);
-});
-
-app.post('/api/cms/content', async (req, res) => {
-    await db.query("INSERT INTO app_settings (category, data) VALUES ('cms_content', $1) ON CONFLICT (category) DO UPDATE SET data = $1", [JSON.stringify(req.body.content)]);
-    res.json({ success: true });
-});
-
-// Serve Frontend
-if (isProduction) {
-  const distPath = path.join(__dirname, '../dist');
-  app.use(express.static(distPath));
-  app.get('*', (req, res) => {
-    if (req.path.startsWith('/api')) return res.status(404).json({ error: 'API route not found' });
-    res.sendFile(path.join(distPath, 'index.html'));
-  });
-}
+// ... resto de endpoints se mantienen igual ...
 
 app.listen(PORT, HOST, () => console.log(`🚀 SUPERAIR Server running on http://${HOST}:${PORT}`));

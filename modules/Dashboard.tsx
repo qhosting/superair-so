@@ -23,7 +23,6 @@ import {
   Truck,
   Package,
   BookOpen,
-  /* Added missing icon import */
   CheckCircle2
 } from 'lucide-react';
 import { 
@@ -227,7 +226,7 @@ const Dashboard: React.FC = () => {
         status: activeJob ? (activeJob.status === 'En Proceso' ? 'En Sitio' : 'Asignado') : 'Disponible',
         currentLocation: activeJob ? `Cliente #${activeJob.clientId}` : 'Base',
       };
-    }).filter(u => u.id !== user?.id); // Don't show self in status list
+    }).filter(u => u.id !== user?.id); 
   }, [staff, appointments, user]);
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(val);
@@ -241,12 +240,10 @@ const Dashboard: React.FC = () => {
     );
   }
 
-  // --- RENDER TECHNICIAN VIEW ---
   if (user?.role === UserRole.INSTALLER) {
       return (
           <div className="space-y-8 animate-in fade-in duration-500 pb-20">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Weather & AI Greeting */}
                   <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-xl relative overflow-hidden flex flex-col justify-center min-h-[220px]">
                       <div className="absolute top-0 right-0 p-8 opacity-10"><BrainCircuit size={100} /></div>
                       <div className="relative z-10">
@@ -270,7 +267,6 @@ const Dashboard: React.FC = () => {
                   </div>
               </div>
 
-              {/* Next Task Card */}
               <div className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm">
                   <div className="flex justify-between items-center mb-6">
                       <h3 className="font-black text-slate-900 text-lg uppercase tracking-tight flex items-center gap-2">
@@ -305,7 +301,6 @@ const Dashboard: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* My Van Stock */}
                   <div className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm flex flex-col">
                       <div className="flex justify-between items-center mb-6">
                           <h3 className="font-black text-slate-900 text-lg uppercase tracking-tight flex items-center gap-2">
@@ -328,7 +323,6 @@ const Dashboard: React.FC = () => {
                       </div>
                   </div>
 
-                  {/* Manual Quick Access */}
                   <div className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm">
                       <h3 className="font-black text-slate-900 text-lg uppercase tracking-tight mb-6 flex items-center gap-2">
                           <BookOpen size={20} className="text-purple-500" /> Manual Operativo
@@ -352,12 +346,10 @@ const Dashboard: React.FC = () => {
       );
   }
 
-  // --- RENDER ADMIN VIEW ---
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Weather Card */}
         <div className="bg-gradient-to-br from-sky-500 to-indigo-600 rounded-[2.5rem] p-8 text-white shadow-xl shadow-sky-600/20 relative overflow-hidden flex flex-col justify-between min-h-[240px]">
             <div className="absolute top-0 right-0 p-6 opacity-20">
                 <ThermometerSun size={120} />
@@ -393,7 +385,6 @@ const Dashboard: React.FC = () => {
             </div>
         </div>
 
-        {/* AI Briefing */}
         <div className="lg:col-span-2 bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-xl relative overflow-hidden flex flex-col justify-center min-h-[240px]">
             <div className="absolute top-0 right-0 p-8 opacity-10">
                 <BrainCircuit size={140} />
@@ -432,14 +423,13 @@ const Dashboard: React.FC = () => {
                           <span className="text-[10px] font-bold text-slate-400 uppercase">Nuevos</span>
                       </div>
                   </button>
-                  <button onClick={() => navigate('/quotes')} className="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-sky-300 transition-all group text-left">
-                      <div className="w-10 h-10 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                          <FileText size={20} />
+                  <button onClick={() => navigate('/purchases')} className="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-amber-300 transition-all group text-left relative overflow-hidden">
+                      <div className="absolute top-0 right-0 p-4 opacity-5"><ShoppingCart size={64}/></div>
+                      <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                          <ShoppingCart size={20} />
                       </div>
-                      <p className="font-black text-slate-800 text-sm">Cotizar</p>
-                      <div className="flex items-baseline gap-1 mt-1">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase">Pendientes</span>
-                      </div>
+                      <p className="font-black text-slate-800 text-sm">Compras</p>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Órdenes</span>
                   </button>
                   <button onClick={() => navigate('/clients')} className="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-emerald-300 transition-all group text-left">
                       <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
@@ -447,8 +437,8 @@ const Dashboard: React.FC = () => {
                       </div>
                       <p className="font-black text-slate-800 text-sm">Clientes</p>
                   </button>
-                  <button onClick={() => navigate('/appointments')} className="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-amber-300 transition-all group text-left">
-                      <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                  <button onClick={() => navigate('/appointments')} className="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-lg hover:border-sky-300 transition-all group text-left">
+                      <div className="w-10 h-10 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
                           <Calendar size={20} />
                       </div>
                       <p className="font-black text-slate-800 text-sm">Agenda</p>

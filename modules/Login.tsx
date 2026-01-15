@@ -27,7 +27,9 @@ const Login: React.FC = () => {
   const [logoUrl, setLogoUrl] = useState<string | null>(localStorage.getItem('superair_logo'));
 
   useEffect(() => {
-    if (isAuthenticated) navigate('/dashboard');
+    if (isAuthenticated) {
+        navigate('/dashboard');
+    }
   }, [isAuthenticated, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -44,26 +46,23 @@ const Login: React.FC = () => {
         body: JSON.stringify({ email, password })
       });
 
-      const text = await response.text();
-      let data;
-      try {
-          data = JSON.parse(text);
-      } catch (e) {
-          throw new Error("El servidor devolvió una respuesta no válida. Verifique que el backend esté corriendo.");
-      }
+      const data = await response.json();
 
       if (response.ok && data.user) {
         setSuccess(true);
+        // Pequeño retardo visual para feedback de "AUTORIZADO"
         setTimeout(() => {
             login(data, rememberMe); 
-        }, 800);
+            // Forzar navegación inmediata tras actualizar contexto
+            navigate('/dashboard');
+        }, 600);
       } else {
         setError(data.error || 'Credenciales incorrectas');
         setLoading(false);
       }
     } catch (err: any) {
       console.error("Login Error:", err);
-      setError(err.message || 'Error de conexión con el servidor. ¿Está el backend encendido?');
+      setError('Error de conexión con el servidor. Verifique su red.');
       setLoading(false);
     }
   };
