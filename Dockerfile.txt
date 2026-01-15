@@ -1,84 +1,67 @@
-
 # Stage 1: Build the React Application
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Define build arguments for frontend environment variables
-# These are baked into the React app by Vite at build time
+# Argumentos de construcción para variables de entorno de frontend (Vite)
 ARG API_KEY
 ENV API_KEY=$API_KEY
 
-# Force development environment to ensure devDependencies (Vite, TypeScript, etc.) are installed
+# Forzar entorno de desarrollo para instalar devDependencies y poder compilar
 ENV NODE_ENV=development
 
-# Copy package files first to leverage Docker cache
+# Caché de dependencias
 COPY package*.json ./
-
-# Install all dependencies
 RUN npm install
 
-# Copy the rest of the application code
+# Copiar código fuente y compilar
 COPY . .
-
-# Build the React app (Output goes to /app/dist)
 RUN npm run build
 
-# Stage 2: Production Server
+# Stage 2: Servidor de Producción (Node.js)
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Install system dependencies
-# tzdata: Required for correct CronJob timing (Timezone)
+# Instalación de utilidades del sistema
+# tzdata: Necesario para que los CronJobs de facturación usen la hora de México
 RUN apk add --no-cache tzdata
 
-# Set Timezone explicitly
+# Configuración de Zona Horaria (SuperAir opera en MX)
 ENV TZ=America/Mexico_City
 
-# Production environment settings
+# Variables de entorno por defecto (Sobrescribibles en docker-compose)
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
 
-# API Key for Runtime (Backend AI)
+# API Key para lógica de servidor (IA Gemini)
 ARG API_KEY
 ENV API_KEY=$API_KEY
 
-# Default Integrations URLs (Override in docker-compose)
-ENV WAHA_URL=http://waha:3000
-ENV CHATWOOT_URL=https://app.chatwoot.com
-ENV N8N_WEBHOOK_URL=http://n8n:5678/webhook/process-cfdi
-
-# Email Configuration Defaults
-ENV SMTP_HOST=smtp.gmail.com
-ENV SMTP_PORT=587
-ENV SMTP_SECURE=true
-
-# Copy package files with correct ownership
-COPY --chown=node:node package*.json ./
-
-# Install only production dependencies
-RUN npm install --omit=dev
-
-# Copy the server code
-COPY --chown=node:node server ./server
-
-# Copy the built static files from the builder stage
-COPY --chown=node:node --from=builder /app/dist ./dist
-
-# Create uploads directory and set permissions
+# Configuración de directorios de persistencia
+# Se crean antes de cambiar al usuario 'node' para asegurar permisos
 RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 
-# Expose the application port
+# Copiar archivos de dependencias
+COPY --chown=node:node package*.json ./
+
+# Instalar solo dependencias de producción
+RUN npm install --omit=dev
+
+# Copiar el backend y el build del frontend
+COPY --chown=node:node server ./server
+COPY --chown=node:node --from=builder /app/dist ./dist
+
+# Exponer el puerto del ERP
 EXPOSE 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+# Verificación de salud del contenedor
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/api/health').then((r) => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
 
-# Use non-root user for security
+# Seguridad: Ejecutar como usuario no raíz
 USER node
 
-# Start the Express server
+# Comando de arranque del sistema integral SuperAir
 CMD ["node", "server/index.js"]
