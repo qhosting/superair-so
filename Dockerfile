@@ -4,12 +4,9 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Argumentos de construcción para variables de entorno de frontend (Vite)
-# La API_KEY de Gemini es necesaria en el build si se inyecta vía Define
+# Se requiere la API_KEY durante el build para que Vite la inyecte en el cliente
 ARG API_KEY
 ENV API_KEY=$API_KEY
-
-# Forzar entorno de desarrollo momentáneamente para instalar devDependencies
-ENV NODE_ENV=development
 
 # Caché de dependencias para acelerar el despliegue
 COPY package*.json ./
@@ -28,15 +25,15 @@ WORKDIR /app
 # tzdata: CRÍTICO para que los registros de inventario y citas usen la hora de México
 RUN apk add --no-cache tzdata
 
-# Configuración de Zona Horaria (SuperAir opera en MX)
+# Configuración de Zona Horaria (SuperAir opera principalmente en MX)
 ENV TZ=America/Mexico_City
 
-# Variables de entorno por defecto (Pueden ser sobreescritas en docker-compose.yml)
+# Variables de entorno por defecto (Pueden ser sobreescritas en el despliegue)
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
 
-# API Key para el cerebro de IA (Gemini 3)
+# API Key para el backend (Cerebro IA Gemini/OpenAI)
 ARG API_KEY
 ENV API_KEY=$API_KEY
 
@@ -65,5 +62,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 # Seguridad Industrial: Ejecutar la aplicación como un usuario sin privilegios de raíz
 USER node
 
-# Comando de arranque para el sistema integral SuperAir
+# Comando de arranque para el servidor de SuperAir
 CMD ["node", "server/index.js"]
