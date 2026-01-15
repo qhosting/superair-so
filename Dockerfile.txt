@@ -4,17 +4,18 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Argumentos de construcción para variables de entorno de frontend (Vite)
+# La API_KEY de Gemini es necesaria en el build si se inyecta vía Define
 ARG API_KEY
 ENV API_KEY=$API_KEY
 
-# Forzar entorno de desarrollo para instalar devDependencies y poder compilar
+# Forzar entorno de desarrollo momentáneamente para instalar devDependencies
 ENV NODE_ENV=development
 
-# Caché de dependencias
+# Caché de dependencias para acelerar el despliegue
 COPY package*.json ./
 RUN npm install
 
-# Copiar código fuente y compilar
+# Copiar código fuente y generar el build optimizado de producción
 COPY . .
 RUN npm run build
 
@@ -23,45 +24,46 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Instalación de utilidades del sistema
-# tzdata: Necesario para que los CronJobs de facturación usen la hora de México
+# Instalación de utilidades esenciales del sistema
+# tzdata: CRÍTICO para que los registros de inventario y citas usen la hora de México
 RUN apk add --no-cache tzdata
 
 # Configuración de Zona Horaria (SuperAir opera en MX)
 ENV TZ=America/Mexico_City
 
-# Variables de entorno por defecto (Sobrescribibles en docker-compose)
+# Variables de entorno por defecto (Pueden ser sobreescritas en docker-compose.yml)
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
 
-# API Key para lógica de servidor (IA Gemini)
+# API Key para el cerebro de IA (Gemini 3)
 ARG API_KEY
 ENV API_KEY=$API_KEY
 
-# Configuración de directorios de persistencia
-# Se crean antes de cambiar al usuario 'node' para asegurar permisos
+# Configuración de directorios para persistencia de datos (Facturas, PDFs, Logos)
+# Se crean antes de cambiar al usuario 'node' para asegurar permisos de escritura
 RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 
-# Copiar archivos de dependencias
+# Copiar archivos de definición de dependencias
 COPY --chown=node:node package*.json ./
 
-# Instalar solo dependencias de producción
+# Instalar únicamente dependencias de producción (omitiendo devDependencies)
 RUN npm install --omit=dev
 
-# Copiar el backend y el build del frontend
+# Copiar la lógica del backend y los archivos estáticos del frontend generados por el builder
 COPY --chown=node:node server ./server
 COPY --chown=node:node --from=builder /app/dist ./dist
 
-# Exponer el puerto del ERP
+# Exponer el puerto configurado del ERP
 EXPOSE 3000
 
-# Verificación de salud del contenedor
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+# Verificación de salud del contenedor (Healthcheck)
+# Asegura que el servicio esté respondiendo antes de enviarle tráfico real
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/api/health').then((r) => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
 
-# Seguridad: Ejecutar como usuario no raíz
+# Seguridad Industrial: Ejecutar la aplicación como un usuario sin privilegios de raíz
 USER node
 
-# Comando de arranque del sistema integral SuperAir
+# Comando de arranque para el sistema integral SuperAir
 CMD ["node", "server/index.js"]
