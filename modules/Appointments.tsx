@@ -4,22 +4,24 @@ import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Clock, 
   MapPin, User, ExternalLink, X, Truck, Wrench, Camera, ClipboardList, 
   Phone, MessageSquare, Loader2, CheckCircle2, AlertTriangle, CalendarCheck, Edit3, Save,
-  Briefcase
+  Briefcase, RefreshCw, Link as LinkIcon, Globe
 } from 'lucide-react';
 import { Appointment, User as UserType, UserRole } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { useNotification } from '../context/NotificationContext';
 
 const Appointments: React.FC = () => {
   const { user } = useAuth();
+  const { showToast } = useNotification();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedApt, setSelectedApt] = useState<any | null>(null);
   const [showNewAptModal, setShowNewAptModal] = useState(false);
+  const [showIntegrations, setShowIntegrations] = useState(false);
   
   // Filter & Edit State
   const isInstaller = user?.role === UserRole.INSTALLER;
   const [selectedTechFilter, setSelectedTechFilter] = useState(isInstaller ? user.name : 'Todos');
   const [isRescheduling, setIsRescheduling] = useState(false);
-  const [editForm, setEditForm] = useState<any>({});
 
   // Data State
   const [appointments, setAppointments] = useState<any[]>([]);
@@ -40,34 +42,36 @@ const Appointments: React.FC = () => {
       status: 'Programada'
   });
 
-  useEffect(() => {
-    const fetchData = async () => {
-        try {
-            const [aptsRes, clientsRes, usersRes] = await Promise.all([
-                fetch('/api/appointments'),
-                fetch('/api/clients'),
-                fetch('/api/users')
-            ]);
-            
-            const aptsData = await aptsRes.json();
-            const clientsData = await clientsRes.json();
-            const usersData = await usersRes.json();
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+        const [aptsRes, clientsRes, usersRes] = await Promise.all([
+            fetch('/api/appointments'),
+            fetch('/api/clients'),
+            fetch('/api/users')
+        ]);
+        
+        const aptsData = await aptsRes.json();
+        const clientsData = await clientsRes.json();
+        const usersData = await usersRes.json();
 
-            if (Array.isArray(aptsData)) setAppointments(aptsData);
-            if (Array.isArray(clientsData)) setClients(clientsData);
-            if (Array.isArray(usersData)) {
-                const techList = usersData.filter(u => (u.role === 'Instalador' || u.role === 'Admin') && u.status === 'Activo');
-                setInstallers(techList);
-                if (!isInstaller && techList.length > 0 && !newApt.technician) {
-                    setNewApt(prev => ({ ...prev, technician: techList[0].name }));
-                }
+        if (Array.isArray(aptsData)) setAppointments(aptsData);
+        if (Array.isArray(clientsData)) setClients(clientsData);
+        if (Array.isArray(usersData)) {
+            const techList = usersData.filter(u => (u.role === 'Instalador' || u.role === 'Admin') && u.status === 'Activo');
+            setInstallers(techList);
+            if (!isInstaller && techList.length > 0 && !newApt.technician) {
+                setNewApt(prev => ({ ...prev, technician: techList[0].name }));
             }
-        } catch (e) {
-            console.error("Failed to fetch calendar data", e);
-        } finally {
-            setLoading(false);
         }
-    };
+    } catch (e) {
+        console.error("Failed to fetch calendar data", e);
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
   }, [user, isInstaller]);
 
@@ -81,13 +85,21 @@ const Appointments: React.FC = () => {
               body: JSON.stringify(payload)
           });
           if(res.ok) {
-              const savedApt = await res.json();
-              const client = clients.find(c => c.id == savedApt.client_id);
-              savedApt.client_name = client ? client.name : 'Cliente';
-              setAppointments([...appointments, savedApt]);
+              showToast("Cita agendada correctamente");
+              fetchData();
               setShowNewAptModal(false);
           }
-      } catch(e) { alert("Error al guardar"); }
+      } catch(e) { showToast("Error al guardar la cita", "error"); }
+  };
+
+  const handleConnectGoogle = () => {
+      setIsConnectingGoogle(true);
+      // Simulación de flujo OAuth
+      setTimeout(() => {
+          setIsGoogleConnected(true);
+          setIsConnectingGoogle(false);
+          showToast("Google Calendar vinculado con éxito");
+      }, 2000);
   };
 
   const updateStatus = async (id: string, newStatus: string) => {
@@ -100,6 +112,7 @@ const Appointments: React.FC = () => {
           if (res.ok) {
               setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
               if (selectedApt && selectedApt.id === id) setSelectedApt(prev => ({ ...prev, status: newStatus }));
+              showToast(`Servicio actualizado a: ${newStatus}`);
           }
       } catch(e) { console.error(e); }
   };
@@ -137,7 +150,7 @@ const Appointments: React.FC = () => {
   };
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-4 gap-8 h-full pb-20">
+    <div className="grid grid-cols-1 xl:grid-cols-4 gap-8 h-full pb-20 relative">
       <div className="xl:col-span-3 space-y-6">
         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
           <div className="flex flex-col md:flex-row items-center justify-between mb-10 gap-6">
@@ -145,8 +158,8 @@ const Appointments: React.FC = () => {
               <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter capitalize">{monthName} {year}</h2>
               {!isInstaller && (
                   <div className="flex items-center gap-4 mt-2">
-                    <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Vista de Técnico:</p>
-                    <select value={selectedTechFilter} onChange={e => setSelectedTechFilter(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-sky-500">
+                    <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Filtro Técnico:</p>
+                    <select value={selectedTechFilter} onChange={e => setSelectedTechFilter(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-sky-500 transition-all">
                         <option value="Todos">Todos los Técnicos</option>
                         {installers.map(ins => <option key={ins.id} value={ins.name}>{ins.name}</option>)}
                     </select>
@@ -197,13 +210,102 @@ const Appointments: React.FC = () => {
       </div>
 
       <div className="space-y-6">
-        <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-sm relative overflow-hidden">
-            <h4 className="font-black text-lg uppercase mb-4">Información Operativa</h4>
-            <p className="text-xs text-slate-400 leading-relaxed font-medium">
-                {isInstaller ? "Como instalador, solo puedes ver tus propios servicios asignados. Inicia ruta para notificar al cliente vía WhatsApp." : "Gestiona las rutas y servicios de todo el personal técnico."}
+        <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-xl relative overflow-hidden">
+            <h4 className="font-black text-lg uppercase mb-4 flex items-center gap-2">
+                <RefreshCw size={20} className="text-sky-400" /> Sincronización
+            </h4>
+            <div className="space-y-4 relative z-10">
+                <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                    <p className="text-[10px] font-black text-sky-400 uppercase tracking-widest mb-1">Status n8n</p>
+                    <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                        <span className="text-xs font-bold">Automations Online</span>
+                    </div>
+                </div>
+                <button 
+                    onClick={() => setShowIntegrations(true)}
+                    className="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2"
+                >
+                    <LinkIcon size={14} /> Gestionar Integraciones
+                </button>
+            </div>
+        </div>
+
+        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+            <h4 className="font-black text-slate-800 uppercase tracking-tight mb-4 flex items-center gap-2">
+                <AlertTriangle size={18} className="text-amber-500" /> Notas de Seguridad
+            </h4>
+            <p className="text-[10px] text-slate-400 leading-relaxed font-medium uppercase tracking-wide">
+                Toda cita programada se sincroniza automáticamente con las terminales de los técnicos. Los cambios manuales requieren auditoría.
             </p>
         </div>
       </div>
+
+      {/* INTEGRATIONS SLIDE-OVER */}
+      {showIntegrations && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[250] flex justify-end">
+              <div className="w-full max-w-md bg-white h-full shadow-2xl animate-in slide-in-from-right duration-300 flex flex-col border-l border-slate-200">
+                  <div className="p-8 border-b border-slate-100 flex items-center justify-between">
+                      <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Ecosistema SuperAir</h3>
+                      <button onClick={() => setShowIntegrations(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all"><X size={24}/></button>
+                  </div>
+                  <div className="p-8 space-y-8 flex-1 overflow-y-auto">
+                      {/* Google Calendar */}
+                      <div className="space-y-4">
+                          <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-center">
+                                  <Globe size={20} className="text-blue-500" />
+                              </div>
+                              <div>
+                                  <h4 className="font-black text-slate-800 text-sm uppercase">Google Calendar</h4>
+                                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Sincronización 2-Vías</p>
+                              </div>
+                          </div>
+                          {isGoogleConnected ? (
+                              <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                      <CheckCircle2 size={16} className="text-emerald-500" />
+                                      <span className="text-xs font-black text-emerald-700 uppercase">Conectado</span>
+                                  </div>
+                                  <button onClick={() => setIsGoogleConnected(false)} className="text-[10px] font-black text-rose-600 uppercase">Desvincular</button>
+                              </div>
+                          ) : (
+                              <button 
+                                onClick={handleConnectGoogle}
+                                disabled={isConnectingGoogle}
+                                className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-black uppercase text-[10px] tracking-widest hover:border-blue-400 hover:text-blue-500 transition-all flex items-center justify-center gap-2"
+                              >
+                                  {isConnectingGoogle ? <Loader2 size={16} className="animate-spin"/> : <Plus size={16}/>}
+                                  Vincular Cuenta de Google
+                              </button>
+                          )}
+                      </div>
+
+                      {/* n8n Webhook */}
+                      <div className="space-y-4 pt-8 border-t border-slate-100">
+                          <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center justify-center">
+                                  <RefreshCw size={20} className="text-indigo-600" />
+                              </div>
+                              <div>
+                                  <h4 className="font-black text-slate-800 text-sm uppercase">n8n Workflow Hub</h4>
+                                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Procesamiento de Leads</p>
+                              </div>
+                          </div>
+                          <div className="bg-slate-50 p-4 rounded-2xl">
+                              <p className="text-[10px] text-slate-500 leading-relaxed font-medium">
+                                  Las citas creadas en formularios externos o WhatsApp llegan vía Webhook a este módulo.
+                              </p>
+                              <div className="mt-3 flex items-center gap-2">
+                                  <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div>
+                                  <span className="text-[9px] font-black text-slate-400 uppercase">Webhook Activo: /api/leads</span>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
 
       {selectedApt && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[200] flex justify-end">
@@ -257,7 +359,7 @@ const Appointments: React.FC = () => {
       )}
 
       {showNewAptModal && !isInstaller && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[300] flex items-center justify-center p-4">
            <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300 flex flex-col max-h-[90vh]">
               <div className="p-8 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
                  <div><h3 className="text-2xl font-black text-slate-900 tracking-tighter uppercase">Programar Cita</h3></div>

@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { HashRouter, Routes, Route, Navigate, useLocation } from './context/AuthContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { NotificationProvider } from './context/NotificationContext';
+import { NotificationProvider, useNotification } from './context/NotificationContext';
 import { Loader2 } from 'lucide-react';
 import ChatwootWidget from './components/ChatwootWidget';
 
@@ -52,16 +52,41 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 const AppRoutes: React.FC = () => {
   const [isMaintenance, setIsMaintenance] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
   useEffect(() => {
-    const checkMaintenance = () => {
-      const maintenanceStatus = localStorage.getItem('superair_is_published') === 'false';
-      setIsMaintenance(maintenanceStatus);
+    const syncAppStatus = async () => {
+      try {
+        const res = await fetch('/api/settings/public');
+        if (res.ok) {
+          const data = await res.json();
+          const maintenanceStatus = data.isMaintenance === true;
+          setIsMaintenance(maintenanceStatus);
+          localStorage.setItem('superair_is_published', (!maintenanceStatus).toString());
+          if (data.logoUrl) localStorage.setItem('superair_logo', data.logoUrl);
+        }
+      } catch (e) {
+        // Fallback to local storage if API fails
+        const localStatus = localStorage.getItem('superair_is_published') === 'false';
+        setIsMaintenance(localStatus);
+      } finally {
+        setIsInitialLoading(false);
+      }
     };
-    checkMaintenance();
-    window.addEventListener('storage', checkMaintenance);
-    return () => window.removeEventListener('storage', checkMaintenance);
+
+    syncAppStatus();
+    window.addEventListener('storage', () => {
+        setIsMaintenance(localStorage.getItem('superair_is_published') === 'false');
+    });
   }, []);
+
+  if (isInitialLoading) {
+      return (
+        <div className="h-screen w-screen flex items-center justify-center bg-slate-900">
+            <WindLoader />
+        </div>
+      );
+  }
 
   return (
     <>
@@ -91,6 +116,18 @@ const AppRoutes: React.FC = () => {
     </>
   );
 };
+
+const WindLoader = () => (
+    <div className="flex flex-col items-center gap-4">
+        <div className="relative">
+            <div className="w-16 h-16 border-4 border-sky-500/20 border-t-sky-500 rounded-full animate-spin"></div>
+            <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-8 h-8 bg-sky-500 rounded-lg animate-pulse"></div>
+            </div>
+        </div>
+        <span className="text-white text-[10px] font-black uppercase tracking-[0.3em]">SuperAir</span>
+    </div>
+);
 
 const App: React.FC = () => {
   return (

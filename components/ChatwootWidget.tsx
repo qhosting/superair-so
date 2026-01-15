@@ -1,3 +1,4 @@
+
 import React, { useEffect } from 'react';
 
 declare global {
@@ -9,35 +10,40 @@ declare global {
 
 const ChatwootWidget: React.FC = () => {
   useEffect(() => {
-    // En producción, este token vendría de variables de entorno o configuración de backend
-    // Si no hay token, no cargamos el widget para evitar errores
-    const WEBSITE_TOKEN = ''; // Dejar vacío si no se tiene uno activo para evitar errores visuales
+    // Configuración desde el entorno o valores por defecto seguros
+    const WEBSITE_TOKEN = ''; // Se mantiene vacío por seguridad hasta configuración de usuario
     const BASE_URL = 'https://app.chatwoot.com';
 
     if (!WEBSITE_TOKEN) return;
 
-    // Load Chatwoot Script
-    (function(d, t) {
-      var g = d.createElement(t) as HTMLScriptElement;
-      var s = d.getElementsByTagName(t)[0];
-      g.src = BASE_URL + "/packs/js/sdk.js";
-      g.defer = true;
-      g.async = true;
-      s.parentNode?.insertBefore(g, s);
-      
-      g.onload = function() {
-        if (window.chatwootSDK) {
-            window.chatwootSDK.run({
-                websiteToken: WEBSITE_TOKEN,
-                baseUrl: BASE_URL
-            });
-        }
-      };
-    })(document, "script");
+    const loadChatwoot = () => {
+        (function(d, t) {
+            var g = d.createElement(t) as HTMLScriptElement;
+            var s = d.getElementsByTagName(t)[0];
+            g.src = BASE_URL + "/packs/js/sdk.js";
+            g.defer = true;
+            g.async = true;
+            s.parentNode?.insertBefore(g, s);
+            
+            g.onload = function() {
+                if (window.chatwootSDK) {
+                    window.chatwootSDK.run({
+                        websiteToken: WEBSITE_TOKEN,
+                        baseUrl: BASE_URL
+                    });
+                    console.log('💬 Chatwoot integration active');
+                }
+            };
+        })(document, "script");
+    };
+
+    // Delay load to prioritize ERP main performance
+    const timer = setTimeout(loadChatwoot, 3000);
+    return () => clearTimeout(timer);
 
   }, []);
 
-  return null; // El widget se inyecta solo en el DOM
+  return null;
 };
 
 export default ChatwootWidget;

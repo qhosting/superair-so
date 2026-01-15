@@ -8,7 +8,7 @@ if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
-// --- GLOBAL FETCH INTERCEPTOR (SAFE PATCH) ---
+// --- GLOBAL FETCH INTERCEPTOR (ENHANCED) ---
 (function applyInterceptor() {
     const originalFetch = window.fetch;
     if (!originalFetch) return;
@@ -24,55 +24,55 @@ if (!rootElement) {
             url = input.url;
         }
 
-        // Only intercept calls to our internal API
         const isApiCall = url.startsWith('/api') || url.includes('/api/');
         
         if (isApiCall) {
             const token = localStorage.getItem('superair_token') || sessionStorage.getItem('superair_token');
             
             if (token) {
-                // If it is NOT a Request object, we safely inject headers via the init object
                 if (!(input instanceof Request)) {
                     init = init || {};
                     const headers = new Headers(init.headers || {});
-                    
                     if (!headers.has('Authorization')) {
                         headers.set('Authorization', `Bearer ${token}`);
                     }
                     init.headers = headers;
                 } else {
-                    // For instances where input is a Request object
                     try {
                         if (!input.headers.has('Authorization')) {
                             input.headers.set('Authorization', `Bearer ${token}`);
                         }
-                    } catch (e) {
-                        // Request headers might be immutable in some environments
-                    }
+                    } catch (e) { }
                 }
             }
         }
 
-        // Forwarding original input to preserve all Request features
-        const response = await originalFetch(input, init);
+        try {
+            const response = await originalFetch(input, init);
 
-        // Global 401/403 Handling: If session is dead, clean up (unless we are already at login)
-        if ((response.status === 401 || response.status === 403) && !url.includes('/api/auth/login')) {
-            if (!window.location.hash.includes('/login')) {
-                console.warn("🔐 Session expired or invalid. Token removed.");
-                localStorage.removeItem('superair_token');
-                localStorage.removeItem('superair_user');
+            if ((response.status === 401 || response.status === 403) && !url.includes('/api/auth/login')) {
+                if (!window.location.hash.includes('/login')) {
+                    localStorage.removeItem('superair_token');
+                    localStorage.removeItem('superair_user');
+                    window.location.hash = '#/login';
+                }
             }
-        }
 
-        return response;
+            return response;
+        } catch (error) {
+            // Network error / DNS / Timeout handling
+            console.error("🌐 Network Error detected:", error);
+            // We dispatch a custom event that NotificationContext can listen to if needed
+            window.dispatchEvent(new CustomEvent('superair_network_error', { 
+                detail: { message: "Error de conexión con el servidor. Verifica tu internet." } 
+            }));
+            throw error;
+        }
     };
 
     try {
-        // Attempt simple reassignment first
         window.fetch = wrappedFetch;
     } catch (e) {
-        // If fetch is a getter-only property, Object.defineProperty is required to redefine it
         try {
             Object.defineProperty(window, 'fetch', {
                 value: wrappedFetch,
@@ -80,9 +80,7 @@ if (!rootElement) {
                 writable: true,
                 enumerable: true
             });
-        } catch (defineError) {
-            console.error("Fetch interceptor could not be applied due to environment restrictions.", defineError);
-        }
+        } catch (defineError) { }
     }
 })();
 
@@ -98,10 +96,10 @@ if ('serviceWorker' in navigator && window.location.protocol.startsWith('http'))
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js')
       .then(registration => {
-        console.log('SW registered: ', registration);
+        console.log('SW registered');
       })
       .catch(registrationError => {
-        console.debug('SW registration failed: ', registrationError);
+        console.debug('SW registration failed');
       });
   });
 }
