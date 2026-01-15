@@ -4,7 +4,7 @@ import { Link, useLocation } from '../context/AuthContext';
 import { 
   LayoutDashboard, Construction, Users, FileText, Package, Calendar, Settings, Menu, X, Wind,
   ShieldCheck, ShoppingBag, BarChart3, LogOut, Bell, CheckCircle2, AlertTriangle, Info, Magnet,
-  Truck, Warehouse, ShoppingCart
+  Truck, Warehouse, ShoppingCart, BookOpen
 } from 'lucide-react';
 import { AppRoute } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -40,6 +40,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Almacenes / Unidades', icon: Warehouse, route: AppRoute.WAREHOUSES },
     { name: 'Citas e Instalación', icon: Calendar, route: AppRoute.APPOINTMENTS },
     { name: 'Reportes e Insights', icon: BarChart3, route: AppRoute.REPORTS },
+    { name: 'Manual Operativo', icon: BookOpen, route: AppRoute.MANUAL },
     { name: 'Constructor Web', icon: Construction, route: AppRoute.BUILDER },
     { name: 'Usuarios y Roles', icon: ShieldCheck, route: AppRoute.USERS },
     { name: 'Configuración', icon: Settings, route: AppRoute.SETTINGS },

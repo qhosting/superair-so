@@ -26,6 +26,7 @@ import Reports from './modules/Reports';
 import Leads from './modules/Leads';
 import Purchases from './modules/Purchases';
 import WarehouseManager from './modules/WarehouseManager';
+import KnowledgeBase from './modules/KnowledgeBase';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isAuthenticated, isLoading } = useAuth();
@@ -80,6 +81,7 @@ const AppRoutes: React.FC = () => {
         <Route path="/warehouses" element={<ProtectedRoute><WarehouseManager /></ProtectedRoute>} />
         <Route path="/appointments" element={<ProtectedRoute><Appointments /></ProtectedRoute>} />
         <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+        <Route path="/manual" element={<ProtectedRoute><KnowledgeBase /></ProtectedRoute>} />
         <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
         <Route path="/builder" element={<ProtectedRoute><LandingBuilder /></ProtectedRoute>} />

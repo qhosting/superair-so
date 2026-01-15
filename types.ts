@@ -98,7 +98,6 @@ export interface Order {
   status: 'Pendiente' | 'Instalando' | 'Completado' | 'Cancelado';
   installationDate?: string;
   cfdiStatus?: 'Pendiente' | 'Timbrado' | 'Error';
-  // Fix for modules/Sales.tsx: Add fiscalData property to Order
   fiscalData?: FiscalData;
 }
 
@@ -129,7 +128,6 @@ export interface User {
   lastLogin: string;
 }
 
-// Fix for modules/Leads.tsx: Define LeadStatus type
 export type LeadStatus = 'Nuevo' | 'Contactado' | 'Calificado' | 'Cotizado' | 'Ganado' | 'Perdido';
 
 export interface Lead {
@@ -139,13 +137,11 @@ export interface Lead {
   phone?: string;
   source: 'Facebook' | 'Google' | 'Instagram' | 'Manual' | 'Web';
   campaign?: string; 
-  // Update status to use LeadStatus alias
   status: LeadStatus;
   notes?: string;
   createdAt: string;
 }
 
-// Fix for context/NotificationContext.tsx: Define AppNotification type
 export interface AppNotification {
   id: number;
   title: string;
@@ -153,6 +149,16 @@ export interface AppNotification {
   type: 'success' | 'error' | 'info' | 'warning';
   isRead: boolean;
   createdAt: string;
+}
+
+export interface ManualArticle {
+  id: string;
+  category: 'Instalación' | 'Mantenimiento' | 'Seguridad' | 'Administrativo';
+  title: string;
+  content: string;
+  tags?: string[];
+  pdf_url?: string;
+  updated_at: string;
 }
 
 export enum AppRoute {
@@ -166,17 +172,16 @@ export enum AppRoute {
   INVENTORY = 'inventory',
   WAREHOUSES = 'warehouses',
   APPOINTMENTS = 'appointments',
+  REPORTS = 'reports',
+  MANUAL = 'manual',
   USERS = 'users',
-  SETTINGS = 'settings',
-  REPORTS = 'reports'
+  SETTINGS = 'settings'
 }
 
-// Fix for modules/LandingBuilder.tsx: Define SectionType type
 export type SectionType = 'hero' | 'about' | 'services' | 'history' | 'cta' | 'footer';
 
 export interface LandingSection {
   id: string;
-  // Update type to use SectionType alias
   type: SectionType;
   title: string;
   subtitle: string;

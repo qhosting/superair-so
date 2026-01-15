@@ -78,6 +78,9 @@ const initDB = async () => {
     await db.query(`CREATE TABLE IF NOT EXISTS serial_numbers (serial TEXT PRIMARY KEY, product_id INTEGER REFERENCES products(id), warehouse_id INTEGER REFERENCES warehouses(id), status TEXT DEFAULT 'Disponible', last_movement_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS purchases (id SERIAL PRIMARY KEY, vendor_id INTEGER REFERENCES vendors(id), total NUMERIC, status TEXT DEFAULT 'Borrador', items JSONB, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS inventory_transfers (id SERIAL PRIMARY KEY, from_warehouse_id INTEGER REFERENCES warehouses(id), to_warehouse_id INTEGER REFERENCES warehouses(id), items JSONB, status TEXT DEFAULT 'Completado', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, user_id INTEGER REFERENCES users(id))`);
+    
+    // NEW: Operative Manuals
+    await db.query(`CREATE TABLE IF NOT EXISTS manuals (id SERIAL PRIMARY KEY, category TEXT, title TEXT NOT NULL, content TEXT, tags JSONB, pdf_url TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
 
     // Standard Modules
     await db.query(`CREATE TABLE IF NOT EXISTS quotes (id SERIAL PRIMARY KEY, client_id INTEGER REFERENCES clients(id), client_name TEXT, total NUMERIC, status TEXT DEFAULT 'Borrador', items JSONB, payment_terms TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
@@ -92,6 +95,15 @@ const initDB = async () => {
         "INSERT INTO warehouses (name, type) SELECT 'Bodega Central', 'Central' WHERE NOT EXISTS (SELECT 1 FROM warehouses WHERE name = 'Bodega Central')"
     ];
     for(const m of migrations) await db.query(m).catch(e => console.warn(`Mig skip: ${m}`));
+
+    // Seed Initial Manuals if empty
+    const manualCheck = await db.query("SELECT COUNT(*) FROM manuals");
+    if (manualCheck.rows[0].count === '0') {
+      await db.query(`INSERT INTO manuals (category, title, content) VALUES 
+        ('Instalación', 'Protocolo de Vacío Certificado', 'Para toda instalación SuperAir, es obligatorio realizar vacío a 500 micras usando bomba de 6CFM mínimo...'),
+        ('Seguridad', 'EPP para Alturas', 'El uso de arnés de seguridad es obligatorio al trabajar en azoteas sin barandal o a más de 1.8 metros...'),
+        ('Administrativo', 'Recepción de Pagos en Sitio', 'Los técnicos no deben recibir efectivo a menos que sea autorizado vía ticket por administración...')`);
+    }
 
     // Default Admin
     const adminCheck = await db.query("SELECT * FROM users WHERE email = 'admin@superair.com.mx'");
@@ -118,6 +130,23 @@ app.post('/api/auth/login', async (req, res) => {
       } else res.status(401).json({ error: 'Pass incorrecta' });
     } else res.status(401).json({ error: 'No existe usuario' });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// --- MANUALS ---
+app.get('/api/manuals', async (req, res) => {
+    const r = await db.query('SELECT * FROM manuals ORDER BY category ASC, title ASC');
+    res.json(r.rows);
+});
+app.post('/api/manuals', async (req, res) => {
+    const { category, title, content, tags, pdf_url } = req.body;
+    await db.query('INSERT INTO manuals (category, title, content, tags, pdf_url) VALUES ($1,$2,$3,$4,$5)', [category, title, content, JSON.stringify(tags || []), pdf_url || null]);
+    res.json({success: true});
+});
+app.put('/api/manuals/:id', async (req, res) => {
+    const { id } = req.params;
+    const { category, title, content, tags, pdf_url } = req.body;
+    await db.query('UPDATE manuals SET category=$1, title=$2, content=$3, tags=$4, pdf_url=$5, updated_at=NOW() WHERE id=$6', [category, title, content, JSON.stringify(tags || []), pdf_url || null, id]);
+    res.json({success: true});
 });
 
 // --- VENDORS ---
