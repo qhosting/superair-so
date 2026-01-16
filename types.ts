@@ -1,4 +1,16 @@
 
+export interface ClientAsset {
+  id: string;
+  client_id: string;
+  brand: string;
+  model: string;
+  btu: number;
+  type: 'MiniSplit' | 'Multisplit' | 'Paquete' | 'Chiller' | 'VRF';
+  install_date?: string;
+  last_service?: string;
+  notes?: string;
+}
+
 export interface Client {
   id: string;
   name: string;
@@ -11,6 +23,8 @@ export interface Client {
   notes?: string;
   totalSpent?: number;
   lastService?: string;
+  assets?: ClientAsset[];
+  ltv?: number; // Lifetime Value calculado
 }
 
 export interface Product {

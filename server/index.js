@@ -53,13 +53,27 @@ app.use('/api', authenticateToken);
 // --- INITIALIZE FULL INDUSTRIAL SCHEMA ---
 const initDB = async () => {
   try {
-    console.log("🛠️ Sincronizando Esquema SuperAir v1.3...");
+    console.log("🛠️ Sincronizando Esquema SuperAir v1.4 (Clientes 360)...");
     
     // Core
     await db.query(`CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'Admin', status TEXT DEFAULT 'Activo', last_login TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS clients (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT, phone TEXT, address TEXT, rfc TEXT, type TEXT DEFAULT 'Residencial', status TEXT DEFAULT 'Prospecto', notes TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, code TEXT, name TEXT NOT NULL, description TEXT, price NUMERIC, cost NUMERIC DEFAULT 0, category TEXT, min_stock INTEGER DEFAULT 5, type TEXT DEFAULT 'product', requires_serial BOOLEAN DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     
+    // New: Technical Assets Table
+    await db.query(`CREATE TABLE IF NOT EXISTS client_assets (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+        brand TEXT,
+        model TEXT,
+        btu INTEGER,
+        type TEXT,
+        install_date DATE,
+        last_service DATE,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+
     // Inventory & Logistics
     await db.query(`CREATE TABLE IF NOT EXISTS vendors (id SERIAL PRIMARY KEY, name TEXT NOT NULL, rfc TEXT, contact_name TEXT, phone TEXT, email TEXT, address TEXT, credit_days INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS warehouses (id SERIAL PRIMARY KEY, name TEXT NOT NULL, type TEXT DEFAULT 'Central', responsible_id INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
@@ -77,7 +91,7 @@ const initDB = async () => {
     // CMS & Ops
     await db.query(`CREATE TABLE IF NOT EXISTS app_settings (category TEXT PRIMARY KEY, data JSONB, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     
-    // Leads v1.3 - Columnas para IA y Historial
+    // Leads v1.3
     await db.query(`CREATE TABLE IF NOT EXISTS leads (
         id SERIAL PRIMARY KEY, 
         name TEXT NOT NULL, 
@@ -97,17 +111,12 @@ const initDB = async () => {
     await db.query(`CREATE TABLE IF NOT EXISTS manuals (id SERIAL PRIMARY KEY, category TEXT, title TEXT NOT NULL, content TEXT, tags JSONB, pdf_url TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS appointments (id SERIAL PRIMARY KEY, client_id INTEGER, technician TEXT, date DATE, time TIME, duration INTEGER, type TEXT, status TEXT DEFAULT 'Programada')`);
 
-    // --- SEED DATA: ADMIN USER ---
+    // --- SEED DATA ---
     const adminCheck = await db.query("SELECT id FROM users WHERE email = 'admin@superair.com.mx'");
     if (adminCheck.rows.length === 0) {
-      console.log("🌱 Creando usuario administrador inicial...");
       const hashedPassword = await bcrypt.hash('admin123', 10);
-      await db.query(
-        "INSERT INTO users (name, email, password, role, status) VALUES ($1, $2, $3, $4, $5)",
-        ['Administrador SuperAir', 'admin@superair.com.mx', hashedPassword, 'Super Admin', 'Activo']
-      );
+      await db.query("INSERT INTO users (name, email, password, role, status) VALUES ($1, $2, $3, $4, $5)", ['Administrador SuperAir', 'admin@superair.com.mx', hashedPassword, 'Super Admin', 'Activo']);
     }
-
     await db.query("INSERT INTO warehouses (name, type) SELECT 'Bodega Central', 'Central' WHERE NOT EXISTS (SELECT 1 FROM warehouses WHERE id = 1)");
     console.log('✅ Base de datos SuperAir lista.');
   } catch (err) { console.error('❌ DB INIT ERROR:', err.message); }
@@ -120,119 +129,86 @@ db.checkConnection().then(async connected => {
   }
 });
 
-// --- ENDPOINTS LEADS AVANZADOS ---
+// --- CLIENTS 360 ENDPOINTS ---
 
+app.get('/api/clients', async (req, res) => {
+    try {
+        // Enriquecemos la respuesta con LTV y última cita
+        const r = await db.query(`
+            SELECT c.*, 
+            (SELECT SUM(total) FROM quotes WHERE client_id = c.id AND status = 'Aceptada') as ltv,
+            (SELECT date FROM appointments WHERE client_id = c.id ORDER BY date DESC LIMIT 1) as last_service
+            FROM clients c 
+            ORDER BY c.name ASC
+        `);
+        res.json(r.rows);
+    } catch (e) { res.status(500).json({ error: "Database error" }); }
+});
+
+app.post('/api/clients', async (req, res) => {
+    const { name, email, phone, address, rfc, type, status, notes } = req.body;
+    try {
+        const r = await db.query(
+            "INSERT INTO clients (name, email, phone, address, rfc, type, status, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
+            [name, email, phone, address, rfc, type, status, notes]
+        );
+        res.json(r.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Assets Management
+app.get('/api/clients/:id/assets', async (req, res) => {
+    try {
+        const r = await db.query("SELECT * FROM client_assets WHERE client_id = $1 ORDER BY install_date DESC", [req.params.id]);
+        res.json(r.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/clients/:id/assets', async (req, res) => {
+    const { brand, model, btu, type, install_date, last_service, notes } = req.body;
+    try {
+        const r = await db.query(
+            "INSERT INTO client_assets (client_id, brand, model, btu, type, install_date, last_service, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
+            [req.params.id, brand, model, btu, type, install_date, last_service, notes]
+        );
+        res.json(r.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/assets/:id', async (req, res) => {
+    try {
+        await db.query("DELETE FROM client_assets WHERE id = $1", [req.params.id]);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// full profile 360
+app.get('/api/clients/:id/360', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const [client, assets, quotes, appointments] = await Promise.all([
+            db.query("SELECT * FROM clients WHERE id = $1", [id]),
+            db.query("SELECT * FROM client_assets WHERE client_id = $1", [id]),
+            db.query("SELECT * FROM quotes WHERE client_id = $1 ORDER BY created_at DESC", [id]),
+            db.query("SELECT * FROM appointments WHERE client_id = $1 ORDER BY date DESC", [id])
+        ]);
+        res.json({
+            client: client.rows[0],
+            assets: assets.rows,
+            quotes: quotes.rows,
+            appointments: appointments.rows
+        });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- OTROS ENDPOINTS (Leads, Auth, Health...) ---
+app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/api/leads', async (req, res) => {
     try {
         const r = await db.query("SELECT * FROM leads ORDER BY created_at DESC");
         res.json(r.rows);
-    } catch (e) {
-        res.status(500).json({ error: "Database error" });
-    }
-});
-
-app.post('/api/leads', async (req, res) => {
-    const { name, email, phone, source, notes, campaign } = req.body;
-    try {
-        const r = await db.query(
-            "INSERT INTO leads (name, email, phone, source, notes, campaign) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-            [name, email, phone, source || 'Manual', notes, campaign]
-        );
-        res.json(r.rows[0]);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put('/api/leads/:id', async (req, res) => {
-    const { id } = req.params;
-    const { status, notes, history } = req.body;
-    try {
-        const r = await db.query(
-            "UPDATE leads SET status = COALESCE($1, status), notes = COALESCE($2, notes), history = COALESCE($3, history), updated_at = NOW() WHERE id = $4 RETURNING *",
-            [status, notes, history ? JSON.stringify(history) : null, id]
-        );
-        res.json(r.rows[0]);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/leads/:id/ai-analyze', async (req, res) => {
-    const { id } = req.params;
-    try {
-        const leadR = await db.query("SELECT * FROM leads WHERE id = $1", [id]);
-        if (leadR.rows.length === 0) return res.status(404).json({ error: "Lead no encontrado" });
-        const lead = leadR.rows[0];
-
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const prompt = `Analiza este prospecto para venta de Aire Acondicionado en México.
-                       Nombre: ${lead.name}
-                       Origen: ${lead.source}
-                       Notas/Mensaje: ${lead.notes}
-                       
-                       Determina un Score de Prioridad del 1 al 10 (donde 10 es una venta segura inmediata) 
-                       y un análisis breve de estrategia de venta.`;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        score: { type: Type.INTEGER },
-                        analysis: { type: Type.STRING }
-                    },
-                    required: ["score", "analysis"]
-                }
-            }
-        });
-
-        const result = JSON.parse(response.text);
-        const updateR = await db.query(
-            "UPDATE leads SET ai_score = $1, ai_analysis = $2, updated_at = NOW() WHERE id = $3 RETURNING *",
-            [result.score, result.analysis, id]
-        );
-        res.json(updateR.rows[0]);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/leads/:id/suggest-reply', async (req, res) => {
-    const { id } = req.params;
-    try {
-        const leadR = await db.query("SELECT * FROM leads WHERE id = $1", [id]);
-        const lead = leadR.rows[0];
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: `Redacta un mensaje de WhatsApp amigable y profesional para este lead interesado en aire acondicionado. 
-                       Cliente: ${lead.name}. Interés: ${lead.notes}. Tono: Mexicano servicial.`
-        });
-        res.json({ reply: response.text });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// --- OTROS ENDPOINTS ---
-app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
-app.get('/api/quotes', async (req, res) => {
-    try {
-        const r = await db.query("SELECT * FROM quotes ORDER BY created_at DESC");
-        res.json(r.rows);
     } catch (e) { res.status(500).json({ error: "Database error" }); }
 });
-
-app.get('/api/appointments', async (req, res) => {
-    try {
-        const r = await db.query(`SELECT a.*, c.name as client_name FROM appointments a LEFT JOIN clients c ON a.client_id = c.id ORDER BY a.date ASC, a.time ASC`);
-        res.json(r.rows);
-    } catch (e) { res.status(500).json({ error: "Database error" }); }
-});
-
-app.get('/api/users', async (req, res) => {
-    try {
-        const r = await db.query("SELECT id, name, email, role, status, last_login FROM users");
-        res.json(r.rows);
-    } catch (e) { res.status(500).json({ error: "Database error" }); }
-});
-
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {
