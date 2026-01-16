@@ -31,6 +31,26 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 
+// Helper para extraer JSON de una respuesta de IA potencialmente formateada con Markdown
+const safeJsonParse = (text) => {
+  try {
+    // Intenta parsear directamente
+    return JSON.parse(text);
+  } catch (e) {
+    // Si falla, busca el primer objeto { ... } o arreglo [ ... ] en el texto
+    const match = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+    if (match) {
+      try {
+        return JSON.parse(match[0]);
+      } catch (innerError) {
+        console.error("Error al parsear el JSON extraído:", innerError);
+        throw new Error("Respuesta de IA no tiene formato JSON válido.");
+      }
+    }
+    throw new Error("No se encontró JSON en la respuesta de la IA.");
+  }
+};
+
 // Auth Middleware
 const authenticateToken = (req, res, next) => {
   const publicPaths = ['/api/auth/login', '/api/health', '/api/cms/content', '/api/settings/public', '/api/leads'];
@@ -133,7 +153,6 @@ db.checkConnection().then(async connected => {
 
 app.get('/api/clients', async (req, res) => {
     try {
-        // Enriquecemos la respuesta con LTV y última cita
         const r = await db.query(`
             SELECT c.*, 
             (SELECT SUM(total) FROM quotes WHERE client_id = c.id AND status = 'Aceptada') as ltv,
@@ -156,7 +175,6 @@ app.post('/api/clients', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Assets Management
 app.get('/api/clients/:id/assets', async (req, res) => {
     try {
         const r = await db.query("SELECT * FROM client_assets WHERE client_id = $1 ORDER BY install_date DESC", [req.params.id]);
@@ -182,7 +200,6 @@ app.delete('/api/assets/:id', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// full profile 360
 app.get('/api/clients/:id/360', async (req, res) => {
     const { id } = req.params;
     try {
@@ -201,7 +218,80 @@ app.get('/api/clients/:id/360', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- OTROS ENDPOINTS (Leads, Auth, Health...) ---
+// --- LEADS AI ENHANCED ---
+
+app.post('/api/leads/:id/ai-analyze', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const leadR = await db.query("SELECT * FROM leads WHERE id = $1", [id]);
+        if (leadR.rows.length === 0) return res.status(404).json({ error: "Lead no encontrado" });
+        const lead = leadR.rows[0];
+
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const prompt = `Analiza este prospecto para venta de Aire Acondicionado en México.
+                       Nombre: ${lead.name}
+                       Origen: ${lead.source}
+                       Notas/Mensaje: ${lead.notes}
+                       
+                       Responde estrictamente con un objeto JSON que tenga las propiedades: "score" (número del 1 al 10) y "analysis" (texto breve).`;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        score: { type: Type.INTEGER },
+                        analysis: { type: Type.STRING }
+                    },
+                    required: ["score", "analysis"]
+                }
+            }
+        });
+
+        // Uso de safeJsonParse para evitar errores de parseo por texto adicional del modelo
+        const result = safeJsonParse(response.text);
+        const updateR = await db.query(
+            "UPDATE leads SET ai_score = $1, ai_analysis = $2, updated_at = NOW() WHERE id = $3 RETURNING *",
+            [result.score, result.analysis, id]
+        );
+        res.json(updateR.rows[0]);
+    } catch (e) { 
+        console.error("AI Analysis error:", e);
+        res.status(500).json({ error: "Error analizando el lead con IA" }); 
+    }
+});
+
+app.post('/api/leads/:id/suggest-reply', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const leadR = await db.query("SELECT * FROM leads WHERE id = $1", [id]);
+        const lead = leadR.rows[0];
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: `Redacta un mensaje de WhatsApp amigable y profesional para este lead interesado en aire acondicionado. 
+                       Cliente: ${lead.name}. Interés: ${lead.notes}. Tono: Mexicano servicial.`
+        });
+        res.json({ reply: response.text });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/leads/:id', async (req, res) => {
+    const { id } = req.params;
+    const { status, notes, history } = req.body;
+    try {
+        const r = await db.query(
+            "UPDATE leads SET status = COALESCE($1, status), notes = COALESCE($2, notes), history = COALESCE($3, history), updated_at = NOW() WHERE id = $4 RETURNING *",
+            [status, notes, history ? JSON.stringify(history) : null, id]
+        );
+        res.json(r.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- OTROS ENDPOINTS ---
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/api/leads', async (req, res) => {
     try {
@@ -209,6 +299,7 @@ app.get('/api/leads', async (req, res) => {
         res.json(r.rows);
     } catch (e) { res.status(500).json({ error: "Database error" }); }
 });
+
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {

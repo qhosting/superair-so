@@ -1,10 +1,7 @@
 
-// Node.js 18+ has native fetch, so we don't need to import it.
-// import fetch from 'node-fetch'; 
 import { GoogleGenAI, Type } from "@google/genai";
 
 // --- CONFIGURACIÓN ---
-// En producción, estas variables vienen de process.env
 const WAHA_URL = process.env.WAHA_URL || 'http://waha:3000'; 
 const CHATWOOT_URL = process.env.CHATWOOT_URL || 'https://app.chatwoot.com';
 const CHATWOOT_TOKEN = process.env.CHATWOOT_TOKEN || '';
@@ -33,7 +30,6 @@ const fetchWithTimeout = async (url, options = {}, timeout = 5000) => {
  */
 export const sendWhatsApp = async (phone, message) => {
   try {
-    // Formatear teléfono: eliminar caracteres no numéricos y asegurar sufijo @c.us
     const cleanPhone = phone.replace(/\D/g, '');
     const chatId = `${cleanPhone}@c.us`;
 
@@ -56,7 +52,7 @@ export const sendWhatsApp = async (phone, message) => {
 
     return await response.json();
   } catch (error) {
-    console.error('❌ Error enviando WhatsApp (Timeout o Red):', error.message);
+    console.error('❌ Error enviando WhatsApp:', error.message);
     throw error;
   }
 };
@@ -75,7 +71,6 @@ export const sendChatwootMessage = async (email, name, message) => {
         'Content-Type': 'application/json'
     };
 
-    // 1. Buscar o Crear Contacto
     let contactId;
     const searchRes = await fetchWithTimeout(`${CHATWOOT_URL}/api/v1/accounts/${CHATWOOT_ACCOUNT_ID}/contacts/search?q=${email}`, { headers });
     const searchData = await searchRes.json();
@@ -92,7 +87,6 @@ export const sendChatwootMessage = async (email, name, message) => {
         contactId = createData.payload.contact.id;
     }
 
-    // 2. Crear Conversación
     const convRes = await fetchWithTimeout(`${CHATWOOT_URL}/api/v1/accounts/${CHATWOOT_ACCOUNT_ID}/conversations`, {
         method: 'POST',
         headers,
@@ -101,17 +95,16 @@ export const sendChatwootMessage = async (email, name, message) => {
     const convData = await convRes.json();
     const conversationId = convData.id;
 
-    // 3. Enviar Mensaje
     const msgRes = await fetchWithTimeout(`${CHATWOOT_URL}/api/v1/accounts/${CHATWOOT_ACCOUNT_ID}/conversations/${conversationId}/messages`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ content: message, message_type: 'incoming' }) // incoming simula que el cliente lo envió
+        body: JSON.stringify({ content: message, message_type: 'incoming' })
     });
 
     return await msgRes.json();
 
   } catch (error) {
-    console.error('❌ Error enviando a Chatwoot (Timeout o Red):', error.message);
+    console.error('❌ Error enviando a Chatwoot:', error.message);
     throw error;
   }
 };
@@ -122,13 +115,13 @@ export const sendChatwootMessage = async (email, name, message) => {
 export const analyzeLeadIntent = async (message) => {
     try {
         if (!process.env.API_KEY) {
-            console.warn("⚠️ API KEY de Google no configurada. Saltando análisis de IA.");
+            console.warn("⚠️ API KEY no configurada.");
             return { isLead: false, summary: message };
         }
 
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const prompt = `
-            Analiza el siguiente mensaje de WhatsApp entrante para una empresa de Aire Acondicionado llamada "SuperAir".
+            Analiza el siguiente mensaje de WhatsApp entrante para "SuperAir".
             Mensaje: "${message}"
 
             Determina la intención:
@@ -136,7 +129,7 @@ export const analyzeLeadIntent = async (message) => {
             - SUPPORT: Si reporta una falla, garantía o queja.
             - OTHER: Saludos, spam, u otros.
 
-            Si es SALES, extrae un nombre probable (si lo menciona) y el servicio de interés.
+            Responde estrictamente con un JSON válido.
         `;
 
         const response = await ai.models.generateContent({
@@ -158,7 +151,11 @@ export const analyzeLeadIntent = async (message) => {
         });
 
         if (response.text) {
-            const data = JSON.parse(response.text);
+            const rawText = response.text;
+            // Extracción segura de JSON
+            const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+            const data = JSON.parse(jsonMatch ? jsonMatch[0] : rawText);
+            
             return {
                 isLead: data.intent === 'SALES',
                 intent: data.intent,
