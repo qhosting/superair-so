@@ -51,10 +51,15 @@ if (!rootElement) {
             const response = await originalFetch(input, init);
 
             if ((response.status === 401 || response.status === 403) && !url.includes('/api/auth/login')) {
-                if (!window.location.hash.includes('/login')) {
+                const currentHash = window.location.hash;
+                if (!currentHash.includes('/login')) {
                     localStorage.removeItem('superair_token');
                     localStorage.removeItem('superair_user');
-                    window.location.hash = '#/login';
+                    try {
+                        window.location.hash = '#/login';
+                    } catch (e) {
+                        console.error("Redirect to login failed due to environment restrictions.");
+                    }
                 }
             }
 

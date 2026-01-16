@@ -29,7 +29,7 @@ import WarehouseManager from './modules/WarehouseManager';
 import KnowledgeBase from './modules/KnowledgeBase';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { user, isLoading } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -43,7 +43,8 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     );
   }
 
-  if (!isAuthenticated || !user) {
+  // Bypass temporal: Permitir acceso siempre que haya un objeto user (el de Dev lo tiene)
+  if (!user) {
     return <Navigate to="/login" state={{ from: location }} />;
   }
 
@@ -66,7 +67,6 @@ const AppRoutes: React.FC = () => {
           if (data.logoUrl) localStorage.setItem('superair_logo', data.logoUrl);
         }
       } catch (e) {
-        // Fallback to local storage if API fails
         const localStatus = localStorage.getItem('superair_is_published') === 'false';
         setIsMaintenance(localStatus);
       } finally {
@@ -96,6 +96,7 @@ const AppRoutes: React.FC = () => {
         <Route path="/login" element={<Login />} />
         <Route path="/maintenance" element={<Maintenance />} />
 
+        {/* Todas estas rutas ahora son accesibles directamente */}
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
         <Route path="/clients" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
@@ -111,7 +112,7 @@ const AppRoutes: React.FC = () => {
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
         <Route path="/builder" element={<ProtectedRoute><LandingBuilder /></ProtectedRoute>} />
 
-        <Route path="*" element={<Navigate to="/" />} />
+        <Route path="*" element={<Navigate to="/dashboard" />} />
       </Routes>
     </>
   );

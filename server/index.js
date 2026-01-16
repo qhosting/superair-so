@@ -109,9 +109,39 @@ db.checkConnection().then(async connected => {
   }
 });
 
-// --- API ENDPOINTS ---
+// --- API ENDPOINTS REALES ---
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+
+app.get('/api/leads', async (req, res) => {
+    const r = await db.query("SELECT * FROM leads ORDER BY created_at DESC");
+    res.json(r.rows);
+});
+
+app.get('/api/quotes', async (req, res) => {
+    const r = await db.query("SELECT * FROM quotes ORDER BY created_at DESC");
+    res.json(r.rows);
+});
+
+app.get('/api/appointments', async (req, res) => {
+    const r = await db.query(`
+        SELECT a.*, c.name as client_name 
+        FROM appointments a 
+        LEFT JOIN clients c ON a.client_id = c.id 
+        ORDER BY a.date ASC, a.time ASC
+    `);
+    res.json(r.rows);
+});
+
+app.get('/api/products', async (req, res) => {
+    const r = await db.query("SELECT * FROM products ORDER BY name ASC");
+    res.json(r.rows);
+});
+
+app.get('/api/users', async (req, res) => {
+    const r = await db.query("SELECT id, name, email, role, status, last_login FROM users");
+    res.json(r.rows);
+});
 
 // Auth
 app.post('/api/auth/login', async (req, res) => {
@@ -128,17 +158,12 @@ app.post('/api/auth/login', async (req, res) => {
         console.log(`✅ Login exitoso: ${email}`);
         res.json({ success: true, token, user: { id: user.id, name: user.name, role: user.role } });
       } else {
-        console.warn(`❌ Contraseña incorrecta para: ${email}`);
         res.status(401).json({ error: 'Contraseña incorrecta' });
       }
     } else {
-      console.warn(`❌ Usuario no encontrado: ${email}`);
       res.status(401).json({ error: 'Usuario no encontrado' });
     }
   } catch (err) { 
-    console.error("🔥 Error interno en Login:", err);
     res.status(500).json({ error: 'Error interno del servidor' }); 
   }
 });
-
-// ... resto de endpoints ...

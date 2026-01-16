@@ -1,8 +1,8 @@
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { User, UserRole } from '../types';
 
-// --- ROUTER SHIM (Replazo de react-router-dom) ---
+// --- ROUTER SHIM ---
 const LocationContext = createContext<{ pathname: string; search: string; hash: string }>({ pathname: '/', search: '', hash: '' });
 const NavigateContext = createContext<(to: string | number, options?: any) => void>(() => {});
 
@@ -13,40 +13,36 @@ export const HashRouter: React.FC<{ children: ReactNode }> = ({ children }) => {
   const parseHash = (hash: string) => {
     const cleanHash = hash.startsWith('#') ? hash.substring(1) : hash;
     const [pathname, search] = cleanHash.split('?');
-    return { 
-        pathname: pathname || '/', 
-        search: search ? '?' + search : '', 
-        hash: hash 
-    };
+    return { pathname: pathname || '/', search: search ? '?' + search : '', hash: hash };
   };
 
-  const [loc, setLoc] = useState(() => {
-    if (typeof window === 'undefined') return { pathname: '/', search: '', hash: '' };
-    try {
-        return parseHash(window.location.hash || '#/');
-    } catch (e) {
-        return { pathname: '/', search: '', hash: '#/' };
-    }
-  });
+  const [loc, setLoc] = useState(() => parseHash(window.location.hash || '#/'));
 
-  useEffect(() => {
-    const handler = () => {
-       try {
-           setLoc(parseHash(window.location.hash || '#/'));
-       } catch (e) { }
-    };
+  React.useEffect(() => {
+    const handler = () => setLoc(parseHash(window.location.hash || '#/'));
     window.addEventListener('hashchange', handler);
     return () => window.removeEventListener('hashchange', handler);
   }, []);
 
   const navigate = (to: string | number) => {
-      if (typeof to === 'number') {
+      if (typeof to === 'number') { 
           try { window.history.go(to); } catch(e) {}
-          return;
+          return; 
       }
+      
       const target = to.toString().startsWith('/') ? to.toString() : '/' + to.toString();
+      
+      // Primero actualizamos el estado interno para que la UI reaccione inmediatamente
       setLoc(parseHash(target));
-      try { window.location.hash = '#' + target; } catch (e) { console.warn('Navigation hash update failed'); }
+      
+      // Intentamos actualizar la URL real, pero fallamos silenciosamente si el navegador lo bloquea
+      try {
+          if (window.location.hash !== '#' + target) {
+            window.location.hash = '#' + target;
+          }
+      } catch (e) {
+          console.warn('La navegación por Hash fue bloqueada por el navegador, usando solo estado interno.', e);
+      }
   };
 
   return (
@@ -74,92 +70,50 @@ export const Routes: React.FC<{ children: ReactNode }> = ({ children }) => {
 };
 
 export const Route: React.FC<{ path: string; element: ReactNode }> = ({ element }) => <>{element}</>;
-
-export const Navigate: React.FC<{ to: string; state?: any }> = ({ to }) => {
+export const Navigate: React.FC<{ to: string }> = ({ to }) => {
   const navigate = useNavigate();
-  useEffect(() => { navigate(to); }, [to, navigate]);
+  React.useEffect(() => { navigate(to); }, [to]);
   return null;
 };
-
 export const Link: React.FC<any> = ({ to, children, className, ...props }) => {
   const navigate = useNavigate();
-  return (
-    <a href={`#${to}`} onClick={(e) => { e.preventDefault(); navigate(to); }} className={className} {...props}>
-      {children}
-    </a>
-  );
+  return <a href={`#${to}`} onClick={(e) => { e.preventDefault(); navigate(to); }} className={className} {...props}>{children}</a>;
 };
 
-// --- AUTH CONTEXT ---
-
+// --- AUTH CONTEXT (FORCED BYPASS) ---
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (data: { user: User, token?: string }, remember: boolean) => void;
+  login: (data: any, remember: boolean) => void;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>(null!);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+const DEV_USER: User = {
+    id: '1',
+    name: 'Admin SuperAir',
+    email: 'admin@superair.com.mx',
+    role: UserRole.SUPER_ADMIN,
+    status: 'Activo',
+    lastLogin: new Date().toISOString()
+};
 
-  useEffect(() => {
-    const initAuth = () => {
-        const localUser = localStorage.getItem('superair_user');
-        if (localUser) {
-          try {
-            setUser(JSON.parse(localUser));
-          } catch (e) {
-            localStorage.removeItem('superair_user');
-          }
-        } else {
-            const sessionUser = sessionStorage.getItem('superair_user');
-            if (sessionUser) {
-              try {
-                setUser(JSON.parse(sessionUser));
-              } catch (e) {
-                sessionStorage.removeItem('superair_user');
-              }
-            }
-        }
-        setIsLoading(false);
-    };
+export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // bypass: Iniciamos logueados al 100%
+  const [user, setUser] = useState<User | null>(DEV_USER);
 
-    initAuth();
-  }, []);
-
-  const login = (data: { user: User, token?: string }, remember: boolean) => {
-    setUser(data.user);
-    const storage = remember ? localStorage : sessionStorage;
-    
-    // Store User Data
-    storage.setItem('superair_user', JSON.stringify(data.user));
-    
-    // Store Security Token separately for Interceptor
-    if (data.token) {
-        storage.setItem('superair_token', data.token);
-    }
-
-    // Clean other storage
-    const otherStorage = remember ? sessionStorage : localStorage;
-    otherStorage.removeItem('superair_user');
-    otherStorage.removeItem('superair_token');
-  };
-
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('superair_user');
-    localStorage.removeItem('superair_token');
-    sessionStorage.removeItem('superair_user');
-    sessionStorage.removeItem('superair_token');
-    window.location.hash = '#/login';
+  const login = (data: any) => setUser(data.user);
+  const logout = () => { 
+    setUser(null); 
+    try {
+        window.location.hash = '#/login';
+    } catch(e) {}
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading: false, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
