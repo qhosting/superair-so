@@ -62,7 +62,41 @@ app.post('/api/leads', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- ENDPOINTS DE CLIENTES 360 ---
+app.put('/api/leads/:id', async (req, res) => {
+    const { status, history, notes } = req.body;
+    try {
+        const result = await db.query(
+            "UPDATE leads SET status = COALESCE($1, status), history = COALESCE($2, history), notes = COALESCE($3, notes), updated_at = NOW() WHERE id = $4 RETURNING *",
+            [status, JSON.stringify(history), notes, req.params.id]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- CONVERTIR LEAD A CLIENTE (CRÍTICO) ---
+app.post('/api/leads/:id/convert', async (req, res) => {
+    const leadId = req.params.id;
+    try {
+        const leadRes = await db.query("SELECT * FROM leads WHERE id = $1", [leadId]);
+        if (leadRes.rows.length === 0) return res.status(404).json({ error: 'Lead no encontrado' });
+        const lead = leadRes.rows[0];
+
+        const clientRes = await db.query(
+            "INSERT INTO clients (name, email, phone, status, type) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+            [lead.name, lead.email, lead.phone, 'Activo', 'Residencial']
+        );
+        const newClient = clientRes.rows[0];
+
+        await db.query("UPDATE leads SET status = 'Ganado', updated_at = NOW() WHERE id = $1", [leadId]);
+
+        res.json(newClient);
+    } catch (e) {
+        console.error("Error converting lead:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- ENDPOINTS DE CLIENTES ---
 app.get('/api/clients', async (req, res) => {
     try {
         const result = await db.query("SELECT * FROM clients ORDER BY name ASC");
@@ -88,31 +122,15 @@ app.get('/api/quotes', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/quotes/public/:token', async (req, res) => {
+app.post('/api/quotes', async (req, res) => {
+    const { client_id, client_name, total, status, payment_terms, items } = req.body;
+    const token = Math.random().toString(36).substring(2, 15);
     try {
-        const result = await db.query("SELECT * FROM quotes WHERE public_token = $1", [req.params.token]);
-        if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+        const result = await db.query(
+            "INSERT INTO quotes (client_id, client_name, total, status, payment_terms, items, public_token) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
+            [client_id, client_name, total, status || 'Borrador', payment_terms, JSON.stringify(items), token]
+        );
         res.json(result.rows[0]);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// --- ENDPOINTS DE INVENTARIO & ALMACENES ---
-app.get('/api/products', async (req, res) => {
-    try {
-        const result = await db.query("SELECT * FROM products ORDER BY name ASC");
-        res.json(result.rows);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/warehouses', async (req, res) => {
-    try {
-        const result = await db.query(`
-            SELECT w.*, u.name as responsible_name 
-            FROM warehouses w 
-            LEFT JOIN users u ON w.responsible_id = u.id 
-            ORDER BY w.name ASC
-        `);
-        res.json(result.rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -129,35 +147,21 @@ app.get('/api/appointments', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- SALUD DEL SISTEMA ---
-app.get('/api/health', (req, res) => res.json({ status: 'active', db: 'connected', time: new Date().toISOString() }));
+// --- SALUD ---
+app.get('/api/health', (req, res) => res.json({ status: 'active', db: 'connected' }));
 
-// --- SERVIDO DE ARCHIVOS ESTÁTICOS (FRONTEND PRODUCCIÓN) ---
+// --- SERVIDO DE FRONTEND (PRODUCCIÓN) ---
 const distPath = path.join(__dirname, '../dist');
 
 if (fs.existsSync(distPath)) {
-    console.log("📁 Sirviendo frontend desde:", distPath);
     app.use(express.static(distPath));
-    
-    // Fallback para SPA (React Router)
     app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api')) return next();
         res.sendFile(path.join(distPath, 'index.html'));
     });
 } else {
-    console.warn("⚠️ Carpeta 'dist' no detectada. Verifique el build de Vite.");
-    app.get('/', (req, res) => {
-        res.send("SuperAir Backend Online - Frontend en desarrollo.");
-    });
+    app.get('/', (req, res) => res.send("SuperAir Backend OK. Frontend dist no encontrado."));
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`
-    🚀 SUPER AIR ERP OPERATIVO
-    --------------------------
-    Puerto: ${PORT}
-    Entorno: ${process.env.NODE_ENV}
-    --------------------------
-    `);
-});
+app.listen(PORT, () => console.log(`🚀 SuperAir Server Running on Port ${PORT}`));
