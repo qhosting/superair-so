@@ -24,7 +24,7 @@ const Quotes: React.FC = () => {
   const [isExecuting, setIsExecuting] = useState(false);
   
   const [currentQuote, setCurrentQuote] = useState<Partial<Quote>>({
-      clientId: '', clientName: '', status: 'Borrador', paymentTerms: PaymentTerms.FIFTY_FIFTY, items: [], total: 0
+      clientId: '', clientName: '', status: 'Borrador', paymentTerms: PaymentTerms.FIFTY_FIFTY, items: [] as QuoteItem[], total: 0
   });
 
   const [clients, setClients] = useState<Client[]>([]);
@@ -66,7 +66,7 @@ const Quotes: React.FC = () => {
 
   const handleOpenCreate = async () => {
       await loadDependencies();
-      setCurrentQuote({ clientId: '', clientName: '', status: 'Borrador', paymentTerms: PaymentTerms.FIFTY_FIFTY, items: [], total: 0 });
+      setCurrentQuote({ clientId: '', clientName: '', status: 'Borrador', paymentTerms: PaymentTerms.FIFTY_FIFTY, items: [] as QuoteItem[], total: 0 });
       setShowEditor(true);
       setIsEditing(false);
   };
@@ -75,20 +75,25 @@ const Quotes: React.FC = () => {
       await loadDependencies();
       let items = quote.items;
       if (typeof items === 'string') items = JSON.parse(items);
-      setCurrentQuote({ ...quote, items });
+      // --- FIX: Cast items to QuoteItem[] as the component state expects an array for editing ---
+      setCurrentQuote({ ...quote, items: items as QuoteItem[] });
       setShowEditor(true);
       setIsEditing(true);
   };
 
   const addItem = () => {
+      // --- FIX: Cast currentQuote.items to QuoteItem[] before spreading ---
+      const currentItems = (currentQuote.items as QuoteItem[]) || [];
       setCurrentQuote({
           ...currentQuote,
-          items: [...(currentQuote.items || []), { productId: '', productName: '', quantity: 1, price: 0, cost: 0, category: 'Equipos' }]
+          items: [...currentItems, { productId: '', productName: '', quantity: 1, price: 0, cost: 0, category: 'Equipos' }]
       });
   };
 
   const updateItem = (idx: number, field: keyof QuoteItem, value: any) => {
-      const newItems = [...(currentQuote.items || [])];
+      // --- FIX: Cast currentQuote.items to QuoteItem[] before spreading ---
+      const currentItems = (currentQuote.items as QuoteItem[]) || [];
+      const newItems = [...currentItems];
       const item = { ...newItems[idx] };
       if (field === 'productId') {
           const prod = products.find(p => p.id.toString() === value.toString());
@@ -104,8 +109,10 @@ const Quotes: React.FC = () => {
   };
 
   const totals = useMemo(() => {
-      const subtotal = (currentQuote.items || []).reduce((acc, i) => acc + (i.quantity * i.price), 0);
-      const costTotal = (currentQuote.items || []).reduce((acc, i) => acc + (i.quantity * (i.cost || 0)), 0);
+      // --- FIX: Ensure currentQuote.items is treated as an array for reduce operations ---
+      const items = Array.isArray(currentQuote.items) ? currentQuote.items : [];
+      const subtotal = items.reduce((acc, i) => acc + (i.quantity * i.price), 0);
+      const costTotal = items.reduce((acc, i) => acc + (i.quantity * (i.cost || 0)), 0);
       const margin = subtotal > 0 ? ((subtotal - costTotal) / subtotal) * 100 : 0;
       return { subtotal, iva: subtotal * 0.16, total: subtotal * 1.16, margin };
   }, [currentQuote.items]);
@@ -253,7 +260,8 @@ const Quotes: React.FC = () => {
                                   <div className="flex justify-end gap-2">
                                       {q.status === 'Aceptada' && (
                                           <button 
-                                            onClick={() => handleExecuteProject(q.id)}
+                                            // --- FIX: Cast q.id to string for handleExecuteProject ---
+                                            onClick={() => handleExecuteProject(String(q.id))}
                                             className="px-4 py-2 bg-sky-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg hover:bg-sky-700 animate-pulse"
                                           >
                                               Ejecutar Proyecto
@@ -333,7 +341,8 @@ const Quotes: React.FC = () => {
                                       </tr>
                                   </thead>
                                   <tbody className="divide-y divide-slate-100">
-                                      {currentQuote.items?.map((item, idx) => (
+                                      {/* --- FIX: Ensure currentQuote.items is treated as array for mapping --- */}
+                                      {Array.isArray(currentQuote.items) && currentQuote.items.map((item, idx) => (
                                           <tr key={idx} className="hover:bg-slate-50 transition-colors">
                                               <td className="p-3 pl-8">
                                                   <select className="w-full p-2 bg-slate-100 rounded-lg text-[9px] font-black uppercase tracking-widest border-none outline-none" value={item.category} onChange={e=>updateItem(idx, 'category', e.target.value)}>
@@ -358,7 +367,7 @@ const Quotes: React.FC = () => {
                                                   </td>
                                               )}
                                               <td className="p-3 pr-8 text-right font-black text-slate-900">{formatMXN(item.quantity * item.price)}</td>
-                                              <td className="p-3"><button onClick={() => setCurrentQuote({...currentQuote, items: currentQuote.items?.filter((_,i)=>i!==idx)})} className="text-slate-300 hover:text-rose-500"><Trash2 size={16}/></button></td>
+                                              <td className="p-3"><button onClick={() => setCurrentQuote({...currentQuote, items: (currentQuote.items as QuoteItem[]).filter((_,i)=>i!==idx)})} className="text-slate-300 hover:text-rose-500"><Trash2 size={16}/></button></td>
                                           </tr>
                                       ))}
                                   </tbody>

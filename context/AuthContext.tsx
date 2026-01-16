@@ -70,7 +70,8 @@ export const Routes: React.FC<{ children: ReactNode }> = ({ children }) => {
 };
 
 export const Route: React.FC<{ path: string; element: ReactNode }> = ({ element }) => <>{element}</>;
-export const Navigate: React.FC<{ to: string }> = ({ to }) => {
+// --- FIX: Added state prop to Navigate component to avoid TS error in App.tsx ---
+export const Navigate: React.FC<{ to: string; state?: any }> = ({ to }) => {
   const navigate = useNavigate();
   React.useEffect(() => { navigate(to); }, [to]);
   return null;
