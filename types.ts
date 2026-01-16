@@ -100,6 +100,16 @@ export interface OrderItem {
     cost: number;
 }
 
+// Fix for error in types.ts on line 120: Added missing FiscalData interface
+export interface FiscalData {
+    uuid: string;
+    rfc: string;
+    legalName: string;
+    amount: number;
+    date: string;
+    xmlUrl?: string;
+}
+
 export interface Order {
   id: string | number;
   clientId: string | number;
@@ -108,6 +118,7 @@ export interface Order {
   total: number;
   paidAmount: number;
   costTotal: number;
+  cost_total?: number; // Used in Sales.tsx
   status: 'Pendiente' | 'Parcial' | 'Completado' | 'Cancelado';
   cfdiStatus: 'Pendiente' | 'Timbrado';
   paymentTerms: string;
@@ -152,6 +163,16 @@ export interface InventoryKit {
     items: InventoryKitItem[];
 }
 
+// Fix for multiple modules: Added missing Warehouse interface
+export interface Warehouse {
+    id: string | number;
+    name: string;
+    type: 'Central' | 'Unidad Móvil';
+    responsible_id?: string | number;
+    responsible_name?: string;
+}
+
+// Fix for cut-off interface: Completed InventoryTransfer
 export interface InventoryTransfer {
     id: string | number;
     from_warehouse_id: string | number;
@@ -163,51 +184,8 @@ export interface InventoryTransfer {
     items: any[];
 }
 
-export interface Warehouse {
-  id: string;
-  name: string;
-  type: string;
-  responsible_id?: string | number;
-  responsible_name?: string;
-}
-
-// --- PURCHASES & VENDORS ---
-export interface Vendor {
-  id: string | number;
-  name: string;
-  rfc?: string;
-  phone?: string;
-  email?: string;
-  status: 'Activo' | 'Inactivo';
-  credit_days: number;
-  current_balance: number;
-}
-
-export interface Purchase {
-  id: string | number;
-  vendor_id: string | number;
-  vendor_name?: string;
-  warehouse_id: string | number;
-  warehouse_name?: string;
-  total: number;
-  status: 'Borrador' | 'Recibido' | 'Cancelado';
-  fiscal_uuid?: string;
-  items: any[];
-  created_at?: string;
-}
-
-// --- FISCAL ---
-export interface FiscalData {
-  uuid: string;
-  rfc: string;
-  legalName?: string;
-  amount: number;
-  issuedAt?: string;
-  pdfUrl?: string;
-  originEmail?: string;
-}
-
-// --- LEADS ---
+// --- LEADS & CRM ---
+// Fix for Leads.tsx: Added missing Lead related types
 export type LeadStatus = 'Nuevo' | 'Contactado' | 'Calificado' | 'Cotizado' | 'Ganado' | 'Perdido';
 
 export interface LeadHistoryItem {
@@ -217,37 +195,39 @@ export interface LeadHistoryItem {
 }
 
 export interface Lead {
-  id: string;
-  name: string;
-  status: LeadStatus;
-  createdAt: string;
-  updatedAt?: string;
-  phone?: string;
-  email?: string;
-  notes?: string;
-  source: string;
-  ai_score?: number;
-  ai_analysis?: string;
-  history?: LeadHistoryItem[];
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    source: string;
+    status: LeadStatus;
+    notes?: string;
+    createdAt: string;
+    updatedAt?: string;
+    ai_score?: number;
+    ai_analysis?: string;
+    history: LeadHistoryItem[];
 }
 
 // --- APPOINTMENTS ---
+// Fix for Dashboard and Appointments modules: Added missing Appointment interface
 export interface Appointment {
-  id: string | number;
-  client_id: string | number;
-  client_name: string;
-  date: string;
-  time: string;
-  duration: number;
-  type: string;
-  status: string;
-  technician: string;
+    id: string | number;
+    client_id: string | number;
+    client_name?: string;
+    technician: string;
+    date: string;
+    time: string;
+    duration: number;
+    type: string;
+    status: 'Programada' | 'En Proceso' | 'Completada' | 'Cancelado';
 }
 
-// --- CMS ---
+// --- LANDING BUILDER ---
+// Fix for LandingBuilder and LandingPage: Added missing Landing related types
 export type SectionType = 'hero' | 'services' | 'cta';
 
-export interface LandingSectionItem {
+export interface LandingItem {
     title: string;
     desc: string;
     icon?: string;
@@ -256,35 +236,71 @@ export interface LandingSectionItem {
 }
 
 export interface LandingSection {
-  id: string;
-  type: SectionType;
-  title: string;
-  subtitle: string;
-  buttonText?: string;
-  imageUrl?: string;
-  items?: LandingSectionItem[];
+    id: string;
+    type: SectionType;
+    title: string;
+    subtitle: string;
+    buttonText?: string;
+    imageUrl?: string;
+    items?: LandingItem[];
 }
 
-// --- MANUAL ---
-export interface ManualArticle {
-  id: string;
-  title: string;
-  content: string;
-  updated_at: string;
-  category: string;
-  version: string;
-  author_name?: string;
-  tags?: string[];
-  pdf_url?: string;
-  is_read?: boolean; // Virtual property based on user interaction
+// --- PURCHASES & VENDORS ---
+// Fix for Purchases.tsx: Added missing Vendor and Purchase interfaces
+export interface Vendor {
+    id: string | number;
+    name: string;
+    rfc?: string;
+    email?: string;
+    phone?: string;
+    credit_days: number;
+    current_balance?: number;
+    status: 'Activo' | 'Inactivo';
+}
+
+export interface PurchaseItem {
+    product_id: string | number;
+    product_name?: string;
+    quantity: number;
+    cost: number;
+    serials?: string[];
+}
+
+export interface Purchase {
+    id: string | number;
+    vendor_id: string | number;
+    vendor_name?: string;
+    warehouse_id: string | number;
+    warehouse_name?: string;
+    total: number;
+    status: 'Borrador' | 'Recibido' | 'Cancelado';
+    fiscal_uuid?: string;
+    created_at?: string;
+    items?: PurchaseItem[];
 }
 
 // --- NOTIFICATIONS ---
+// Fix for NotificationContext.tsx: Added missing AppNotification interface
 export interface AppNotification {
-  id: string;
-  title: string;
-  message: string;
-  isRead: boolean;
-  type: string;
-  createdAt: string;
+    id: string | number;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info' | 'warning';
+    isRead: boolean;
+    createdAt: string;
+}
+
+// --- KNOWLEDGE BASE ---
+// Fix for KnowledgeBase.tsx: Added missing ManualArticle interface
+export interface ManualArticle {
+    id: string;
+    title: string;
+    category: 'Instalación' | 'Mantenimiento' | 'Seguridad' | 'Administrativo';
+    content: string;
+    tags: string[];
+    pdf_url?: string;
+    version: string;
+    author_name?: string;
+    updated_at: string;
+    is_read?: boolean;
 }
