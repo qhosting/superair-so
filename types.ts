@@ -172,9 +172,6 @@ export interface Warehouse {
 }
 
 // --- PURCHASES & VENDORS ---
-/**
- * Vendor interface for managing supplier information.
- */
 export interface Vendor {
   id: string | number;
   name: string;
@@ -186,9 +183,6 @@ export interface Vendor {
   current_balance: number;
 }
 
-/**
- * Purchase interface for tracking supply orders and inventory restock.
- */
 export interface Purchase {
   id: string | number;
   vendor_id: string | number;
@@ -278,8 +272,11 @@ export interface ManualArticle {
   content: string;
   updated_at: string;
   category: string;
+  version: string;
+  author_name?: string;
   tags?: string[];
   pdf_url?: string;
+  is_read?: boolean; // Virtual property based on user interaction
 }
 
 // --- NOTIFICATIONS ---
