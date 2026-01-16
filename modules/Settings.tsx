@@ -25,6 +25,7 @@ const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'general' | 'treasury' | 'marketing'>('general');
   const [toast, setToast] = useState<{msg: string, type: 'success'|'error'} | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   
   // States
   const [marketingInfo, setMarketingInfo] = useState({
@@ -52,7 +53,12 @@ const Settings: React.FC = () => {
     const loadData = async () => {
         try {
             const res = await fetch('/api/settings');
-            if (!res.ok) throw new Error("Status " + res.status);
+            // Si la respuesta no es OK, no intentamos parsear JSON
+            if (!res.ok) {
+                const errorText = await res.text();
+                throw new Error(errorText || "Server error");
+            }
+            
             const data = await res.json();
             
             if (data.marketing_info) setMarketingInfo(prev => ({ ...prev, ...data.marketing_info }));
@@ -64,8 +70,9 @@ const Settings: React.FC = () => {
             if (data.treasury_info) setTreasuryInfo(prev => ({ ...prev, ...data.treasury_info }));
 
         } catch (e) { 
-            console.error("Error loading settings:", e.message);
-            // Si falla la carga, mantenemos los estados por defecto
+            console.warn("Settings failed to load, using defaults. Error:", e.message);
+        } finally {
+            setIsInitialLoad(false);
         }
     };
     loadData();
@@ -82,7 +89,7 @@ const Settings: React.FC = () => {
               body: JSON.stringify({ category, data })
           });
           
-          if(!res.ok) throw new Error("Fail");
+          if(!res.ok) throw new Error("Save failed");
 
           if(category === 'general_info') {
               localStorage.setItem('superair_is_published', (!data.isMaintenance).toString());
@@ -119,6 +126,8 @@ const Settings: React.FC = () => {
           }
       } catch(e) { showToast('Error subiendo imagen', 'error'); }
   };
+
+  if (isInitialLoad) return <div className="h-96 flex items-center justify-center text-slate-400 font-bold uppercase tracking-widest animate-pulse">Sincronizando configuraciones...</div>;
 
   const renderGeneral = () => (
       <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-8 animate-in fade-in">
@@ -198,7 +207,7 @@ const Settings: React.FC = () => {
           </div>
 
           <div className="flex justify-end pt-4">
-              <button onClick={() => saveSettings('general_info', generalInfo)} className="px-8 py-3 bg-sky-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-sky-700 transition-all flex items-center gap-2 shadow-lg shadow-sky-600/20">
+              <button onClick={() => saveSettings('general_info', generalInfo)} className="px-8 py-3 bg-sky-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-sky-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-sky-600/20">
                   {isSaving ? <RefreshCw className="animate-spin" size={16}/> : <Save size={16} />} Guardar Cambios
               </button>
           </div>
@@ -221,7 +230,7 @@ const Settings: React.FC = () => {
               <h4 className="font-black text-slate-800 uppercase tracking-tight text-sm flex items-center gap-2">
                   <Receipt size={16} className="text-emerald-500"/> Identidad Fiscal
               </h4>
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-1">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Razón Social</label>
                       <input 
@@ -244,7 +253,7 @@ const Settings: React.FC = () => {
           </div>
 
           <div className="flex justify-end pt-4">
-              <button onClick={() => saveSettings('treasury_info', treasuryInfo)} className="px-8 py-3 bg-emerald-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-700 transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/20">
+              <button onClick={() => saveSettings('treasury_info', treasuryInfo)} className="px-8 py-3 bg-emerald-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20">
                   {isSaving ? <RefreshCw className="animate-spin" size={16}/> : <Save size={16} />} Guardar Datos
               </button>
           </div>
@@ -267,7 +276,7 @@ const Settings: React.FC = () => {
               <h4 className="font-black text-slate-800 uppercase tracking-tight text-sm flex items-center gap-2">
                   <BrainCircuit size={16} className="text-purple-500"/> Cerebro de IA
               </h4>
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tono de Voz</label>
                       <select value={marketingInfo.aiTone} onChange={e => setMarketingInfo({...marketingInfo, aiTone: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold">
@@ -280,7 +289,7 @@ const Settings: React.FC = () => {
           </div>
 
           <div className="flex justify-end pt-4 border-t border-slate-100">
-              <button onClick={() => saveSettings('marketing_info', marketingInfo)} className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20">
+              <button onClick={() => saveSettings('marketing_info', marketingInfo)} className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20">
                   {isSaving ? <RefreshCw className="animate-spin" size={16}/> : <Save size={16} />} Guardar Configuración
               </button>
           </div>
