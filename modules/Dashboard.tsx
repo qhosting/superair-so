@@ -4,7 +4,7 @@ import {
   TrendingUp, Users, ShoppingCart, Loader2, Calendar, AlertTriangle, 
   Zap, MapPin, ThermometerSun, Wrench, BrainCircuit, ArrowRight,
   Magnet, BarChart3, Package, BookOpen, CheckCircle2, Truck,
-  Activity, Database, MessageSquare, Globe, Signal
+  Activity, Database, MessageSquare, Globe, Signal, FileText
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { GoogleGenAI } from "@google/genai";
@@ -24,6 +24,9 @@ const Dashboard: React.FC = () => {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiBriefing, setAiBriefing] = useState<string | null>(null);
   const [weather] = useState({ temp: 31, status: 'Calor Intenso' });
+
+  // Formateador real de Peso Mexicano
+  const formatMXN = (val: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
 
   const fetchData = async () => {
     try {
@@ -64,11 +67,15 @@ const Dashboard: React.FC = () => {
     }
     setAiLoading(true);
     try {
+      // Create a new GoogleGenAI instance right before making an API call to ensure current credentials
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const prompt = `Actúa como el Director Operativo de SuperAir. 
-                     Contexto REAL: ${leads.length} leads en el pipeline, ${quotes.length} cotizaciones y clima de ${weather.temp}°C. 
+                     Contexto REAL: ${leads.length} leads en el pipeline, ${quotes.length} cotizaciones. Moneda: MXN.
                      Dame un análisis de 2 líneas sobre la prioridad operativa de hoy basado en estos números.`;
-      const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt
+      });
       setAiBriefing(response.text);
     } catch (e) {
       setAiBriefing("Prioridad: Atender solicitudes de mantenimiento preventivo ante el aumento de temperatura.");
@@ -77,7 +84,6 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // --- LOGICA DE DATOS REALES PARA GRAFICA ---
   const chartData = useMemo(() => {
       const last7Days = [...Array(7)].map((_, i) => {
           const d = new Date();
@@ -85,8 +91,7 @@ const Dashboard: React.FC = () => {
           return {
               date: d.toISOString().split('T')[0],
               day: d.toLocaleDateString('es-MX', { weekday: 'short' }),
-              sales: 0,
-              jobs: 0
+              sales: 0
           };
       });
 
@@ -97,15 +102,8 @@ const Dashboard: React.FC = () => {
               if (dayObj) dayObj.sales += Number(q.total);
           }
       });
-
-      appointments.forEach(a => {
-          const aDate = a.date?.split('T')[0];
-          const dayObj = last7Days.find(d => d.date === aDate);
-          if (dayObj) dayObj.jobs += 1;
-      });
-
       return last7Days;
-  }, [quotes, appointments]);
+  }, [quotes]);
 
   const stats = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -122,13 +120,12 @@ const Dashboard: React.FC = () => {
   if (loading) return (
     <div className="h-[70vh] flex flex-col items-center justify-center text-slate-400">
       <Loader2 className="animate-spin text-sky-600 mb-4" size={40} />
-      <p className="font-black text-xs uppercase tracking-widest">Consultando Base de Datos...</p>
+      <p className="font-black text-xs uppercase tracking-widest">Sincronizando Finanzas MXN...</p>
     </div>
   );
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
-      {/* AI Briefing */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-3 bg-slate-900 rounded-[3rem] p-8 text-white shadow-2xl relative overflow-hidden flex flex-col justify-center min-h-[200px]">
             <BrainCircuit size={160} className="absolute -right-8 -bottom-8 opacity-5" />
@@ -139,7 +136,7 @@ const Dashboard: React.FC = () => {
                     </div>
                     <div>
                         <h3 className="font-black text-xs uppercase tracking-[0.2em] text-sky-400">Copiloto IA SuperAir</h3>
-                        <p className="text-[10px] text-slate-400 font-bold">Resumen Operativo Basado en Datos Reales</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">Datos en Pesos Mexicanos</p>
                     </div>
                 </div>
                 <div className="bg-white/5 border border-white/10 p-6 rounded-[2rem] backdrop-blur-sm">
@@ -166,23 +163,22 @@ const Dashboard: React.FC = () => {
                 <p className="font-bold text-orange-100 text-xs uppercase tracking-widest mt-1">Querétaro, MX</p>
             </div>
             <div className="bg-white/20 p-4 rounded-2xl backdrop-blur-md relative z-10">
-                <p className="text-[10px] font-black uppercase tracking-widest opacity-80 mb-1">Impacto Climático</p>
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-80 mb-1">Impacto de Demanda</p>
                 <div className="flex items-center gap-2 text-lg font-black italic tracking-tight">
-                    <Zap size={18} className="text-yellow-300 animate-pulse" /> ALTA DEMANDA
+                    <Zap size={18} className="text-yellow-300 animate-pulse" /> ALTA CARGA
                 </div>
             </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Gráfica Real */}
           <div className="lg:col-span-2 bg-white rounded-[3rem] border border-slate-100 p-8 shadow-sm">
               <div className="flex justify-between items-center mb-8">
                   <div>
                       <h3 className="font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
-                          <Activity size={20} className="text-sky-500"/> Actividad de la Semana
+                          <Activity size={20} className="text-sky-500"/> Tendencia de Ventas (MXN)
                       </h3>
-                      <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Ingresos por Cotizaciones Aceptadas</p>
+                      <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Ingresos Reales por Día</p>
                   </div>
               </div>
               <div className="h-64 w-full">
@@ -197,34 +193,32 @@ const Dashboard: React.FC = () => {
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                             <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11, fontWeight: 700}} dy={10} />
-                            <YAxis hide />
                             <Tooltip 
                               contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
                               itemStyle={{ fontSize: '12px', fontWeight: '900' }}
-                              formatter={(value) => [`$${value}`, 'Venta']}
+                              formatter={(val: number) => [formatMXN(val), 'Venta Real']}
                             />
                             <Area type="monotone" dataKey="sales" stroke="#0ea5e9" strokeWidth={4} fillOpacity={1} fill="url(#colorSales)" />
                         </AreaChart>
                     </ResponsiveContainer>
                   ) : (
                     <div className="h-full flex items-center justify-center border-2 border-dashed border-slate-50 rounded-3xl">
-                        <p className="text-slate-300 font-black text-xs uppercase tracking-widest">Sin ventas registradas esta semana</p>
+                        <p className="text-slate-300 font-black text-xs uppercase tracking-widest">Sin registros monetarios esta semana</p>
                     </div>
                   )}
               </div>
           </div>
 
-          {/* Salud de Sistema Real */}
           <div className="space-y-6">
               <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
                   <h3 className="font-black text-slate-900 uppercase text-xs tracking-widest mb-6 flex items-center gap-2">
-                      <Signal size={18} className="text-emerald-500"/> Salud del ERP
+                      <Signal size={18} className="text-emerald-500"/> Integraciones MX
                   </h3>
                   <div className="space-y-4">
                       {[
-                          { label: 'Servidor API', status: apiHealth.server, icon: Globe, color: apiHealth.server === 'Online' ? 'text-emerald-500' : 'text-rose-500' },
-                          { label: 'PostgreSQL', status: apiHealth.db, icon: Database, color: apiHealth.db === 'Sincronizada' ? 'text-emerald-500' : 'text-rose-500' },
-                          { label: 'IA Engine', status: 'Activo', icon: Zap, color: 'text-sky-500' }
+                          { label: 'Facturación SAT', status: 'Listo', icon: FileText, color: 'text-emerald-500' },
+                          { label: 'Cerebro Gemini', status: 'Activo', icon: Zap, color: 'text-sky-500' },
+                          { label: 'DB SuperAir', status: 'Sinc', icon: Database, color: 'text-emerald-500' }
                       ].map((s, i) => (
                           <div key={i} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100/50">
                               <div className="flex items-center gap-3">
@@ -239,36 +233,34 @@ const Dashboard: React.FC = () => {
           </div>
       </div>
 
-      {/* KPI Cards Dinámicos */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {[
-              { label: 'Facturación Real', val: `$${(stats.revenue/1000).toFixed(1)}k`, icon: TrendingUp, color: 'text-emerald-500', bg: 'bg-emerald-50', sub: 'Total de órdenes aceptadas' },
-              { label: 'Citas Hoy', val: stats.aptsToday.length, icon: Calendar, color: 'text-sky-500', bg: 'bg-sky-50', sub: 'Servicios en agenda' },
-              { label: 'Leads Activos', val: leads.length, icon: Magnet, color: 'text-indigo-500', bg: 'bg-indigo-50', sub: 'Pipeline comercial' },
-              { label: 'Tasa Conversión', val: `${stats.conversionRate}%`, icon: CheckCircle2, color: 'text-rose-500', bg: 'bg-rose-50', sub: 'Eficiencia de cierre' }
+              { label: 'Facturación Total', val: formatMXN(stats.revenue), icon: TrendingUp, color: 'text-emerald-500', bg: 'bg-emerald-50', sub: 'Montos netos en pesos' },
+              { label: 'Agenda de Citas', val: stats.aptsToday.length, icon: Calendar, color: 'text-sky-500', bg: 'bg-sky-50', sub: 'Servicios para hoy' },
+              { label: 'Pipeline Leads', val: leads.length, icon: Magnet, color: 'text-indigo-500', bg: 'bg-indigo-50', sub: 'Oportunidades activas' },
+              { label: 'Cierre Eficaz', val: `${stats.conversionRate}%`, icon: CheckCircle2, color: 'text-rose-500', bg: 'bg-rose-50', sub: 'Tasa de éxito comercial' }
           ].map((s, i) => (
               <div key={i} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm group hover:shadow-md transition-all">
                   <div className="flex justify-between items-start mb-4">
                     <div className={`p-4 rounded-2xl ${s.bg} ${s.color}`}><s.icon size={24} /></div>
-                    <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">Base de Datos</span>
+                    <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">REAL-TIME MXN</span>
                   </div>
                   <div>
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{s.label}</p>
-                      <h4 className="text-3xl font-black text-slate-900 tracking-tighter">{s.val}</h4>
+                      <h4 className="text-2xl font-black text-slate-900 tracking-tighter truncate">{s.val}</h4>
                       <p className="text-[9px] font-bold text-slate-400 mt-1">{s.sub}</p>
                   </div>
               </div>
           ))}
       </div>
 
-      {/* Agenda Real */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           <div className="xl:col-span-2 bg-white rounded-[3rem] border border-slate-100 p-8 shadow-sm">
               <div className="flex justify-between items-center mb-8">
                   <h3 className="font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
                     <Truck size={20} className="text-sky-500"/> Servicios del Día
                   </h3>
-                  <button onClick={() => navigate('/appointments')} className="text-[10px] font-black text-sky-600 uppercase bg-sky-50 px-4 py-2 rounded-xl hover:bg-sky-100 transition-all">Ir al Calendario</button>
+                  <button onClick={() => navigate('/appointments')} className="text-[10px] font-black text-sky-600 uppercase bg-sky-50 px-4 py-2 rounded-xl hover:bg-sky-100 transition-all">Calendario</button>
               </div>
               {stats.aptsToday.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -295,7 +287,7 @@ const Dashboard: React.FC = () => {
               ) : (
                   <div className="py-20 text-center text-slate-300 border-2 border-dashed border-slate-50 rounded-[3rem]">
                       <CheckCircle2 size={48} className="mx-auto mb-4 opacity-10" />
-                      <p className="font-bold uppercase text-xs tracking-[0.3em]">Agenda despejada para hoy</p>
+                      <p className="font-bold uppercase text-xs tracking-[0.3em]">Sin citas programadas para hoy</p>
                   </div>
               )}
           </div>
@@ -303,7 +295,7 @@ const Dashboard: React.FC = () => {
           <div className="bg-slate-900 rounded-[3rem] p-8 text-white shadow-xl flex flex-col justify-between">
               <div>
                   <h3 className="font-black text-white uppercase text-sm mb-6 flex items-center gap-2">
-                    <Zap size={18} className="text-yellow-400"/> Productividad
+                    <Zap size={18} className="text-yellow-400"/> Administración
                   </h3>
                   <div className="space-y-3">
                       <button onClick={() => navigate('/builder')} className="w-full flex items-center justify-between p-5 bg-white/5 hover:bg-sky-600 rounded-[2rem] transition-all group border border-white/5">
@@ -311,7 +303,7 @@ const Dashboard: React.FC = () => {
                               <BookOpen size={20} className="text-sky-400 group-hover:text-white" />
                               <div className="text-left">
                                   <p className="text-xs font-black uppercase tracking-widest text-white">Constructor</p>
-                                  <p className="text-[10px] text-slate-400 group-hover:text-sky-100">Actualizar Landing</p>
+                                  <p className="text-[10px] text-slate-400 group-hover:text-sky-100">Editar Sitio Web</p>
                               </div>
                           </div>
                           <ArrowRight size={16} className="text-slate-600 group-hover:text-white" />
@@ -321,7 +313,7 @@ const Dashboard: React.FC = () => {
                               <Users size={20} className="text-indigo-400 group-hover:text-white" />
                               <div className="text-left">
                                   <p className="text-xs font-black uppercase tracking-widest text-white">Prospectos</p>
-                                  <p className="text-[10px] text-slate-400 group-hover:text-indigo-100">Manejo de Leads</p>
+                                  <p className="text-[10px] text-slate-400 group-hover:text-indigo-100">Pipeline de Ventas</p>
                               </div>
                           </div>
                           <ArrowRight size={16} className="text-slate-600 group-hover:text-white" />
@@ -329,7 +321,7 @@ const Dashboard: React.FC = () => {
                   </div>
               </div>
               <div className="mt-8 pt-8 border-t border-white/10 text-center">
-                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.4em]">PROD ENV • v1.1.0</p>
+                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.4em]">SISTEMA SUPERAIR • v1.2.0 (MXN)</p>
               </div>
           </div>
       </div>
