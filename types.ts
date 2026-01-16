@@ -31,6 +31,32 @@ export interface User {
   role: UserRole;
   status: 'Activo' | 'Inactivo';
   lastLogin?: string;
+  passwordLastChanged?: string;
+}
+
+export interface AuditLog {
+    id: string;
+    user_id: string;
+    user_name: string;
+    action: 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'IMPERSONATE';
+    resource: string;
+    resource_id: string;
+    changes?: {
+        field: string;
+        old: any;
+        new: any;
+    }[];
+    ip_address: string;
+    created_at: string;
+}
+
+export interface SecurityHealth {
+    score: number;
+    issues: {
+        severity: 'low' | 'medium' | 'high';
+        title: string;
+        description: string;
+    }[];
 }
 
 // --- CLIENTS & CRM ---
@@ -100,7 +126,6 @@ export interface OrderItem {
     cost: number;
 }
 
-// Fix for error in types.ts on line 120: Added missing FiscalData interface
 export interface FiscalData {
     uuid: string;
     rfc: string;
@@ -118,7 +143,7 @@ export interface Order {
   total: number;
   paidAmount: number;
   costTotal: number;
-  cost_total?: number; // Used in Sales.tsx
+  cost_total?: number;
   status: 'Pendiente' | 'Parcial' | 'Completado' | 'Cancelado';
   cfdiStatus: 'Pendiente' | 'Timbrado';
   paymentTerms: string;
@@ -163,7 +188,6 @@ export interface InventoryKit {
     items: InventoryKitItem[];
 }
 
-// Fix for multiple modules: Added missing Warehouse interface
 export interface Warehouse {
     id: string | number;
     name: string;
@@ -172,7 +196,6 @@ export interface Warehouse {
     responsible_name?: string;
 }
 
-// Fix for cut-off interface: Completed InventoryTransfer
 export interface InventoryTransfer {
     id: string | number;
     from_warehouse_id: string | number;
@@ -185,7 +208,6 @@ export interface InventoryTransfer {
 }
 
 // --- LEADS & CRM ---
-// Fix for Leads.tsx: Added missing Lead related types
 export type LeadStatus = 'Nuevo' | 'Contactado' | 'Calificado' | 'Cotizado' | 'Ganado' | 'Perdido';
 
 export interface LeadHistoryItem {
@@ -210,7 +232,6 @@ export interface Lead {
 }
 
 // --- APPOINTMENTS ---
-// Fix for Dashboard and Appointments modules: Added missing Appointment interface
 export interface Appointment {
     id: string | number;
     client_id: string | number;
@@ -224,7 +245,6 @@ export interface Appointment {
 }
 
 // --- LANDING BUILDER ---
-// Fix for LandingBuilder and LandingPage: Added missing Landing related types
 export type SectionType = 'hero' | 'services' | 'cta';
 
 export interface LandingItem {
@@ -246,7 +266,6 @@ export interface LandingSection {
 }
 
 // --- PURCHASES & VENDORS ---
-// Fix for Purchases.tsx: Added missing Vendor and Purchase interfaces
 export interface Vendor {
     id: string | number;
     name: string;
@@ -280,7 +299,6 @@ export interface Purchase {
 }
 
 // --- NOTIFICATIONS ---
-// Fix for NotificationContext.tsx: Added missing AppNotification interface
 export interface AppNotification {
     id: string | number;
     title: string;
@@ -291,7 +309,6 @@ export interface AppNotification {
 }
 
 // --- KNOWLEDGE BASE ---
-// Fix for KnowledgeBase.tsx: Added missing ManualArticle interface
 export interface ManualArticle {
     id: string;
     title: string;
