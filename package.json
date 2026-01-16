@@ -2,7 +2,7 @@
 {
   "name": "superair-erp",
   "version": "1.0.0",
-  "description": "SuperAir Production System",
+  "description": "SuperAir Production System - HVAC Management",
   "type": "module",
   "scripts": {
     "dev": "vite",
