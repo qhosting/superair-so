@@ -10,6 +10,7 @@ import ChatwootWidget from './components/ChatwootWidget';
 import LandingPage from './modules/LandingPage';
 import Login from './modules/Login';
 import Maintenance from './modules/Maintenance';
+import PublicQuoteView from './modules/PublicQuoteView';
 
 // Protected Modules
 import Layout from './components/Layout';
@@ -43,7 +44,6 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     );
   }
 
-  // Bypass temporal: Permitir acceso siempre que haya un objeto user (el de Dev lo tiene)
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} />;
   }
@@ -61,23 +61,12 @@ const AppRoutes: React.FC = () => {
         const res = await fetch('/api/settings/public');
         if (res.ok) {
           const data = await res.json();
-          const maintenanceStatus = data.isMaintenance === true;
-          setIsMaintenance(maintenanceStatus);
-          localStorage.setItem('superair_is_published', (!maintenanceStatus).toString());
-          if (data.logoUrl) localStorage.setItem('superair_logo', data.logoUrl);
+          setIsMaintenance(data.isMaintenance === true);
         }
-      } catch (e) {
-        const localStatus = localStorage.getItem('superair_is_published') === 'false';
-        setIsMaintenance(localStatus);
-      } finally {
-        setIsInitialLoading(false);
-      }
+      } catch (e) { }
+      finally { setIsInitialLoading(false); }
     };
-
     syncAppStatus();
-    window.addEventListener('storage', () => {
-        setIsMaintenance(localStorage.getItem('superair_is_published') === 'false');
-    });
   }, []);
 
   if (isInitialLoading) {
@@ -95,8 +84,11 @@ const AppRoutes: React.FC = () => {
         <Route path="/" element={isMaintenance ? <Maintenance /> : <LandingPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/maintenance" element={<Maintenance />} />
+        
+        {/* Public Quote View */}
+        <Route path="/view/quote/:token" element={<PublicQuoteView />} />
 
-        {/* Todas estas rutas ahora son accesibles directamente */}
+        {/* Protected ERP Routes */}
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
         <Route path="/clients" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
