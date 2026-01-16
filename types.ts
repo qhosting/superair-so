@@ -139,39 +139,28 @@ export interface Product {
   requires_serial?: boolean;
 }
 
-export interface InventoryMovement {
-    id: string | number;
+export interface InventoryKitItem {
     product_id: string | number;
-    type: 'Entrada' | 'Salida' | 'Ajuste' | 'Merma';
+    product_name?: string;
     quantity: number;
-    reason: string;
-    user_name: string;
-    created_at: string;
 }
 
-// --- VENDORS & PURCHASES ---
-// Adding missing Vendor interface to resolve import error in modules/Purchases.tsx
-export interface Vendor {
-  id: string | number;
-  name: string;
-  rfc?: string;
-  phone?: string;
-  email?: string;
-  status: 'Activo' | 'Inactivo';
-  credit_days: number;
-  current_balance?: number;
-}
-
-export interface Purchase {
+export interface InventoryKit {
     id: string | number;
-    vendor_id: string | number;
-    vendor_name: string;
-    warehouse_id: string | number;
-    warehouse_name: string;
-    total: number;
-    status: 'Borrador' | 'Recibido' | 'Cancelado';
-    fiscal_uuid?: string;
+    name: string;
+    description: string;
+    items: InventoryKitItem[];
+}
+
+export interface InventoryTransfer {
+    id: string | number;
+    from_warehouse_id: string | number;
+    to_warehouse_id: string | number;
+    from_name?: string;
+    to_name?: string;
+    status: 'Pendiente' | 'Completado' | 'Cancelado';
     created_at: string;
+    items: any[];
 }
 
 export interface Warehouse {
@@ -180,6 +169,37 @@ export interface Warehouse {
   type: string;
   responsible_id?: string | number;
   responsible_name?: string;
+}
+
+// --- PURCHASES & VENDORS ---
+/**
+ * Vendor interface for managing supplier information.
+ */
+export interface Vendor {
+  id: string | number;
+  name: string;
+  rfc?: string;
+  phone?: string;
+  email?: string;
+  status: 'Activo' | 'Inactivo';
+  credit_days: number;
+  current_balance: number;
+}
+
+/**
+ * Purchase interface for tracking supply orders and inventory restock.
+ */
+export interface Purchase {
+  id: string | number;
+  vendor_id: string | number;
+  vendor_name?: string;
+  warehouse_id: string | number;
+  warehouse_name?: string;
+  total: number;
+  status: 'Borrador' | 'Recibido' | 'Cancelado';
+  fiscal_uuid?: string;
+  items: any[];
+  created_at?: string;
 }
 
 // --- FISCAL ---
