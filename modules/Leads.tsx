@@ -1,27 +1,33 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Magnet, Plus, Phone, MessageSquare, ArrowRight, UserPlus, 
-  MoreHorizontal, Loader2, GripVertical, CheckCircle2, X,
-  Share2, Copy, Facebook, Globe, Calendar, Link as LinkIcon, Edit3, Trash2, Mail,
-  User, Megaphone, FileText, Smartphone
+  Loader2, CheckCircle2, X, Sparkles, Copy, Calendar, Edit3, 
+  Trash2, User, Megaphone, Smartphone, Clock, AlertTriangle, 
+  History, Thermometer, BrainCircuit, Wand2, Send, Save
 } from 'lucide-react';
-import { Lead, LeadStatus } from '../types';
-import { useNavigate } from '../context/AuthContext';
+import { Lead, LeadStatus, LeadHistoryItem } from '../types';
+import { useNavigate, useAuth } from '../context/AuthContext';
 
 const STATUS_COLUMNS: LeadStatus[] = ['Nuevo', 'Contactado', 'Calificado', 'Cotizado', 'Ganado', 'Perdido'];
 
 const Leads: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [draggedLead, setDraggedLead] = useState<Lead | null>(null);
   
-  // Modals
+  // Modals & Sidebars
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showWebhookInfo, setShowWebhookInfo] = useState(false);
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState<string | null>(null); // leadId
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const [suggestedReply, setSuggestedReply] = useState<string | null>(null);
+  
+  // Forms
   const [leadForm, setLeadForm] = useState<Partial<Lead>>({ name: '', phone: '', email: '', notes: '', source: 'Manual' });
-  const [isEditing, setIsEditing] = useState(false);
+  const [newComment, setNewComment] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -33,420 +39,369 @@ const Leads: React.FC = () => {
     try {
         const res = await fetch('/api/leads');
         const data = await res.json();
-        if (Array.isArray(data)) setLeads(data);
+        setLeads(Array.isArray(data) ? data : []);
     } catch (e) {
-        console.error("Error fetching leads", e);
+        console.error("Error fetching leads:", e);
     } finally {
         setLoading(false);
     }
   };
 
-  const handleDragStart = (lead: Lead) => {
-      setDraggedLead(lead);
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-      e.preventDefault();
-  };
-
   const handleDrop = async (status: LeadStatus) => {
       if (!draggedLead || draggedLead.status === status) return;
-      
       const updatedLead = { ...draggedLead, status };
-      
-      // Optimistic Update
       setLeads(leads.map(l => l.id === draggedLead.id ? updatedLead : l));
       setDraggedLead(null);
-
       try {
           await fetch(`/api/leads/${draggedLead.id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ status })
           });
-      } catch (e) {
-          console.error("Update failed");
-          fetchLeads(); // Revert on error
-      }
+      } catch (e) { fetchLeads(); }
   };
 
-  const handleOpenCreate = () => {
-      setLeadForm({ name: '', phone: '', email: '', notes: '', source: 'Manual' });
-      setIsEditing(false);
-      setShowAddModal(true);
+  const analyzeWithIA = async (leadId: string) => {
+      setIsAnalyzing(leadId);
+      try {
+          const res = await fetch(`/api/leads/${leadId}/ai-analyze`, { method: 'POST' });
+          if (res.ok) {
+              const updated = await res.json();
+              setLeads(leads.map(l => l.id === leadId ? updated : l));
+              if (selectedLead?.id === leadId) setSelectedLead(updated);
+          }
+      } catch (e) { alert("Error en análisis de IA"); }
+      finally { setIsAnalyzing(null); }
   };
 
-  const handleOpenEdit = (lead: Lead) => {
-      setLeadForm(lead);
-      setIsEditing(true);
-      setShowAddModal(true);
+  const suggestMagicReply = async (leadId: string) => {
+      setIsSuggesting(true);
+      setSuggestedReply(null);
+      try {
+          const res = await fetch(`/api/leads/${leadId}/suggest-reply`, { method: 'POST' });
+          const data = await res.json();
+          setSuggestedReply(data.reply);
+      } catch (e) { alert("Error sugiriendo respuesta"); }
+      finally { setIsSuggesting(false); }
   };
 
-  const handleSaveLead = async () => {
-      if (!leadForm.name) return;
+  const addHistoryComment = async () => {
+      if (!selectedLead || !newComment.trim()) return;
+      const newItem: LeadHistoryItem = {
+          date: new Date().toISOString(),
+          text: newComment,
+          user: user?.name || 'Admin'
+      };
+      const updatedHistory = [...(selectedLead.history || []), newItem];
       setIsSaving(true);
       try {
-          let res;
-          if (isEditing && leadForm.id) {
-              res = await fetch(`/api/leads/${leadForm.id}`, {
-                  method: 'PUT',
-                  headers: {'Content-Type': 'application/json'},
-                  body: JSON.stringify(leadForm)
-              });
-          } else {
-              res = await fetch('/api/leads', {
-                  method: 'POST',
-                  headers: {'Content-Type': 'application/json'},
-                  body: JSON.stringify(leadForm)
-              });
-          }
-
-          if(res.ok) {
+          const res = await fetch(`/api/leads/${selectedLead.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ history: updatedHistory })
+          });
+          if (res.ok) {
               const saved = await res.json();
-              if (isEditing) {
-                  setLeads(leads.map(l => l.id === saved.id ? saved : l));
-              } else {
-                  setLeads([saved, ...leads]);
-              }
-              setShowAddModal(false);
+              setSelectedLead(saved);
+              setLeads(leads.map(l => l.id === saved.id ? saved : l));
+              setNewComment('');
           }
-      } catch(e) {
-          alert("Error guardando lead");
-      } finally {
-          setIsSaving(false);
-      }
+      } catch (e) { alert("Error guardando bitácora"); }
+      finally { setIsSaving(false); }
   };
 
-  const handleDeleteLead = async (id: string) => {
-      if (!confirm("¿Eliminar este prospecto permanentemente?")) return;
-      try {
-          await fetch(`/api/leads/${id}`, { method: 'DELETE' });
-          setLeads(leads.filter(l => l.id !== id));
-      } catch(e) {
-          alert("Error al eliminar");
-      }
+  const isStale = (createdAt: string, updatedAt?: string) => {
+      const lastAction = new Date(updatedAt || createdAt);
+      const diffHours = (new Date().getTime() - lastAction.getTime()) / (1000 * 60 * 60);
+      return diffHours > 24;
   };
 
-  const convertToClient = async (leadId: string) => {
-      if(!confirm("¿Convertir este prospecto en Cliente? Se moverá a la base de datos principal.")) return;
-      
-      try {
-          const res = await fetch(`/api/leads/${leadId}/convert`, { method: 'POST' });
-          if(res.ok) {
-              const data = await res.json();
-              // Navigate to Quotes with pre-selected client
-              localStorage.setItem('pending_quote_client', JSON.stringify(data.client));
-              navigate('/quotes'); 
-          }
-      } catch(e) {
-          alert("Error en conversión");
-      }
+  const getScoreColor = (score?: number) => {
+      if (!score) return 'text-slate-300';
+      if (score >= 8) return 'text-rose-500';
+      if (score >= 5) return 'text-amber-500';
+      return 'text-sky-500';
   };
 
-  const getSourceIcon = (source: string) => {
-      const s = source.toLowerCase();
-      if(s.includes('facebook') || s.includes('fb') || s.includes('instagram')) return <Facebook size={12} className="text-blue-600"/>;
-      if(s.includes('google') || s.includes('adwords')) return <Globe size={12} className="text-orange-500"/>;
-      if(s.includes('whatsapp') || s.includes('wa')) return <MessageSquare size={12} className="text-emerald-500"/>;
-      return <UserPlus size={12} className="text-slate-400"/>;
-  };
-
-  if(loading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-sky-600" size={48}/></div>;
+  if(loading) return <div className="h-[60vh] flex flex-col items-center justify-center gap-4"><Loader2 className="animate-spin text-sky-600" size={48}/><p className="text-xs font-black text-slate-400 uppercase tracking-widest">Iniciando Pipeline IA...</p></div>;
 
   return (
-    <div className="h-[calc(100vh-140px)] flex flex-col space-y-6">
-      {/* Header */}
+    <div className="h-[calc(100vh-140px)] flex flex-col space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 shrink-0">
         <div>
-          <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">Tablero de Prospectos</h2>
-          <p className="text-slate-500 text-sm font-medium">Gestiona leads de Facebook y Google Ads.</p>
+          <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">Célula Comercial SuperAir</h2>
+          <p className="text-slate-500 text-sm font-medium">Pipeline inteligente potenciado por Gemini 3 Flash.</p>
         </div>
-        <div className="flex gap-3">
-          <button 
-            onClick={() => setShowWebhookInfo(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-white text-slate-600 border border-slate-200 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 transition-all shadow-sm"
-          >
-            <LinkIcon size={18} /> Webhook & IA
-          </button>
-          <button 
-            onClick={handleOpenCreate}
-            className="flex items-center gap-2 px-6 py-3 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-sky-700 shadow-xl shadow-sky-600/20 transition-all"
-          >
-            <Plus size={18} /> Nuevo Lead
-          </button>
-        </div>
+        <button 
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 px-8 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-sky-600 shadow-2xl transition-all"
+        >
+            <Plus size={18} /> Registrar Lead
+        </button>
       </div>
 
-      {/* Kanban Board */}
       <div className="flex-1 overflow-x-auto pb-4">
           <div className="flex gap-6 h-full min-w-max px-2">
               {STATUS_COLUMNS.map(status => (
                   <div 
                     key={status}
-                    className="w-80 flex flex-col bg-slate-100/50 rounded-[2rem] border border-slate-200/60"
-                    onDragOver={handleDragOver}
+                    className="w-80 flex flex-col bg-slate-100/40 rounded-[2.5rem] border border-slate-200/50"
+                    onDragOver={(e) => e.preventDefault()}
                     onDrop={() => handleDrop(status)}
                   >
-                      {/* Column Header */}
-                      <div className="p-4 border-b border-slate-200/50 flex justify-between items-center bg-slate-50/50 rounded-t-[2rem]">
-                          <span className={`text-xs font-black uppercase tracking-widest px-3 py-1 rounded-lg ${
+                      <div className="p-5 border-b border-slate-200/50 flex justify-between items-center bg-white/50 rounded-t-[2.5rem] backdrop-blur-sm">
+                          <span className={`text-[10px] font-black uppercase tracking-[0.2em] px-3 py-1 rounded-lg ${
                               status === 'Nuevo' ? 'bg-sky-100 text-sky-700' :
                               status === 'Ganado' ? 'bg-emerald-100 text-emerald-700' :
                               status === 'Perdido' ? 'bg-rose-100 text-rose-700' :
-                              'bg-white text-slate-600 border border-slate-200'
+                              'bg-white text-slate-500 border border-slate-200'
                           }`}>
                               {status}
                           </span>
-                          <span className="text-[10px] font-bold text-slate-400">
-                              {leads.filter(l => l.status === status).length}
+                          <span className="text-[10px] font-black text-slate-300">
+                              {leads.filter(l => l.status === status).length} LEADS
                           </span>
                       </div>
 
-                      {/* Cards Container */}
                       <div className="flex-1 p-3 space-y-3 overflow-y-auto custom-scrollbar">
-                          {leads.filter(l => l.status === status).map(lead => (
-                              <div 
-                                key={lead.id}
-                                draggable
-                                onDragStart={() => handleDragStart(lead)}
-                                className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md hover:border-sky-200 cursor-grab active:cursor-grabbing transition-all group relative"
-                              >
-                                  <div className="flex justify-between items-start mb-2">
-                                      <div className="flex flex-wrap items-center gap-2">
-                                          <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
-                                              {getSourceIcon(lead.source)}
-                                              <span className="text-[9px] font-bold text-slate-500 uppercase max-w-[80px] truncate">{lead.source}</span>
-                                          </div>
-                                          {lead.campaign && (
-                                              <span className="text-[8px] font-black uppercase tracking-wide bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-100 max-w-[100px] truncate">
-                                                  {lead.campaign}
-                                              </span>
-                                          )}
-                                      </div>
-                                      <div className="flex gap-1 shrink-0">
-                                          <button onClick={() => handleOpenEdit(lead)} className="text-slate-300 hover:text-sky-500 p-1"><Edit3 size={12}/></button>
-                                          <button onClick={() => handleDeleteLead(lead.id)} className="text-slate-300 hover:text-rose-500 p-1"><Trash2 size={12}/></button>
-                                      </div>
-                                  </div>
-                                  
-                                  <h4 className="font-bold text-slate-800 text-sm mb-1 truncate">{lead.name}</h4>
-                                  
-                                  <div className="flex items-center justify-between mt-4 border-t border-slate-50 pt-3">
-                                      <div className="flex gap-2">
-                                          {lead.phone && (
-                                              <a href={`https://wa.me/${lead.phone}`} target="_blank" className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100">
-                                                  <MessageSquare size={14} />
-                                              </a>
-                                          )}
-                                      </div>
-                                      
-                                      {status !== 'Ganado' && (
-                                          <button 
-                                            onClick={() => convertToClient(lead.id)}
-                                            className="flex items-center gap-1 text-[9px] font-black uppercase text-sky-600 hover:text-sky-800 bg-sky-50 px-3 py-1.5 rounded-lg hover:bg-sky-100 transition-colors"
-                                          >
-                                              Convertir <ArrowRight size={10}/>
-                                          </button>
-                                      )}
-                                  </div>
-                              </div>
-                          ))}
+                          {leads.filter(l => l.status === status).map(lead => {
+                              const stale = lead.status !== 'Ganado' && lead.status !== 'Perdido' && isStale(lead.createdAt, lead.updatedAt);
+                              return (
+                                <div 
+                                    key={lead.id}
+                                    draggable
+                                    onDragStart={() => setDraggedLead(lead)}
+                                    onClick={() => setSelectedLead(lead)}
+                                    className={`bg-white p-5 rounded-3xl shadow-sm border-2 cursor-pointer transition-all hover:shadow-xl group relative ${stale ? 'border-amber-400 animate-pulse-slow' : 'border-transparent hover:border-sky-300'}`}
+                                >
+                                    {stale && <div className="absolute -top-2 -right-2 bg-amber-500 text-white p-1 rounded-full shadow-lg" title="Estancado >24h"><Clock size={12}/></div>}
+                                    
+                                    <div className="flex justify-between items-start mb-3">
+                                        <div className="flex items-center gap-2">
+                                            <div className={`p-2 rounded-xl bg-slate-50 ${getScoreColor(lead.ai_score)}`}>
+                                                <Thermometer size={14} fill={lead.ai_score ? 'currentColor' : 'none'} />
+                                            </div>
+                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{lead.source}</span>
+                                        </div>
+                                        {lead.ai_score && (
+                                            <div className="bg-slate-900 text-white w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black">{lead.ai_score}</div>
+                                        )}
+                                    </div>
+                                    
+                                    <h4 className="font-bold text-slate-800 text-sm mb-1">{lead.name}</h4>
+                                    <p className="text-[10px] text-slate-400 line-clamp-2 leading-relaxed">{lead.notes || 'Sin detalles'}</p>
+                                    
+                                    <div className="mt-4 flex items-center justify-between border-t border-slate-50 pt-3 opacity-60 group-hover:opacity-100 transition-opacity">
+                                        <div className="flex gap-2">
+                                            <div className="p-1.5 bg-slate-100 text-slate-400 rounded-lg group-hover:bg-emerald-50 group-hover:text-emerald-600 transition-colors"><MessageSquare size={12}/></div>
+                                            <div className="p-1.5 bg-slate-100 text-slate-400 rounded-lg"><History size={12}/></div>
+                                        </div>
+                                        <div className="text-[8px] font-black text-slate-300 uppercase">{new Date(lead.createdAt).toLocaleDateString()}</div>
+                                    </div>
+                                </div>
+                              );
+                          })}
                       </div>
                   </div>
               ))}
           </div>
       </div>
 
-      {/* Add/Edit Lead Modal - REDISEÑADO */}
-      {showAddModal && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[150] flex items-center justify-center p-6">
-              <div className="bg-white w-full max-w-2xl rounded-[3.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300 flex flex-col max-h-[90vh]">
-                  {/* Modal Header */}
-                  <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
-                      <div>
-                          <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">
-                              {isEditing ? 'Editar Prospecto' : 'Nuevo Prospecto'}
-                          </h3>
-                          <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">
-                              Ingresa los detalles del cliente potencial
-                          </p>
+      {/* DRAWER: DETALLE PROSPECTO (Inteligencia de Venta) */}
+      {selectedLead && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[150] flex justify-end">
+              <div className="w-full max-w-xl bg-white h-full shadow-2xl animate-in slide-in-from-right duration-500 flex flex-col border-l border-slate-200">
+                  <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                      <div className="flex items-center gap-4">
+                          <div className={`p-4 rounded-2xl bg-slate-900 text-white ${getScoreColor(selectedLead.ai_score)}`}>
+                             <User size={24}/>
+                          </div>
+                          <div>
+                              <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">{selectedLead.name}</h3>
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                                <Megaphone size={10}/> {selectedLead.source} • {selectedLead.status}
+                              </p>
+                          </div>
                       </div>
-                      <button onClick={() => setShowAddModal(false)} className="p-3 hover:bg-slate-100 rounded-2xl transition-all text-slate-400 hover:text-slate-600">
-                          <X size={24} />
-                      </button>
+                      <button onClick={() => { setSelectedLead(null); setSuggestedReply(null); }} className="p-2 hover:bg-slate-200 rounded-xl transition-all"><X size={24} className="text-slate-400" /></button>
                   </div>
 
-                  {/* Modal Content - Scrollable */}
-                  <div className="p-8 overflow-y-auto custom-scrollbar">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                          {/* Columna Izquierda: Contacto */}
-                          <div className="space-y-6">
-                              <h4 className="flex items-center gap-2 text-sm font-black text-slate-800 uppercase tracking-tight pb-2 border-b border-slate-100">
-                                  <User size={16} className="text-sky-500" /> Información de Contacto
-                              </h4>
+                  <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
+                      {/* IA ANALYSIS CARD */}
+                      <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white relative overflow-hidden shadow-2xl shadow-slate-900/40">
+                          <BrainCircuit size={140} className="absolute -right-8 -bottom-8 opacity-5" />
+                          <div className="relative z-10">
+                              <div className="flex justify-between items-start mb-6">
+                                  <div>
+                                      <h4 className="text-[10px] font-black text-sky-400 uppercase tracking-widest mb-1">Análisis de Prioridad</h4>
+                                      <div className="flex items-center gap-3">
+                                          <span className="text-4xl font-black">{selectedLead.ai_score || '--'}</span>
+                                          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">/ 10</span>
+                                      </div>
+                                  </div>
+                                  <button 
+                                    onClick={() => analyzeWithIA(selectedLead.id)}
+                                    disabled={isAnalyzing === selectedLead.id}
+                                    className="p-3 bg-white/10 hover:bg-sky-600 rounded-2xl transition-all border border-white/5"
+                                  >
+                                      {isAnalyzing === selectedLead.id ? <Loader2 size={20} className="animate-spin" /> : <Sparkles size={20} />}
+                                  </button>
+                              </div>
+                              <p className="text-xs text-slate-300 leading-relaxed italic">
+                                  {selectedLead.ai_analysis || "Solicita un análisis de IA para determinar la temperatura de venta de este cliente."}
+                              </p>
+                          </div>
+                      </div>
+
+                      {/* MAGIC REPLY */}
+                      <div className="space-y-4">
+                          <div className="flex justify-between items-center">
+                              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Respuesta Inteligente</h4>
+                              <button 
+                                onClick={() => suggestMagicReply(selectedLead.id)}
+                                disabled={isSuggesting}
+                                className="flex items-center gap-2 text-[10px] font-black text-sky-600 bg-sky-50 px-4 py-2 rounded-xl hover:bg-sky-100"
+                              >
+                                  {isSuggesting ? <Loader2 size={12} className="animate-spin"/> : <Wand2 size={12}/>} Magic Reply
+                              </button>
+                          </div>
+                          {suggestedReply && (
+                              <div className="p-5 bg-sky-50 border border-sky-100 rounded-3xl relative animate-in zoom-in">
+                                  <p className="text-xs text-slate-600 leading-relaxed mb-4">{suggestedReply}</p>
+                                  <div className="flex gap-2">
+                                      <button 
+                                        onClick={() => { navigator.clipboard.writeText(suggestedReply); alert("Copiado"); }}
+                                        className="flex-1 py-3 bg-white border border-sky-200 text-sky-700 rounded-xl text-[9px] font-black uppercase flex items-center justify-center gap-2"
+                                      >
+                                          <Copy size={12}/> Copiar
+                                      </button>
+                                      <a 
+                                        href={`https://wa.me/${selectedLead.phone?.replace(/\D/g,'')}?text=${encodeURIComponent(suggestedReply)}`}
+                                        target="_blank"
+                                        className="flex-1 py-3 bg-emerald-500 text-white rounded-xl text-[9px] font-black uppercase flex items-center justify-center gap-2"
+                                      >
+                                          <Send size={12}/> WhatsApp
+                                      </a>
+                                  </div>
+                              </div>
+                          )}
+                      </div>
+
+                      {/* HISTORY BITÁCORA */}
+                      <div className="space-y-4">
+                          <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                              <History size={14}/> Bitácora de Seguimiento
+                          </h4>
+                          <div className="space-y-4">
+                              {selectedLead.history?.map((item, i) => (
+                                  <div key={i} className="flex gap-4 items-start p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                      <div className="w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-[10px] font-black text-slate-500 shrink-0">
+                                          {item.user[0]}
+                                      </div>
+                                      <div>
+                                          <p className="text-xs text-slate-700 leading-relaxed">{item.text}</p>
+                                          <p className="text-[8px] font-black text-slate-300 uppercase mt-1">{item.user} • {new Date(item.date).toLocaleString()}</p>
+                                      </div>
+                                  </div>
+                              ))}
                               
-                              <div className="space-y-1">
-                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Completo</label>
-                                  <div className="relative">
-                                      <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                                      <input 
-                                          className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 font-bold text-slate-700" 
-                                          placeholder="Ej: Familia Ramírez"
-                                          value={leadForm.name} 
-                                          onChange={e => setLeadForm({...leadForm, name: e.target.value})} 
-                                      />
-                                  </div>
-                              </div>
-
-                              <div className="space-y-1">
-                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Teléfono / WhatsApp</label>
-                                  <div className="relative">
-                                      <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                                      <input 
-                                          type="tel"
-                                          className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 font-medium text-slate-600" 
-                                          placeholder="10 Dígitos"
-                                          value={leadForm.phone} 
-                                          onChange={e => setLeadForm({...leadForm, phone: e.target.value})} 
-                                      />
-                                  </div>
-                              </div>
-
-                              <div className="space-y-1">
-                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Correo Electrónico</label>
-                                  <div className="relative">
-                                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                                      <input 
-                                          type="email"
-                                          className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 font-medium text-slate-600" 
-                                          placeholder="ejemplo@correo.com"
-                                          value={leadForm.email} 
-                                          onChange={e => setLeadForm({...leadForm, email: e.target.value})} 
-                                      />
-                                  </div>
-                              </div>
-                          </div>
-
-                          {/* Columna Derecha: Origen y Notas */}
-                          <div className="space-y-6">
-                              <h4 className="flex items-center gap-2 text-sm font-black text-slate-800 uppercase tracking-tight pb-2 border-b border-slate-100">
-                                  <Magnet size={16} className="text-indigo-500" /> Origen y Detalles
-                              </h4>
-
-                              <div className="grid grid-cols-2 gap-4">
-                                  <div className="space-y-1">
-                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fuente</label>
-                                      <div className="relative">
-                                          <select 
-                                              className="w-full pl-4 pr-8 py-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-700 appearance-none" 
-                                              value={leadForm.source} 
-                                              onChange={e => setLeadForm({...leadForm, source: e.target.value as any})}
-                                          >
-                                              <option>Manual</option>
-                                              <option>Facebook</option>
-                                              <option>Google</option>
-                                              <option>Recomendación</option>
-                                              <option>WhatsApp</option>
-                                          </select>
-                                          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-indigo-400">
-                                              <Globe size={16} />
-                                          </div>
-                                      </div>
-                                  </div>
-                                  <div className="space-y-1">
-                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Campaña</label>
-                                      <div className="relative">
-                                          <Megaphone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                          <input 
-                                              className="w-full pl-10 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 text-sm" 
-                                              placeholder="Ej: Verano"
-                                              value={leadForm.campaign || ''} 
-                                              onChange={e => setLeadForm({...leadForm, campaign: e.target.value})} 
-                                          />
-                                      </div>
-                                  </div>
-                              </div>
-
-                              <div className="space-y-1">
-                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Notas / Requerimientos</label>
-                                  <div className="relative">
-                                      <FileText className="absolute left-4 top-4 text-slate-400" size={18} />
-                                      <textarea 
-                                          className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 h-32 resize-none text-sm leading-relaxed" 
-                                          placeholder="Detalles importantes sobre la solicitud..."
-                                          value={leadForm.notes} 
-                                          onChange={e => setLeadForm({...leadForm, notes: e.target.value})} 
-                                      />
-                                  </div>
+                              <div className="pt-4 flex gap-2">
+                                  <input 
+                                    value={newComment}
+                                    onChange={e => setNewComment(e.target.value)}
+                                    className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-sky-500" 
+                                    placeholder="Registra una llamada o contacto..."
+                                  />
+                                  <button 
+                                    onClick={addHistoryComment}
+                                    disabled={isSaving || !newComment.trim()}
+                                    className="p-3 bg-slate-900 text-white rounded-xl hover:bg-sky-600 disabled:opacity-50"
+                                  >
+                                      <Save size={18}/>
+                                  </button>
                               </div>
                           </div>
                       </div>
-                  </div>
 
-                  {/* Modal Footer */}
-                  <div className="p-8 border-t border-slate-100 bg-slate-50/50 flex gap-4 sticky bottom-0 z-10">
-                      <button 
-                          onClick={handleSaveLead} 
-                          disabled={isSaving} 
-                          className="flex-1 py-4 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-sky-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-sky-600/20 disabled:opacity-70 disabled:cursor-not-allowed"
-                      >
-                          {isSaving ? <Loader2 className="animate-spin" size={18}/> : <CheckCircle2 size={18}/>} 
-                          {isEditing ? 'Guardar Cambios' : 'Registrar Lead'}
-                      </button>
-                      <button 
-                          onClick={() => setShowAddModal(false)}
-                          className="px-8 py-4 bg-white text-slate-500 border border-slate-200 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all"
-                      >
-                          Cancelar
-                      </button>
+                      {/* CONVERSIÓN */}
+                      {selectedLead.status !== 'Ganado' && (
+                          <div className="pt-8 border-t border-slate-100">
+                              <button 
+                                onClick={() => {
+                                    if(confirm("¿Convertir a Cliente y crear cotización?")) {
+                                        localStorage.setItem('pending_quote_client', JSON.stringify({ id: selectedLead.id, name: selectedLead.name }));
+                                        navigate('/quotes');
+                                    }
+                                }}
+                                className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2"
+                              >
+                                  <CheckCircle2 size={16}/> Finalizar Venta / Crear Cliente
+                              </button>
+                          </div>
+                      )}
                   </div>
               </div>
           </div>
       )}
 
-      {/* Webhook Info Modal */}
-      {showWebhookInfo && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[120] flex items-center justify-center p-6">
-              <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-300">
-                  <div className="flex items-center gap-4 mb-6">
-                      <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl"><LinkIcon size={24}/></div>
-                      <div>
-                          <h3 className="font-black text-xl text-slate-900 uppercase tracking-tight">Conexión de Anuncios & IA</h3>
-                          <p className="text-slate-400 text-xs">Integra Facebook, Google & WhatsApp</p>
-                      </div>
+      {/* MODAL: REGISTRO MANUAL */}
+      {showAddModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6">
+              <div className="bg-white w-full max-w-lg rounded-[3rem] shadow-2xl p-10 animate-in zoom-in duration-300">
+                  <div className="flex justify-between items-center mb-8">
+                      <h3 className="text-2xl font-black text-slate-900 uppercase">Nuevo Prospecto</h3>
+                      <button onClick={() => setShowAddModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all"><X size={24}/></button>
                   </div>
-                  
-                  <div className="space-y-4">
-                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6">
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Webhook de Anuncios (Leads)</p>
-                          <div className="flex items-center gap-2 bg-white border border-slate-200 p-3 rounded-xl">
-                              <code className="text-xs font-mono text-slate-600 truncate flex-1">
-                                  {window.location.origin}/api/webhooks/leads
-                              </code>
-                              <button className="text-sky-600 hover:text-sky-700" onClick={() => navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/leads`)}>
-                                  <Copy size={16} />
-                              </button>
+                  <div className="space-y-6">
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre</label>
+                          <input 
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 font-bold" 
+                            placeholder="Ej: Ing. Jorge Trejo"
+                            value={leadForm.name}
+                            onChange={e => setLeadForm({...leadForm, name: e.target.value})}
+                          />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Teléfono</label>
+                              <input 
+                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 font-bold" 
+                                value={leadForm.phone}
+                                onChange={e => setLeadForm({...leadForm, phone: e.target.value})}
+                              />
+                          </div>
+                          <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fuente</label>
+                              <select 
+                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 font-bold"
+                                value={leadForm.source}
+                                onChange={e => setLeadForm({...leadForm, source: e.target.value})}
+                              >
+                                  <option>Manual</option>
+                                  <option>Recomendación</option>
+                                  <option>Evento / Expo</option>
+                              </select>
                           </div>
                       </div>
-
-                      <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-6">
-                          <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Webhook de WhatsApp (Inteligente)</p>
-                          <div className="flex items-center gap-2 bg-white border border-emerald-100 p-3 rounded-xl">
-                              <code className="text-xs font-mono text-slate-600 truncate flex-1">
-                                  {window.location.origin}/api/webhooks/chat-incoming
-                              </code>
-                              <button className="text-emerald-600 hover:text-emerald-700" onClick={() => navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/chat-incoming`)}>
-                                  <Copy size={16} />
-                              </button>
-                          </div>
-                          <p className="text-[10px] text-emerald-600 mt-2 font-medium">
-                              Conecta este endpoint a tu proveedor de WhatsApp. La IA de Gemini leerá los mensajes y creará leads automáticamente si detecta intención de compra.
-                          </p>
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Interés / Notas iniciales</label>
+                          <textarea 
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl h-32 resize-none outline-none focus:ring-2 focus:ring-sky-500"
+                            value={leadForm.notes}
+                            onChange={e => setLeadForm({...leadForm, notes: e.target.value})}
+                          />
                       </div>
-                  </div>
-
-                  <div className="flex justify-end mt-6">
-                      <button onClick={() => setShowWebhookInfo(false)} className="px-8 py-3 bg-slate-900 text-white rounded-xl font-black uppercase tracking-widest text-[10px] hover:bg-slate-800">Entendido</button>
+                      <button 
+                        onClick={async () => {
+                            if (!leadForm.name) return;
+                            const res = await fetch('/api/leads', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(leadForm) });
+                            if(res.ok) { fetchLeads(); setShowAddModal(false); }
+                        }}
+                        className="w-full py-4 bg-sky-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-sky-600/20"
+                      >
+                          Crear en Pipeline
+                      </button>
                   </div>
               </div>
           </div>

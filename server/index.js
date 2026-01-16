@@ -11,7 +11,7 @@ import multer from 'multer';
 import nodemailer from 'nodemailer';
 import cron from 'node-cron';
 import { google } from 'googleapis';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import OpenAI from 'openai';
 import { sendWhatsApp, sendChatwootMessage, analyzeLeadIntent } from './services.js';
 
@@ -53,7 +53,7 @@ app.use('/api', authenticateToken);
 // --- INITIALIZE FULL INDUSTRIAL SCHEMA ---
 const initDB = async () => {
   try {
-    console.log("🛠️ Sincronizando Esquema SuperAir v1.0...");
+    console.log("🛠️ Sincronizando Esquema SuperAir v1.3...");
     
     // Core
     await db.query(`CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'Admin', status TEXT DEFAULT 'Activo', last_login TIMESTAMP)`);
@@ -76,7 +76,24 @@ const initDB = async () => {
     
     // CMS & Ops
     await db.query(`CREATE TABLE IF NOT EXISTS app_settings (category TEXT PRIMARY KEY, data JSONB, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
-    await db.query(`CREATE TABLE IF NOT EXISTS leads (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT, phone TEXT, source TEXT DEFAULT 'Manual', campaign TEXT, status TEXT DEFAULT 'Nuevo', notes TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
+    
+    // Leads v1.3 - Columnas para IA y Historial
+    await db.query(`CREATE TABLE IF NOT EXISTS leads (
+        id SERIAL PRIMARY KEY, 
+        name TEXT NOT NULL, 
+        email TEXT, 
+        phone TEXT, 
+        source TEXT DEFAULT 'Manual', 
+        campaign TEXT, 
+        status TEXT DEFAULT 'Nuevo', 
+        notes TEXT, 
+        ai_score INTEGER, 
+        ai_analysis TEXT,
+        history JSONB DEFAULT '[]',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+
     await db.query(`CREATE TABLE IF NOT EXISTS manuals (id SERIAL PRIMARY KEY, category TEXT, title TEXT NOT NULL, content TEXT, tags JSONB, pdf_url TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await db.query(`CREATE TABLE IF NOT EXISTS appointments (id SERIAL PRIMARY KEY, client_id INTEGER, technician TEXT, date DATE, time TIME, duration INTEGER, type TEXT, status TEXT DEFAULT 'Programada')`);
 
@@ -89,64 +106,135 @@ const initDB = async () => {
         "INSERT INTO users (name, email, password, role, status) VALUES ($1, $2, $3, $4, $5)",
         ['Administrador SuperAir', 'admin@superair.com.mx', hashedPassword, 'Super Admin', 'Activo']
       );
-      console.log("✅ Admin creado satisfactoriamente.");
     }
 
-    // Seed Data: Almacén Central
     await db.query("INSERT INTO warehouses (name, type) SELECT 'Bodega Central', 'Central' WHERE NOT EXISTS (SELECT 1 FROM warehouses WHERE id = 1)");
-
     console.log('✅ Base de datos SuperAir lista.');
   } catch (err) { console.error('❌ DB INIT ERROR:', err.message); }
 };
 
-// Asegurar que el seeding ocurra antes de que el servidor escuche
 db.checkConnection().then(async connected => { 
   if(connected) {
     await initDB();
     app.listen(PORT, HOST, () => console.log(`🚀 SUPERAIR Server running on http://${HOST}:${PORT}`));
-  } else {
-    console.error("❌ No se puede iniciar el servidor sin base de datos.");
   }
 });
 
-// --- API ENDPOINTS REALES ---
-
-app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+// --- ENDPOINTS LEADS AVANZADOS ---
 
 app.get('/api/leads', async (req, res) => {
-    const r = await db.query("SELECT * FROM leads ORDER BY created_at DESC");
-    res.json(r.rows);
+    try {
+        const r = await db.query("SELECT * FROM leads ORDER BY created_at DESC");
+        res.json(r.rows);
+    } catch (e) {
+        res.status(500).json({ error: "Database error" });
+    }
 });
 
+app.post('/api/leads', async (req, res) => {
+    const { name, email, phone, source, notes, campaign } = req.body;
+    try {
+        const r = await db.query(
+            "INSERT INTO leads (name, email, phone, source, notes, campaign) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+            [name, email, phone, source || 'Manual', notes, campaign]
+        );
+        res.json(r.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/leads/:id', async (req, res) => {
+    const { id } = req.params;
+    const { status, notes, history } = req.body;
+    try {
+        const r = await db.query(
+            "UPDATE leads SET status = COALESCE($1, status), notes = COALESCE($2, notes), history = COALESCE($3, history), updated_at = NOW() WHERE id = $4 RETURNING *",
+            [status, notes, history ? JSON.stringify(history) : null, id]
+        );
+        res.json(r.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/leads/:id/ai-analyze', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const leadR = await db.query("SELECT * FROM leads WHERE id = $1", [id]);
+        if (leadR.rows.length === 0) return res.status(404).json({ error: "Lead no encontrado" });
+        const lead = leadR.rows[0];
+
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const prompt = `Analiza este prospecto para venta de Aire Acondicionado en México.
+                       Nombre: ${lead.name}
+                       Origen: ${lead.source}
+                       Notas/Mensaje: ${lead.notes}
+                       
+                       Determina un Score de Prioridad del 1 al 10 (donde 10 es una venta segura inmediata) 
+                       y un análisis breve de estrategia de venta.`;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        score: { type: Type.INTEGER },
+                        analysis: { type: Type.STRING }
+                    },
+                    required: ["score", "analysis"]
+                }
+            }
+        });
+
+        const result = JSON.parse(response.text);
+        const updateR = await db.query(
+            "UPDATE leads SET ai_score = $1, ai_analysis = $2, updated_at = NOW() WHERE id = $3 RETURNING *",
+            [result.score, result.analysis, id]
+        );
+        res.json(updateR.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/leads/:id/suggest-reply', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const leadR = await db.query("SELECT * FROM leads WHERE id = $1", [id]);
+        const lead = leadR.rows[0];
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: `Redacta un mensaje de WhatsApp amigable y profesional para este lead interesado en aire acondicionado. 
+                       Cliente: ${lead.name}. Interés: ${lead.notes}. Tono: Mexicano servicial.`
+        });
+        res.json({ reply: response.text });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- OTROS ENDPOINTS ---
+app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/api/quotes', async (req, res) => {
-    const r = await db.query("SELECT * FROM quotes ORDER BY created_at DESC");
-    res.json(r.rows);
+    try {
+        const r = await db.query("SELECT * FROM quotes ORDER BY created_at DESC");
+        res.json(r.rows);
+    } catch (e) { res.status(500).json({ error: "Database error" }); }
 });
 
 app.get('/api/appointments', async (req, res) => {
-    const r = await db.query(`
-        SELECT a.*, c.name as client_name 
-        FROM appointments a 
-        LEFT JOIN clients c ON a.client_id = c.id 
-        ORDER BY a.date ASC, a.time ASC
-    `);
-    res.json(r.rows);
-});
-
-app.get('/api/products', async (req, res) => {
-    const r = await db.query("SELECT * FROM products ORDER BY name ASC");
-    res.json(r.rows);
+    try {
+        const r = await db.query(`SELECT a.*, c.name as client_name FROM appointments a LEFT JOIN clients c ON a.client_id = c.id ORDER BY a.date ASC, a.time ASC`);
+        res.json(r.rows);
+    } catch (e) { res.status(500).json({ error: "Database error" }); }
 });
 
 app.get('/api/users', async (req, res) => {
-    const r = await db.query("SELECT id, name, email, role, status, last_login FROM users");
-    res.json(r.rows);
+    try {
+        const r = await db.query("SELECT id, name, email, role, status, last_login FROM users");
+        res.json(r.rows);
+    } catch (e) { res.status(500).json({ error: "Database error" }); }
 });
 
-// Auth
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
-  console.log(`🔐 Intento de login para: ${email}`);
   try {
     const r = await db.query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
     if (r.rows.length > 0) {
@@ -155,15 +243,8 @@ app.post('/api/auth/login', async (req, res) => {
       if (isMatch) {
         const token = jwt.sign({ id: user.id, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '24h' });
         await db.query('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
-        console.log(`✅ Login exitoso: ${email}`);
         res.json({ success: true, token, user: { id: user.id, name: user.name, role: user.role } });
-      } else {
-        res.status(401).json({ error: 'Contraseña incorrecta' });
-      }
-    } else {
-      res.status(401).json({ error: 'Usuario no encontrado' });
-    }
-  } catch (err) { 
-    res.status(500).json({ error: 'Error interno del servidor' }); 
-  }
+      } else { res.status(401).json({ error: 'Contraseña incorrecta' }); }
+    } else { res.status(401).json({ error: 'Usuario no encontrado' }); }
+  } catch (err) { res.status(500).json({ error: 'Error interno del servidor' }); }
 });

@@ -50,7 +50,6 @@ export interface Warehouse {
   responsible_id?: string; // Links to a User (Installer)
 }
 
-// Added warehouse_id and warehouse_name to Purchase interface
 export interface Purchase {
   id: string;
   vendor_id: string;
@@ -81,7 +80,6 @@ export interface Quote {
   createdAt: string;
 }
 
-// Fix for modules/Sales.tsx: Define FiscalData type
 export interface FiscalData {
   uuid: string;
   rfc: string;
@@ -104,7 +102,6 @@ export interface Order {
   fiscalData?: FiscalData;
 }
 
-// Added client_name to Appointment interface
 export interface Appointment {
   id: string;
   clientId: string;
@@ -135,16 +132,26 @@ export interface User {
 
 export type LeadStatus = 'Nuevo' | 'Contactado' | 'Calificado' | 'Cotizado' | 'Ganado' | 'Perdido';
 
+export interface LeadHistoryItem {
+    date: string;
+    text: string;
+    user: string;
+}
+
 export interface Lead {
   id: string;
   name: string;
   email?: string;
   phone?: string;
-  source: 'Facebook' | 'Google' | 'Instagram' | 'Manual' | 'Web';
+  source: 'Facebook' | 'Google' | 'Instagram' | 'Manual' | 'Web' | string;
   campaign?: string; 
   status: LeadStatus;
   notes?: string;
   createdAt: string;
+  updatedAt?: string;
+  ai_score?: number;      // 1-10
+  ai_analysis?: string;   // Resumen de IA
+  history?: LeadHistoryItem[]; // Bitácora
 }
 
 export interface AppNotification {

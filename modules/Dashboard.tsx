@@ -31,10 +31,11 @@ const Dashboard: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
+      // Usamos .catch en cada fetch individual para que si uno falla, los demás sigan cargando
       const [aptsRes, quotesRes, leadsRes, healthRes] = await Promise.all([
-        fetch('/api/appointments').then(r => r.ok ? r.json() : []),
-        fetch('/api/quotes').then(r => r.ok ? r.json() : []),
-        fetch('/api/leads').then(r => r.ok ? r.json() : []),
+        fetch('/api/appointments').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/quotes').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/leads').then(r => r.ok ? r.json() : []).catch(() => []),
         fetch('/api/health').then(r => r.ok ? true : false).catch(() => false)
       ]);
 
@@ -46,7 +47,7 @@ const Dashboard: React.FC = () => {
           db: healthRes ? 'Sincronizada' : 'Error Conexión' 
       });
     } catch (err) {
-      console.error("Dashboard Error:", err);
+      console.error("Dashboard Global Error:", err);
     } finally {
       setLoading(false);
     }
@@ -67,7 +68,6 @@ const Dashboard: React.FC = () => {
     }
     setAiLoading(true);
     try {
-      // Create a new GoogleGenAI instance right before making an API call to ensure current credentials
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const prompt = `Actúa como el Director Operativo de SuperAir. 
                      Contexto REAL: ${leads.length} leads en el pipeline, ${quotes.length} cotizaciones. Moneda: MXN.
@@ -96,8 +96,8 @@ const Dashboard: React.FC = () => {
       });
 
       quotes.forEach(q => {
-          if (q.status === 'Aceptada') {
-              const qDate = new Date(q.createdAt || '').toISOString().split('T')[0];
+          if (q.status === 'Aceptada' && q.createdAt) {
+              const qDate = new Date(q.createdAt).toISOString().split('T')[0];
               const dayObj = last7Days.find(d => d.date === qDate);
               if (dayObj) dayObj.sales += Number(q.total);
           }
@@ -120,7 +120,7 @@ const Dashboard: React.FC = () => {
   if (loading) return (
     <div className="h-[70vh] flex flex-col items-center justify-center text-slate-400">
       <Loader2 className="animate-spin text-sky-600 mb-4" size={40} />
-      <p className="font-black text-xs uppercase tracking-widest">Sincronizando Finanzas MXN...</p>
+      <p className="font-black text-xs uppercase tracking-widest">Consultando Sistema MXN...</p>
     </div>
   );
 
@@ -216,9 +216,9 @@ const Dashboard: React.FC = () => {
                   </h3>
                   <div className="space-y-4">
                       {[
-                          { label: 'Facturación SAT', status: 'Listo', icon: FileText, color: 'text-emerald-500' },
-                          { label: 'Cerebro Gemini', status: 'Activo', icon: Zap, color: 'text-sky-500' },
-                          { label: 'DB SuperAir', status: 'Sinc', icon: Database, color: 'text-emerald-500' }
+                          { label: 'Servidor API', status: apiHealth.server, icon: Globe, color: apiHealth.server === 'Online' ? 'text-emerald-500' : 'text-rose-500' },
+                          { label: 'Base de Datos', status: apiHealth.db, icon: Database, color: apiHealth.db === 'Sincronizada' ? 'text-emerald-500' : 'text-rose-500' },
+                          { label: 'IA Cerebro', status: 'Activo', icon: Zap, color: 'text-sky-500' }
                       ].map((s, i) => (
                           <div key={i} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100/50">
                               <div className="flex items-center gap-3">
@@ -243,7 +243,7 @@ const Dashboard: React.FC = () => {
               <div key={i} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm group hover:shadow-md transition-all">
                   <div className="flex justify-between items-start mb-4">
                     <div className={`p-4 rounded-2xl ${s.bg} ${s.color}`}><s.icon size={24} /></div>
-                    <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">REAL-TIME MXN</span>
+                    <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">SISTEMA MXN</span>
                   </div>
                   <div>
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{s.label}</p>
@@ -252,78 +252,6 @@ const Dashboard: React.FC = () => {
                   </div>
               </div>
           ))}
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-          <div className="xl:col-span-2 bg-white rounded-[3rem] border border-slate-100 p-8 shadow-sm">
-              <div className="flex justify-between items-center mb-8">
-                  <h3 className="font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
-                    <Truck size={20} className="text-sky-500"/> Servicios del Día
-                  </h3>
-                  <button onClick={() => navigate('/appointments')} className="text-[10px] font-black text-sky-600 uppercase bg-sky-50 px-4 py-2 rounded-xl hover:bg-sky-100 transition-all">Calendario</button>
-              </div>
-              {stats.aptsToday.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {stats.aptsToday.map(a => (
-                          <div key={a.id} className="p-5 bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-between group hover:bg-white hover:shadow-lg transition-all">
-                              <div className="flex items-center gap-4">
-                                  <div className="w-12 h-12 bg-white rounded-2xl flex flex-col items-center justify-center font-black text-sky-600 shadow-sm border border-slate-50 group-hover:bg-sky-600 group-hover:text-white transition-colors">
-                                    <span className="text-xs leading-none">{a.time.substring(0,2)}</span>
-                                    <span className="text-[8px] opacity-60">HRS</span>
-                                  </div>
-                                  <div>
-                                      <p className="font-bold text-slate-800 leading-tight">{a.client_name || 'Cliente'}</p>
-                                      <p className="text-[9px] font-black text-slate-400 uppercase mt-1 flex items-center gap-1">
-                                        <Wrench size={10} /> {a.type}
-                                      </p>
-                                  </div>
-                              </div>
-                              <div className="text-right">
-                                <span className="text-[8px] font-black uppercase px-2.5 py-1 bg-white rounded-full border border-slate-200 text-slate-500">{a.technician}</span>
-                              </div>
-                          </div>
-                      ))}
-                  </div>
-              ) : (
-                  <div className="py-20 text-center text-slate-300 border-2 border-dashed border-slate-50 rounded-[3rem]">
-                      <CheckCircle2 size={48} className="mx-auto mb-4 opacity-10" />
-                      <p className="font-bold uppercase text-xs tracking-[0.3em]">Sin citas programadas para hoy</p>
-                  </div>
-              )}
-          </div>
-
-          <div className="bg-slate-900 rounded-[3rem] p-8 text-white shadow-xl flex flex-col justify-between">
-              <div>
-                  <h3 className="font-black text-white uppercase text-sm mb-6 flex items-center gap-2">
-                    <Zap size={18} className="text-yellow-400"/> Administración
-                  </h3>
-                  <div className="space-y-3">
-                      <button onClick={() => navigate('/builder')} className="w-full flex items-center justify-between p-5 bg-white/5 hover:bg-sky-600 rounded-[2rem] transition-all group border border-white/5">
-                          <div className="flex items-center gap-4">
-                              <BookOpen size={20} className="text-sky-400 group-hover:text-white" />
-                              <div className="text-left">
-                                  <p className="text-xs font-black uppercase tracking-widest text-white">Constructor</p>
-                                  <p className="text-[10px] text-slate-400 group-hover:text-sky-100">Editar Sitio Web</p>
-                              </div>
-                          </div>
-                          <ArrowRight size={16} className="text-slate-600 group-hover:text-white" />
-                      </button>
-                      <button onClick={() => navigate('/leads')} className="w-full flex items-center justify-between p-5 bg-white/5 hover:bg-indigo-600 rounded-[2rem] transition-all group border border-white/5">
-                          <div className="flex items-center gap-4">
-                              <Users size={20} className="text-indigo-400 group-hover:text-white" />
-                              <div className="text-left">
-                                  <p className="text-xs font-black uppercase tracking-widest text-white">Prospectos</p>
-                                  <p className="text-[10px] text-slate-400 group-hover:text-indigo-100">Pipeline de Ventas</p>
-                              </div>
-                          </div>
-                          <ArrowRight size={16} className="text-slate-600 group-hover:text-white" />
-                      </button>
-                  </div>
-              </div>
-              <div className="mt-8 pt-8 border-t border-white/10 text-center">
-                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.4em]">SISTEMA SUPERAIR • v1.2.0 (MXN)</p>
-              </div>
-          </div>
       </div>
     </div>
   );
