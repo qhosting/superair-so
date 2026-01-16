@@ -4,7 +4,8 @@ import {
   Globe, Save, AlertTriangle, CheckCircle2, Image as ImageIcon, 
   RefreshCw, DollarSign, Wallet, MapPin, Clock, Calendar, BarChart3, 
   Search, BrainCircuit, LayoutTemplate, Database, Power,
-  Landmark, CreditCard, Bot, Building2, Upload, FileText, Receipt
+  Landmark, CreditCard, Bot, Building2, Upload, FileText, Receipt,
+  Palette, FileSignature, Eye
 } from 'lucide-react';
 
 const Toast: React.FC<{ message: string; type: 'success' | 'error'; onClose: () => void }> = ({ message, type, onClose }) => {
@@ -22,7 +23,7 @@ const Toast: React.FC<{ message: string; type: 'success' | 'error'; onClose: () 
 };
 
 const Settings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'general' | 'treasury' | 'marketing'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'treasury' | 'marketing' | 'design'>('general');
   const [toast, setToast] = useState<{msg: string, type: 'success'|'error'} | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -48,12 +49,21 @@ const Settings: React.FC = () => {
       clabe: ''
   });
 
+  const [quoteDesign, setQuoteDesign] = useState({
+      primaryColor: '#0ea5e9',
+      documentTitle: 'Propuesta Técnica y Económica',
+      slogan: 'Líderes en Climatización Industrial',
+      footerNotes: 'Precios sujetos a cambio sin previo aviso. Vigencia de la cotización: 15 días.',
+      showIvaDetail: true,
+      showSignLine: true,
+      accentColor: '#0f172a'
+  });
+
   // Load Data
   useEffect(() => {
     const loadData = async () => {
         try {
             const res = await fetch('/api/settings');
-            // Si la respuesta no es OK, no intentamos parsear JSON
             if (!res.ok) {
                 const errorText = await res.text();
                 throw new Error(errorText || "Server error");
@@ -68,8 +78,9 @@ const Settings: React.FC = () => {
                 if (data.general_info.logoUrl) localStorage.setItem('superair_logo', data.general_info.logoUrl);
             }
             if (data.treasury_info) setTreasuryInfo(prev => ({ ...prev, ...data.treasury_info }));
+            if (data.quote_design) setQuoteDesign(prev => ({ ...prev, ...data.quote_design }));
 
-        } catch (e) { 
+        } catch (e: any) { 
             console.warn("Settings failed to load, using defaults. Error:", e.message);
         } finally {
             setIsInitialLoad(false);
@@ -296,6 +307,125 @@ const Settings: React.FC = () => {
       </div>
   );
 
+  const renderDesign = () => (
+      <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-8 animate-in fade-in">
+          <div className="flex items-center gap-6 pb-6 border-b border-slate-100">
+              <div className="w-16 h-16 bg-rose-50 rounded-2xl flex items-center justify-center text-rose-500">
+                  <Palette size={32} />
+              </div>
+              <div>
+                  <h3 className="text-2xl font-black text-slate-900 tracking-tighter">Diseño de Propuestas</h3>
+                  <p className="text-slate-400 font-medium text-xs">Personaliza la apariencia del portal de clientes y PDFs.</p>
+              </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+              <div className="space-y-6">
+                  <h4 className="font-black text-slate-800 uppercase tracking-tight text-sm">Identidad Visual</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Color Principal</label>
+                          <div className="flex items-center gap-3 p-1 bg-slate-50 border border-slate-200 rounded-2xl">
+                              <input 
+                                type="color" 
+                                value={quoteDesign.primaryColor}
+                                onChange={e => setQuoteDesign({...quoteDesign, primaryColor: e.target.value})}
+                                className="w-10 h-10 border-none bg-transparent cursor-pointer" 
+                              />
+                              <span className="font-mono text-xs font-bold text-slate-600 uppercase">{quoteDesign.primaryColor}</span>
+                          </div>
+                      </div>
+                      <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Color de Acento</label>
+                          <div className="flex items-center gap-3 p-1 bg-slate-50 border border-slate-200 rounded-2xl">
+                              <input 
+                                type="color" 
+                                value={quoteDesign.accentColor}
+                                onChange={e => setQuoteDesign({...quoteDesign, accentColor: e.target.value})}
+                                className="w-10 h-10 border-none bg-transparent cursor-pointer" 
+                              />
+                              <span className="font-mono text-xs font-bold text-slate-600 uppercase">{quoteDesign.accentColor}</span>
+                          </div>
+                      </div>
+                  </div>
+                  <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Slogan del Documento</label>
+                      <input 
+                        value={quoteDesign.slogan}
+                        onChange={e => setQuoteDesign({...quoteDesign, slogan: e.target.value})}
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" 
+                        placeholder="Ej. Ingeniería en Confort"
+                      />
+                  </div>
+              </div>
+
+              <div className="space-y-6">
+                  <h4 className="font-black text-slate-800 uppercase tracking-tight text-sm">Textos y Títulos</h4>
+                  <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Título del PDF</label>
+                      <input 
+                        value={quoteDesign.documentTitle}
+                        onChange={e => setQuoteDesign({...quoteDesign, documentTitle: e.target.value})}
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" 
+                      />
+                  </div>
+                  <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Notas Legales / Términos</label>
+                      <textarea 
+                        value={quoteDesign.footerNotes}
+                        onChange={e => setQuoteDesign({...quoteDesign, footerNotes: e.target.value})}
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl h-24 font-medium text-xs resize-none outline-none focus:ring-2 focus:ring-rose-500"
+                        placeholder="Garantías, validez de oferta, datos bancarios..."
+                      />
+                  </div>
+              </div>
+          </div>
+
+          <div className="pt-6 border-t border-slate-100">
+              <h4 className="font-black text-slate-800 uppercase tracking-tight text-sm mb-6">Configuración de Visibilidad</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <button 
+                    onClick={() => setQuoteDesign({...quoteDesign, showIvaDetail: !quoteDesign.showIvaDetail})}
+                    className={`flex items-center justify-between p-6 rounded-3xl border-2 transition-all ${quoteDesign.showIvaDetail ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}
+                  >
+                      <div className="flex items-center gap-4">
+                          <Receipt className={quoteDesign.showIvaDetail ? 'text-rose-600' : 'text-slate-400'} size={24} />
+                          <div className="text-left">
+                              <p className="font-bold text-slate-900 text-sm">Desglosar IVA</p>
+                              <p className="text-[10px] text-slate-500 uppercase font-black">Mostrar IVA por partida</p>
+                          </div>
+                      </div>
+                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${quoteDesign.showIvaDetail ? 'bg-rose-600 border-rose-600' : 'border-slate-300'}`}>
+                          {quoteDesign.showIvaDetail && <CheckCircle2 size={14} className="text-white" />}
+                      </div>
+                  </button>
+
+                  <button 
+                    onClick={() => setQuoteDesign({...quoteDesign, showSignLine: !quoteDesign.showSignLine})}
+                    className={`flex items-center justify-between p-6 rounded-3xl border-2 transition-all ${quoteDesign.showSignLine ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}
+                  >
+                      <div className="flex items-center gap-4">
+                          <FileSignature className={quoteDesign.showSignLine ? 'text-rose-600' : 'text-slate-400'} size={24} />
+                          <div className="text-left">
+                              <p className="font-bold text-slate-900 text-sm">Área de Firma</p>
+                              <p className="text-[10px] text-slate-500 uppercase font-black">Incluir línea de autorización</p>
+                          </div>
+                      </div>
+                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${quoteDesign.showSignLine ? 'bg-rose-600 border-rose-600' : 'border-slate-300'}`}>
+                          {quoteDesign.showSignLine && <CheckCircle2 size={14} className="text-white" />}
+                      </div>
+                  </button>
+              </div>
+          </div>
+
+          <div className="flex justify-end pt-4 border-t border-slate-100">
+              <button onClick={() => saveSettings('quote_design', quoteDesign)} className="px-8 py-3 bg-rose-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-rose-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-rose-600/20">
+                  {isSaving ? <RefreshCw className="animate-spin" size={16}/> : <Save size={16} />} Publicar Diseño
+              </button>
+          </div>
+      </div>
+  );
+
   return (
     <div className="max-w-7xl mx-auto space-y-8 pb-20 relative">
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
@@ -306,6 +436,9 @@ const Settings: React.FC = () => {
         <div className="flex bg-slate-100 p-1.5 rounded-2xl overflow-x-auto max-w-full shadow-inner">
             <button onClick={() => setActiveTab('general')} className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'general' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500'}`}>
                 <Building2 size={16} /> General
+            </button>
+            <button onClick={() => setActiveTab('design')} className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'design' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500'}`}>
+                <Palette size={16} /> Diseño Propuestas
             </button>
             <button onClick={() => setActiveTab('treasury')} className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'treasury' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500'}`}>
                 <Landmark size={16} /> Tesorería
@@ -319,6 +452,7 @@ const Settings: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2">
               {activeTab === 'general' && renderGeneral()}
+              {activeTab === 'design' && renderDesign()}
               {activeTab === 'treasury' && renderTreasury()}
               {activeTab === 'marketing' && renderMarketing()}
           </div>
@@ -332,7 +466,7 @@ const Settings: React.FC = () => {
                           <span className="text-xs font-bold text-emerald-300">Base de Datos Conectada</span>
                       </div>
                       <p className="text-[10px] text-slate-400 leading-relaxed uppercase tracking-widest">
-                          Toda configuración de marketing impacta directamente en el asistente IA operativo y el SEO del portal público.
+                          Toda configuración de diseño impacta directamente en el asistente IA operativo y el portal que ve tu cliente final.
                       </p>
                   </div>
               </div>

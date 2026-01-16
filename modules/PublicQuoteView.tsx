@@ -13,14 +13,29 @@ const PublicQuoteView: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [isAccepting, setIsAccepting] = useState(false);
     const [accepted, setAccepted] = useState(false);
+    const [quoteDesign, setQuoteDesign] = useState({
+        primaryColor: '#0ea5e9',
+        accentColor: '#0f172a',
+        documentTitle: 'Propuesta de Ingeniería',
+        slogan: 'Líderes en Climatización Industrial',
+        footerNotes: 'Garantía SuperAir certificada en cada proyecto.',
+        showIvaDetail: true
+    });
 
     useEffect(() => {
         if (token) {
-            fetch(`/api/quotes/public/${token}`)
-                .then(res => res.json())
-                .then(data => setQuote(data))
-                .catch(console.error)
-                .finally(() => setLoading(false));
+            Promise.all([
+                fetch(`/api/quotes/public/${token}`).then(res => res.json()),
+                fetch('/api/settings/public').then(res => res.ok ? res.json() : null)
+            ])
+            .then(([quoteData, settingsData]) => {
+                setQuote(quoteData);
+                if (settingsData && settingsData.quote_design) {
+                    setQuoteDesign(prev => ({ ...prev, ...settingsData.quote_design }));
+                }
+            })
+            .catch(console.error)
+            .finally(() => setLoading(false));
         }
     }, [token]);
 
@@ -45,18 +60,18 @@ const PublicQuoteView: React.FC = () => {
         <div className="min-h-screen bg-slate-50 p-6 md:p-12 font-sans selection:bg-sky-100">
             <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-700">
                 {/* Header Branding */}
-                <div className="flex flex-col md:flex-row justify-between items-center gap-8 bg-white p-10 rounded-[3rem] shadow-xl shadow-slate-200/50">
+                <div className="flex flex-col md:flex-row justify-between items-center gap-8 bg-white p-10 rounded-[3rem] shadow-xl shadow-slate-200/50" style={{ borderTop: `8px solid ${quoteDesign.primaryColor}` }}>
                     <div className="flex items-center gap-4">
-                        <div className="bg-sky-600 text-white p-3 rounded-2xl shadow-lg shadow-sky-600/20"><Wind size={32}/></div>
+                        <div className="text-white p-3 rounded-2xl shadow-lg" style={{ backgroundColor: quoteDesign.primaryColor }}><Wind size={32}/></div>
                         <div>
                             <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase leading-none">SuperAir</h1>
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mt-1">Engineering Comfort</p>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mt-1">{quoteDesign.slogan}</p>
                         </div>
                     </div>
                     <div className="text-center md:text-right">
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Propuesta No.</p>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Folio del Documento</p>
                         <h2 className="text-2xl font-black text-slate-900">#{quote.id}</h2>
-                        <span className="px-4 py-1.5 bg-emerald-50 text-emerald-600 rounded-full text-[9px] font-black uppercase tracking-widest border border-emerald-100 mt-2 inline-block">Vigente</span>
+                        <span className="px-4 py-1.5 bg-emerald-50 text-emerald-600 rounded-full text-[9px] font-black uppercase tracking-widest border border-emerald-100 mt-2 inline-block">Propuesta Vigente</span>
                     </div>
                 </div>
 
@@ -64,7 +79,7 @@ const PublicQuoteView: React.FC = () => {
                     {/* Main Content */}
                     <div className="lg:col-span-2 space-y-8">
                         <div className="bg-white p-10 rounded-[3.5rem] shadow-sm border border-slate-100">
-                            <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-8">Conceptos de Inversión</h3>
+                            <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-8" style={{ color: quoteDesign.accentColor }}>{quoteDesign.documentTitle}</h3>
                             
                             <div className="space-y-10">
                                 {['Equipos', 'Materiales', 'Mano de Obra'].map(cat => {
@@ -96,7 +111,10 @@ const PublicQuoteView: React.FC = () => {
                                 <div className="w-64 space-y-2">
                                     <div className="flex justify-between text-xs font-bold text-slate-400 uppercase"><span>Subtotal</span><span>{formatMXN(quote.total / 1.16)}</span></div>
                                     <div className="flex justify-between text-xs font-bold text-slate-400 uppercase"><span>IVA 16%</span><span>{formatMXN(quote.total - (quote.total/1.16))}</span></div>
-                                    <div className="flex justify-between items-center pt-2"><span className="text-sm font-black uppercase text-slate-900">Total Neto</span><span className="text-2xl font-black text-sky-600">{formatMXN(Number(quote.total))}</span></div>
+                                    <div className="flex justify-between items-center pt-2">
+                                        <span className="text-sm font-black uppercase text-slate-900">Total Neto</span>
+                                        <span className="text-2xl font-black" style={{ color: quoteDesign.primaryColor }}>{formatMXN(Number(quote.total))}</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -106,14 +124,21 @@ const PublicQuoteView: React.FC = () => {
                             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100">
                                 <ShieldCheck className="text-emerald-500 mb-4" size={24}/>
                                 <h5 className="font-black text-xs uppercase mb-2">Garantía Certificada</h5>
-                                <p className="text-[10px] text-slate-500 leading-relaxed font-medium">30 días de garantía en mano de obra y garantías de fabricante en equipos.</p>
+                                <p className="text-[10px] text-slate-500 leading-relaxed font-medium">30 días de garantía en mano de obra y garantías de fábrica en equipos.</p>
                             </div>
                             <div className="bg-slate-900 p-8 rounded-[2.5rem] text-white">
-                                <Calendar className="text-sky-400 mb-4" size={24}/>
+                                <Calendar className="text-sky-400 mb-4" size={24} style={{ color: quoteDesign.primaryColor }}/>
                                 <h5 className="font-black text-xs uppercase mb-2">Instalación Estimada</h5>
                                 <p className="text-[10px] text-slate-400 leading-relaxed font-medium">Sujeto a disponibilidad. Tiempo estimado: 24 a 48 hrs después del anticipo.</p>
                             </div>
                         </div>
+                        
+                        {quoteDesign.footerNotes && (
+                            <div className="p-8 bg-slate-100/50 rounded-[2.5rem] text-[10px] font-medium text-slate-500 leading-relaxed">
+                                <p className="font-black uppercase tracking-widest mb-2">Notas y Términos Adicionales:</p>
+                                {quoteDesign.footerNotes}
+                            </div>
+                        )}
                     </div>
 
                     {/* Sidebar: Approval */}
@@ -134,7 +159,7 @@ const PublicQuoteView: React.FC = () => {
                                     <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 mb-8">
                                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Condiciones comerciales</p>
                                         <div className="flex items-center gap-3 text-slate-700 font-bold text-sm">
-                                            <Zap size={16} className="text-sky-500"/>
+                                            <Zap size={16} style={{ color: quoteDesign.primaryColor }}/>
                                             {quote.payment_terms}
                                         </div>
                                     </div>
@@ -142,7 +167,8 @@ const PublicQuoteView: React.FC = () => {
                                     <button 
                                         onClick={handleAccept}
                                         disabled={isAccepting}
-                                        className="w-full py-5 bg-sky-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-sky-600/30 hover:bg-sky-500 transition-all flex items-center justify-center gap-3"
+                                        className="w-full py-5 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl transition-all flex items-center justify-center gap-3"
+                                        style={{ backgroundColor: quoteDesign.primaryColor }}
                                     >
                                         {isAccepting ? <Loader2 className="animate-spin" size={20}/> : <ShieldCheck size={20}/>}
                                         Aceptar y Confirmar
