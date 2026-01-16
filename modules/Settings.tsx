@@ -52,20 +52,21 @@ const Settings: React.FC = () => {
     const loadData = async () => {
         try {
             const res = await fetch('/api/settings');
+            if (!res.ok) throw new Error("Status " + res.status);
             const data = await res.json();
             
             if (data.marketing_info) setMarketingInfo(prev => ({ ...prev, ...data.marketing_info }));
-            
             if (data.general_info) {
                 setGeneralInfo(prev => ({ ...prev, ...data.general_info }));
-                // Sync Maintenance with LocalStorage for fast reading in App.tsx
                 localStorage.setItem('superair_is_published', (!data.general_info.isMaintenance).toString());
                 if (data.general_info.logoUrl) localStorage.setItem('superair_logo', data.general_info.logoUrl);
             }
-
             if (data.treasury_info) setTreasuryInfo(prev => ({ ...prev, ...data.treasury_info }));
 
-        } catch (e) { console.error("Error loading settings", e); }
+        } catch (e) { 
+            console.error("Error loading settings:", e.message);
+            // Si falla la carga, mantenemos los estados por defecto
+        }
     };
     loadData();
   }, []);
@@ -75,12 +76,14 @@ const Settings: React.FC = () => {
   const saveSettings = async (category: string, data: any) => {
       setIsSaving(true);
       try {
-          await fetch('/api/settings', {
+          const res = await fetch('/api/settings', {
               method: 'POST',
               headers: {'Content-Type': 'application/json'},
               body: JSON.stringify({ category, data })
           });
           
+          if(!res.ok) throw new Error("Fail");
+
           if(category === 'general_info') {
               localStorage.setItem('superair_is_published', (!data.isMaintenance).toString());
               if (data.logoUrl) {
@@ -88,7 +91,6 @@ const Settings: React.FC = () => {
               } else {
                   localStorage.removeItem('superair_logo');
               }
-              // Dispatch storage event to update App.tsx and Layout immediately
               window.dispatchEvent(new Event('storage'));
           }
 
@@ -108,7 +110,6 @@ const Settings: React.FC = () => {
       try {
           const res = await fetch('/api/upload', {
              method: 'POST',
-             headers: { 'Authorization': `Bearer ${localStorage.getItem('superair_token')}` },
              body: formData
           });
           if(res.ok) {
@@ -151,7 +152,6 @@ const Settings: React.FC = () => {
                   </div>
               </div>
 
-              {/* Logo Upload */}
               <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Logotipo del Sistema</label>
                   <div className="border-2 border-dashed border-slate-200 rounded-3xl p-6 flex flex-col items-center justify-center gap-4 hover:bg-slate-50 transition-colors relative h-48">
@@ -173,7 +173,6 @@ const Settings: React.FC = () => {
               </div>
           </div>
 
-          {/* Maintenance Mode */}
           <div className="pt-6 border-t border-slate-100">
               <div className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl border border-slate-100">
                   <div className="flex items-center gap-4">
@@ -184,8 +183,8 @@ const Settings: React.FC = () => {
                           <h4 className="font-bold text-slate-900">Modo Mantenimiento</h4>
                           <p className="text-xs text-slate-500 max-w-sm">
                               {generalInfo.isMaintenance 
-                                ? "El sitio web público está desactivado. Los clientes verán la pantalla de mantenimiento." 
-                                : "El sitio web está público y accesible para todos los clientes."}
+                                ? "El sitio web público está desactivado." 
+                                : "El sitio web está público y accesible."}
                           </p>
                       </div>
                   </div>
@@ -241,51 +240,6 @@ const Settings: React.FC = () => {
                         placeholder="ABC123456XYZ"
                       />
                   </div>
-                  <div className="col-span-2 space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Régimen Fiscal</label>
-                      <select 
-                        value={treasuryInfo.taxRegime}
-                        onChange={e => setTreasuryInfo({...treasuryInfo, taxRegime: e.target.value})}
-                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
-                      >
-                          <option>601 - General de Ley Personas Morales</option>
-                          <option>612 - Personas Físicas con Actividades Empresariales</option>
-                          <option>626 - Régimen Simplificado de Confianza</option>
-                      </select>
-                  </div>
-              </div>
-          </div>
-
-          <div className="space-y-6 pt-6 border-t border-slate-100">
-              <h4 className="font-black text-slate-800 uppercase tracking-tight text-sm flex items-center gap-2">
-                  <Wallet size={16} className="text-emerald-500"/> Cuenta Receptora
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Banco</label>
-                      <input 
-                        value={treasuryInfo.bankName}
-                        onChange={e => setTreasuryInfo({...treasuryInfo, bankName: e.target.value})}
-                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
-                        placeholder="Ej: BBVA"
-                      />
-                  </div>
-                  <div className="space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Número de Cuenta</label>
-                      <input 
-                        value={treasuryInfo.accountNumber}
-                        onChange={e => setTreasuryInfo({...treasuryInfo, accountNumber: e.target.value})}
-                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
-                      />
-                  </div>
-                  <div className="space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">CLABE Interbancaria</label>
-                      <input 
-                        value={treasuryInfo.clabe}
-                        onChange={e => setTreasuryInfo({...treasuryInfo, clabe: e.target.value})}
-                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
-                      />
-                  </div>
               </div>
           </div>
 
@@ -309,37 +263,10 @@ const Settings: React.FC = () => {
               </div>
           </div>
 
-          {/* AI Persona Section */}
           <div className="space-y-6">
               <h4 className="font-black text-slate-800 uppercase tracking-tight text-sm flex items-center gap-2">
                   <BrainCircuit size={16} className="text-purple-500"/> Cerebro de IA
               </h4>
-              <div className="bg-purple-50 p-6 rounded-2xl border border-purple-100 mb-4">
-                  <div className="flex items-start gap-4">
-                      <Bot size={24} className="text-purple-600 mt-1" />
-                      <div>
-                          <p className="text-xs font-bold text-purple-800 uppercase tracking-widest mb-1">Proveedor del Modelo</p>
-                          <p className="text-xs text-purple-600 mb-3">Elige qué tecnología potenciará el chat administrativo y los análisis.</p>
-                          <div className="flex gap-4">
-                              <button 
-                                onClick={() => setMarketingInfo({...marketingInfo, aiProvider: 'gemini'})}
-                                className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all flex items-center justify-center gap-2 ${marketingInfo.aiProvider === 'gemini' ? 'border-purple-600 bg-white shadow-sm' : 'border-transparent hover:bg-white/50'}`}
-                              >
-                                  <span className="font-black text-xs text-slate-700">Google Gemini</span>
-                                  {marketingInfo.aiProvider === 'gemini' && <CheckCircle2 size={14} className="text-purple-600"/>}
-                              </button>
-                              <button 
-                                onClick={() => setMarketingInfo({...marketingInfo, aiProvider: 'openai'})}
-                                className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all flex items-center justify-center gap-2 ${marketingInfo.aiProvider === 'openai' ? 'border-purple-600 bg-white shadow-sm' : 'border-transparent hover:bg-white/50'}`}
-                              >
-                                  <span className="font-black text-xs text-slate-700">OpenAI GPT-4</span>
-                                  {marketingInfo.aiProvider === 'openai' && <CheckCircle2 size={14} className="text-purple-600"/>}
-                              </button>
-                          </div>
-                      </div>
-                  </div>
-              </div>
-
               <div className="grid grid-cols-2 gap-6">
                   <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tono de Voz</label>
@@ -348,10 +275,6 @@ const Settings: React.FC = () => {
                           <option>Amigable y Cercano</option>
                           <option>Vendedor Agresivo</option>
                       </select>
-                  </div>
-                  <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Temas Clave</label>
-                      <input value={marketingInfo.aiTopics} onChange={e => setMarketingInfo({...marketingInfo, aiTopics: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-medium" placeholder="Ahorro, Confort, Tecnología..." />
                   </div>
               </div>
           </div>
@@ -391,7 +314,6 @@ const Settings: React.FC = () => {
               {activeTab === 'marketing' && renderMarketing()}
           </div>
           
-          {/* Helper Sidebar */}
           <div className="space-y-6">
               <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] relative overflow-hidden">
                   <div className="relative z-10">
@@ -400,9 +322,8 @@ const Settings: React.FC = () => {
                           <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"/>
                           <span className="text-xs font-bold text-emerald-300">Base de Datos Conectada</span>
                       </div>
-                      <p className="text-[10px] text-slate-400 leading-relaxed">
-                          La configuración se guarda automáticamente en la tabla <code>app_settings</code>. 
-                          Los cambios en "General" se reflejan instantáneamente en la Landing Page pública.
+                      <p className="text-[10px] text-slate-400 leading-relaxed uppercase tracking-widest">
+                          Toda configuración de marketing impacta directamente en el asistente IA operativo y el SEO del portal público.
                       </p>
                   </div>
               </div>
