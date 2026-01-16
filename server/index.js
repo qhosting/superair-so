@@ -6,9 +6,112 @@ import { sendWhatsApp } from './services.js';
 const app = express();
 app.use(express.json());
 
-// --- INVENTARIO & TRASPASOS SEGUROS ---
+// --- ENDPOINTS BASE (CRUD) ---
 
-// Obtener Kits de Carga
+// Usuarios
+app.get('/api/users', async (req, res) => {
+    try {
+        const r = await db.query("SELECT id, name, email, role, status, last_login as \"lastLogin\" FROM users ORDER BY name ASC");
+        res.json(r.rows || []);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Clientes
+app.get('/api/clients', async (req, res) => {
+    try {
+        const r = await db.query("SELECT * FROM clients ORDER BY name ASC");
+        res.json(r.rows || []);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/clients/:id/360', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const client = await db.query("SELECT * FROM clients WHERE id = $1", [id]);
+        const assets = await db.query("SELECT * FROM client_assets WHERE client_id = $1", [id]);
+        const appointments = await db.query("SELECT * FROM appointments WHERE client_id = $1 ORDER BY date DESC", [id]);
+        const quotes = await db.query("SELECT * FROM quotes WHERE client_id = $1 ORDER BY created_at DESC", [id]);
+        
+        res.json({
+            client: client.rows[0] || null,
+            assets: assets.rows || [],
+            appointments: appointments.rows || [],
+            quotes: quotes.rows || []
+        });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Productos e Inventario
+app.get('/api/products', async (req, res) => {
+    try {
+        const r = await db.query("SELECT * FROM products ORDER BY name ASC");
+        res.json(r.rows || []);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/warehouses', async (req, res) => {
+    try {
+        const r = await db.query("SELECT * FROM warehouses ORDER BY name ASC");
+        res.json(r.rows || []);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Citas y Calendario
+app.get('/api/appointments', async (req, res) => {
+    try {
+        const r = await db.query(`
+            SELECT a.*, c.name as client_name 
+            FROM appointments a 
+            LEFT JOIN clients c ON a.client_id = c.id 
+            ORDER BY a.date ASC, a.time ASC
+        `);
+        res.json(r.rows || []);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/appointments', async (req, res) => {
+    const { client_id, technician, date, time, duration, type, status } = req.body;
+    try {
+        const r = await db.query(`
+            INSERT INTO appointments (client_id, technician, date, time, duration, type, status)
+            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *
+        `, [client_id, technician, date, time, duration, type, status]);
+        res.json(r.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/appointments/:id', async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    try {
+        const r = await db.query("UPDATE appointments SET status = $1 WHERE id = $2 RETURNING *", [status, id]);
+        res.json(r.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Leads / Pipeline
+app.get('/api/leads', async (req, res) => {
+    try {
+        const r = await db.query("SELECT * FROM leads ORDER BY created_at DESC");
+        res.json(r.rows || []);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Cotizaciones
+app.get('/api/quotes', async (req, res) => {
+    try {
+        const r = await db.query(`
+            SELECT q.*, c.name as client_name 
+            FROM quotes q 
+            JOIN clients c ON q.client_id = c.id 
+            ORDER BY q.created_at DESC
+        `);
+        res.json(r.rows || []);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- INVENTARIO AVANZADO & TRASPASOS ---
+
 app.get('/api/inventory/kits', async (req, res) => {
     try {
         const r = await db.query(`
@@ -19,125 +122,7 @@ app.get('/api/inventory/kits', async (req, res) => {
                     WHERE ki.kit_id = k.id) as items
             FROM inventory_kits k
         `);
-        res.json(r.rows);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Guardar nuevo Kit
-app.post('/api/inventory/kits', async (req, res) => {
-    const { name, description, items } = req.body;
-    try {
-        await db.query("BEGIN");
-        const r = await db.query("INSERT INTO inventory_kits (name, description) VALUES ($1, $2) RETURNING id", [name, description]);
-        const kitId = r.rows[0].id;
-        
-        for (const item of items) {
-            await db.query("INSERT INTO inventory_kit_items (kit_id, product_id, quantity) VALUES ($1, $2, $3)", [kitId, item.product_id, item.quantity]);
-        }
-        
-        await db.query("COMMIT");
-        res.json({ success: true, id: kitId });
-    } catch (e) { 
-        await db.query("ROLLBACK");
-        res.status(500).json({ error: e.message }); 
-    }
-});
-
-// Iniciar Traspaso (En Tránsito)
-app.post('/api/inventory/transfer', async (req, res) => {
-    const { from, to, items } = req.body;
-    try {
-        await db.query("BEGIN");
-        
-        // 1. Crear cabecera de traspaso con status 'Pendiente'
-        const transRes = await db.query(`
-            INSERT INTO inventory_transfers (from_warehouse_id, to_warehouse_id, status, created_at)
-            VALUES ($1, $2, 'Pendiente', NOW()) RETURNING id
-        `, [from, to]);
-        const transferId = transRes.rows[0].id;
-
-        for (const item of items) {
-            // 2. Descontar de Origen inmediatamente (Stock bloqueado)
-            await db.query(`
-                UPDATE warehouse_stock SET stock = stock - $1 
-                WHERE warehouse_id = $2 AND product_id = $3
-            `, [item.quantity, from, item.product_id]);
-
-            // 3. Registrar items del traspaso
-            await db.query(`
-                INSERT INTO inventory_transfer_items (transfer_id, product_id, quantity)
-                VALUES ($1, $2, $3)
-            `, [transferId, item.product_id, item.quantity]);
-        }
-
-        await db.query("COMMIT");
-        res.json({ success: true, transfer_id: transferId });
-    } catch (e) { 
-        await db.query("ROLLBACK");
-        res.status(500).json({ error: e.message }); 
-    }
-});
-
-// Obtener Traspasos Pendientes para un Almacén
-app.get('/api/inventory/transfers/pending/:warehouse_id', async (req, res) => {
-    const { warehouse_id } = req.params;
-    try {
-        const r = await db.query(`
-            SELECT t.*, w.name as from_name,
-                   (SELECT json_agg(json_build_object('product_id', ti.product_id, 'quantity', ti.quantity, 'name', p.name))
-                    FROM inventory_transfer_items ti
-                    JOIN products p ON p.id = ti.product_id
-                    WHERE ti.transfer_id = t.id) as items
-            FROM inventory_transfers t
-            JOIN warehouses w ON w.id = t.from_warehouse_id
-            WHERE t.to_warehouse_id = $1 AND t.status = 'Pendiente'
-        `, [warehouse_id]);
-        res.json(r.rows);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Confirmar Recepción de Traspaso
-app.post('/api/inventory/transfers/:id/confirm', async (req, res) => {
-    const { id } = req.params;
-    try {
-        await db.query("BEGIN");
-        
-        // 1. Obtener items del traspaso
-        const itemsRes = await db.query("SELECT * FROM inventory_transfer_items WHERE transfer_id = $1", [id]);
-        const transferRes = await db.query("SELECT * FROM inventory_transfers WHERE id = $1", [id]);
-        const transfer = transferRes.rows[0];
-
-        if (!transfer || transfer.status !== 'Pendiente') throw new Error("Traspaso no válido o ya procesado.");
-
-        for (const item of itemsRes.rows) {
-            // 2. Sumar al stock del Destino
-            await db.query(`
-                INSERT INTO warehouse_stock (warehouse_id, product_id, stock) 
-                VALUES ($1, $2, $3)
-                ON CONFLICT (warehouse_id, product_id) 
-                DO UPDATE SET stock = warehouse_stock.stock + $3
-            `, [transfer.to_warehouse_id, item.product_id, item.quantity]);
-        }
-
-        // 3. Marcar como Completado
-        await db.query("UPDATE inventory_transfers SET status = 'Completado', completed_at = NOW() WHERE id = $1", [id]);
-
-        await db.query("COMMIT");
-        res.json({ success: true });
-    } catch (e) { 
-        await db.query("ROLLBACK");
-        res.status(500).json({ error: e.message }); 
-    }
-});
-
-// --- INVENTARIO AVANZADO ---
-
-app.get('/api/inventory/lookup/:code', async (req, res) => {
-    const { code } = req.params;
-    try {
-        const r = await db.query("SELECT * FROM products WHERE code = $1", [code]);
-        if (r.rows.length === 0) return res.status(404).json({ error: "SKU no encontrado." });
-        res.json(r.rows[0]);
+        res.json(r.rows || []);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -162,32 +147,7 @@ app.get('/api/inventory/valuation', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/inventory/adjust', async (req, res) => {
-    const { product_id, warehouse_id, quantity, type, reason } = req.body;
-    try {
-        const sign = (type === 'Salida' || type === 'Merma') ? -1 : 1;
-        const adjustedQty = Number(quantity) * sign;
-        await db.query("BEGIN");
-        await db.query("UPDATE products SET stock = stock + $1 WHERE id = $2", [adjustedQty, product_id]);
-        await db.query(`
-            INSERT INTO warehouse_stock (product_id, warehouse_id, stock) 
-            VALUES ($1, $2, $3)
-            ON CONFLICT (product_id, warehouse_id) 
-            DO UPDATE SET stock = warehouse_stock.stock + $3
-        `, [product_id, warehouse_id, adjustedQty]);
-        await db.query(`
-            INSERT INTO inventory_movements (product_id, warehouse_id, type, quantity, reason, user_id, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, NOW())
-        `, [product_id, warehouse_id, type, quantity, reason, 1]);
-        await db.query("COMMIT");
-        res.json({ success: true, message: "Ajuste aplicado correctamente." });
-    } catch (e) { 
-        await db.query("ROLLBACK");
-        res.status(500).json({ error: e.message }); 
-    }
-});
-
-// --- MÓDULO VENTAS & RENTABILIDAD ---
+// --- MÓDULO VENTAS & ÓRDENES ---
 
 app.get('/api/orders', async (req, res) => {
     try {
@@ -199,57 +159,34 @@ app.get('/api/orders', async (req, res) => {
         `);
         const enrichedOrders = r.rows.map(order => {
             const created = new Date(order.created_at);
-            let days = 0;
-            if (order.payment_terms.includes('30')) days = 30;
-            if (order.payment_terms.includes('15')) days = 15;
+            let days = order.payment_terms?.includes('30') ? 30 : 0;
             const dueDate = new Date(created);
             dueDate.setDate(created.getDate() + days);
             const isOverdue = new Date() > dueDate && Number(order.paid_amount) < Number(order.total);
             const profit = Number(order.total) - Number(order.cost_total);
-            const profitMargin = order.total > 0 ? (profit / Number(order.total)) * 100 : 0;
             return {
                 ...order,
-                clientName: order.clientName,
-                clientPhone: order.clientPhone,
                 paidAmount: Number(order.paid_amount),
                 dueDate: dueDate.toISOString(),
                 isOverdue,
-                profitMargin,
+                profitMargin: order.total > 0 ? (profit / Number(order.total)) * 100 : 0,
                 commission: profit * 0.10
             };
         });
-        res.json(enrichedOrders);
+        res.json(enrichedOrders || []);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/orders/:id/remind', async (req, res) => {
-    const { id } = req.params;
+// Configuración Pública
+app.get('/api/settings/public', async (req, res) => {
     try {
-        const r = await db.query(`
-            SELECT o.*, c.name as "clientName", c.phone as "clientPhone"
-            FROM orders o
-            JOIN clients c ON o.client_id = c.id
-            WHERE o.id = $1
-        `, [id]);
-        const order = r.rows[0];
-        if (!order || !order.clientPhone) throw new Error("Datos insuficientes para el recordatorio.");
-        const balance = Number(order.total) - Number(order.paid_amount);
-        const message = `Hola ${order.clientName}, de SuperAir. 👋 Te recordamos que tienes un saldo pendiente de $${balance.toLocaleString()} MXN correspondiente a la orden #${order.id}. ¿Gustas que te apoyemos con los datos de transferencia? 🌬️`;
-        await sendWhatsApp(order.clientPhone, message);
-        res.json({ success: true, message: "Recordatorio enviado." });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+        const r = await db.query("SELECT data FROM app_settings WHERE category = 'general_info'");
+        res.json(r.rows[0]?.data || { companyName: 'SuperAir', isMaintenance: false });
+    } catch (e) { res.json({ companyName: 'SuperAir', isMaintenance: false }); }
 });
 
-app.post('/api/orders/:id/close-technical', async (req, res) => {
-    const { id } = req.params;
-    const { evidenceUrl } = req.body;
-    try {
-        if (!evidenceUrl) throw new Error("Se requiere la URL de la evidencia fotográfica.");
-        await db.query("UPDATE orders SET evidence_url = $1, technical_closed_at = NOW() WHERE id = $2", [evidenceUrl, id]);
-        res.json({ success: true, message: "Evidencia registrada. Orden lista para auditoría final." });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
+// Health Check
+app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
-
-app.listen(3000, () => console.log('🚀 SuperAir Backend running on port 3000'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 SuperAir Backend running on port ${PORT}`));
