@@ -2,6 +2,7 @@
   "name": "SuperAir ERP & CMS",
   "description": "Comprehensive HVAC management system including a landing page builder, CRM, inventory, quotes, and installation scheduling with AI assistance.",
   "requestFramePermissions": [
-    "geolocation"
+    "geolocation",
+    "camera"
   ]
 }

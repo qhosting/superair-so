@@ -48,7 +48,6 @@ export interface Client {
   ltv?: number;
 }
 
-/* Fix: Added ClientAsset interface used in Clients.tsx */
 export interface ClientAsset {
     id: string;
     brand: string;
@@ -67,7 +66,6 @@ export enum PaymentTerms {
   CASH = 'Contado'
 }
 
-/* Fix: Added QuoteItemCategory and QuoteItem interfaces used in Quotes.tsx */
 export type QuoteItemCategory = 'Equipos' | 'Materiales' | 'Mano de Obra';
 
 export interface QuoteItem {
@@ -79,7 +77,6 @@ export interface QuoteItem {
     category: QuoteItemCategory;
 }
 
-/* Fix: Added Quote interface used in Dashboard.tsx, Quotes.tsx and PublicQuoteView.tsx */
 export interface Quote {
     id: string | number;
     clientId: string | number;
@@ -125,16 +122,7 @@ export interface Order {
 }
 
 // --- INVENTORY & LOGISTICS ---
-export interface Vendor {
-  id: string | number;
-  name: string;
-  rfc?: string;
-  email?: string;
-  phone?: string;
-  credit_days: number;
-  current_balance: number;
-  status: 'Activo' | 'Suspendido';
-}
+export type UnitOfMeasure = 'Pza' | 'Kg' | 'Mts' | 'Lto' | 'Jgo';
 
 export interface Product {
   id: string | number;
@@ -147,10 +135,33 @@ export interface Product {
   min_stock: number;
   category: string;
   type: 'product' | 'service';
+  unit_of_measure: UnitOfMeasure;
   requires_serial?: boolean;
 }
 
-/* Fix: Added Purchase interface used in Purchases.tsx */
+export interface InventoryMovement {
+    id: string | number;
+    product_id: string | number;
+    type: 'Entrada' | 'Salida' | 'Ajuste' | 'Merma';
+    quantity: number;
+    reason: string;
+    user_name: string;
+    created_at: string;
+}
+
+// --- VENDORS & PURCHASES ---
+// Adding missing Vendor interface to resolve import error in modules/Purchases.tsx
+export interface Vendor {
+  id: string | number;
+  name: string;
+  rfc?: string;
+  phone?: string;
+  email?: string;
+  status: 'Activo' | 'Inactivo';
+  credit_days: number;
+  current_balance?: number;
+}
+
 export interface Purchase {
     id: string | number;
     vendor_id: string | number;
@@ -163,7 +174,6 @@ export interface Purchase {
     created_at: string;
 }
 
-/* Fix: Updated Warehouse interface to include responsible party information */
 export interface Warehouse {
   id: string;
   name: string;
@@ -184,7 +194,6 @@ export interface FiscalData {
 }
 
 // --- LEADS ---
-/* Fix: Added LeadStatus and LeadHistoryItem and updated Lead interface used in Leads.tsx */
 export type LeadStatus = 'Nuevo' | 'Contactado' | 'Calificado' | 'Cotizado' | 'Ganado' | 'Perdido';
 
 export interface LeadHistoryItem {
@@ -209,9 +218,8 @@ export interface Lead {
 }
 
 // --- APPOINTMENTS ---
-/* Fix: Expanded Appointment interface to match Appointments.tsx usage */
 export interface Appointment {
-  id: string;
+  id: string | number;
   client_id: string | number;
   client_name: string;
   date: string;
@@ -223,7 +231,6 @@ export interface Appointment {
 }
 
 // --- CMS ---
-/* Fix: Added SectionType, LandingSectionItem and expanded LandingSection used in LandingBuilder.tsx and LandingPage.tsx */
 export type SectionType = 'hero' | 'services' | 'cta';
 
 export interface LandingSectionItem {
@@ -245,7 +252,6 @@ export interface LandingSection {
 }
 
 // --- MANUAL ---
-/* Fix: Updated ManualArticle interface to include category and other missing fields */
 export interface ManualArticle {
   id: string;
   title: string;
