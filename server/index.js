@@ -1,10 +1,11 @@
+
 import express from 'express';
 import * as db from './db.js';
 import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,18 +54,73 @@ app.post('/api/leads', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/leads/:id/convert', async (req, res) => {
-    const leadId = req.params.id;
+// --- CLIENTS & 360 VIEW ---
+app.get('/api/clients', async (req, res) => {
     try {
-        const leadRes = await db.query("SELECT * FROM leads WHERE id = $1", [leadId]);
-        if (leadRes.rows.length === 0) return res.status(404).json({ error: 'Lead no encontrado' });
-        const lead = leadRes.rows[0];
-        const clientRes = await db.query(
-            "INSERT INTO clients (name, email, phone, status, type) VALUES ($1, $2, $3, $4, $5) RETURNING *",
-            [lead.name, lead.email, lead.phone, 'Activo', 'Residencial']
+        const result = await db.query("SELECT * FROM clients ORDER BY name ASC");
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/clients/:id/360', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const clientRes = await db.query("SELECT * FROM clients WHERE id = $1", [id]);
+        const assetsRes = await db.query("SELECT * FROM client_assets WHERE client_id = $1", [id]);
+        const quotesRes = await db.query("SELECT * FROM quotes WHERE client_id = $1 ORDER BY created_at DESC", [id]);
+        const apptsRes = await db.query("SELECT * FROM appointments WHERE client_id = $1 ORDER BY date DESC", [id]);
+
+        res.json({
+            client: clientRes.rows[0],
+            assets: assetsRes.rows,
+            quotes: quotesRes.rows,
+            appointments: apptsRes.rows
+        });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/clients', async (req, res) => {
+    const { name, email, phone, address, rfc, type } = req.body;
+    try {
+        const result = await db.query(
+            "INSERT INTO clients (name, email, phone, address, rfc, type) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+            [name, email, phone, address, rfc, type]
         );
-        await db.query("UPDATE leads SET status = 'Ganado', updated_at = NOW() WHERE id = $1", [leadId]);
-        res.json(clientRes.rows[0]);
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/clients/:id/assets', async (req, res) => {
+    const { id } = req.params;
+    const { brand, model, btu, type, install_date } = req.body;
+    try {
+        const result = await db.query(
+            "INSERT INTO client_assets (client_id, brand, model, btu, type, install_date) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+            [id, brand, model, btu, type, install_date]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/clients/:id/ai-analysis', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const assets = await db.query("SELECT * FROM client_assets WHERE client_id = $1", [id]);
+        const client = await db.query("SELECT name FROM clients WHERE id = $1", [id]);
+        
+        const context = assets.rows.map(a => `${a.type} ${a.brand} ${a.btu}BTU (Instalado: ${a.install_date})`).join(', ');
+        
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: `Actúa como un Ingeniero Senior de HVAC de SuperAir México. 
+                      Cliente: ${client.rows[0].name}. 
+                      Equipos instalados: ${context}. 
+                      Estamos en temporada de olas de calor en México. 
+                      Genera un diagnóstico técnico proactivo de 3 puntos sobre qué equipos corren más riesgo y por qué necesitan mantenimiento preventivo urgente. 
+                      Usa un tono profesional y alarmante pero justificado.`
+        });
+        
+        res.json({ analysis: response.text });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -97,49 +153,12 @@ app.get('/api/warehouses', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/inventory/levels/:id', async (req, res) => {
-    // Simulando niveles por almacén. En producción usar tabla relacional warehouse_products
-    try {
-        const result = await db.query("SELECT * FROM products");
-        res.json(result.rows);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// --- MANUALES CON IA ---
-app.get('/api/manuals', async (req, res) => {
-    try {
-        // Asumiendo tabla manual_articles (crear si no existe en init.sql)
-        const result = await db.query("SELECT * FROM cms_content WHERE id = 999"); // Mock o usar tabla real
-        res.json([]); // Retornar vacío si no hay tabla aún
-    } catch (e) { res.json([]); }
-});
-
-app.post('/api/manuals/ai-generate', async (req, res) => {
-    const { topic, category } = req.body;
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: `Genera un protocolo técnico detallado para SuperAir sobre: ${topic} en la categoría ${category}. Formato profesional.`
-        });
-        res.json({ content: response.text });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
 // --- SEGURIDAD & USUARIOS ---
 app.get('/api/users', async (req, res) => {
     try {
         const result = await db.query("SELECT id, name, email, role, status FROM users");
         res.json(result.rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/security/health', (req, res) => {
-    res.json({
-        score: 85,
-        issues: [
-            { severity: 'low', title: 'Contraseñas por expirar', description: '3 usuarios no han cambiado clave en 90 días.' }
-        ]
-    });
 });
 
 // --- COTIZACIONES & CITAS ---
@@ -153,13 +172,6 @@ app.get('/api/quotes', async (req, res) => {
 app.get('/api/appointments', async (req, res) => {
     try {
         const result = await db.query("SELECT a.*, c.name as client_name FROM appointments a JOIN clients c ON a.client_id = c.id");
-        res.json(result.rows);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/clients', async (req, res) => {
-    try {
-        const result = await db.query("SELECT * FROM clients");
         res.json(result.rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });

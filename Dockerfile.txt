@@ -4,14 +4,16 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Argumentos de construcción para inyectar variables en el build de Vite
-# Vite requiere las variables de entorno en tiempo de compilación para embeberlas
 ARG API_KEY
 ENV API_KEY=$API_KEY
 
-# Configuración de resiliencia para NPM (Previene ECONNRESET en redes inestables)
-RUN npm config set fetch-retries 5 && \
-    npm config set fetch-retry-mintimeout 20000 && \
-    npm config set fetch-retry-maxtimeout 120000 && \
+# Configuración de resiliencia para NPM - Etapa de Construcción
+RUN npm config set fetch-retries 10 && \
+    npm config set fetch-retry-mintimeout 30000 && \
+    npm config set fetch-retry-maxtimeout 180000 && \
+    npm config set fetch-timeout 600000 && \
+    npm config set network-timeout 600000 && \
+    npm config set maxsockets 5 && \
     npm config set loglevel warn
 
 # Instalación de dependencias de construcción
@@ -40,7 +42,16 @@ ENV API_KEY=$API_KEY
 # Directorios de persistencia para uploads (evidencias, logos)
 RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 
-# Instalación de dependencias de producción únicamente para optimizar imagen
+# Configuración de resiliencia para NPM - Etapa de Producción (Evita ECONNRESET aquí también)
+RUN npm config set fetch-retries 10 && \
+    npm config set fetch-retry-mintimeout 30000 && \
+    npm config set fetch-retry-maxtimeout 180000 && \
+    npm config set fetch-timeout 600000 && \
+    npm config set network-timeout 600000 && \
+    npm config set maxsockets 3 && \
+    npm config set loglevel warn
+
+# Instalación de dependencias de producción únicamente
 COPY --chown=node:node package*.json ./
 RUN npm install --omit=dev
 
