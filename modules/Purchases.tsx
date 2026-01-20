@@ -26,6 +26,10 @@ const Purchases: React.FC = () => {
       vendor_id: '', warehouse_id: '1', status: 'Borrador', items: [] as any[], total: 0, fiscal_uuid: ''
   });
 
+  const [vendorForm, setVendorForm] = useState({
+      name: '', rfc: '', email: '', phone: '', credit_days: 0
+  });
+
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -61,13 +65,28 @@ const Purchases: React.FC = () => {
       finally { setAiLoading(false); }
   };
 
+  const handleSaveVendor = async () => {
+      try {
+          const res = await fetch('/api/vendors', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify(vendorForm)
+          });
+          if (res.ok) {
+              setShowVendorModal(false);
+              fetchData();
+              setVendorForm({ name: '', rfc: '', email: '', phone: '', credit_days: 0 });
+          }
+      } catch (e) { console.error(e); }
+  };
+
   const receivePurchase = async (id: string | number) => {
       if (!confirm("¿Confirmar recepción? Esto afectará stock y costos promedio.")) return;
       setLoading(true);
       try {
           const res = await fetch(`/api/purchases/${id}/receive`, { method: 'POST' });
           if (res.ok) {
-              alert("Mercancía recibida. Costos recalculados.");
+              alert("Mercancía recibida. Stock actualizado.");
               fetchData();
           }
       } catch (e) { console.error(e); }
@@ -95,7 +114,7 @@ const Purchases: React.FC = () => {
                   <button onClick={handleAISuggest} disabled={aiLoading} className="px-6 py-3 bg-indigo-50 text-indigo-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-100 transition-all flex items-center gap-2 border border-indigo-100">
                       {aiLoading ? <Loader2 className="animate-spin" size={14}/> : <BrainCircuit size={16} />} Sugerir Faltantes (IA)
                   </button>
-                  <button onClick={() => setShowPurchaseModal(true)} className="px-8 py-3 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-sky-600 transition-all shadow-xl">
+                  <button onClick={() => { setPurchaseForm({ vendor_id:'', warehouse_id:'1', status:'Borrador', items:[], total:0, fiscal_uuid:'' }); setShowPurchaseModal(true); }} className="px-8 py-3 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-sky-600 transition-all shadow-xl">
                       <Plus size={18} /> Nueva Compra
                   </button>
               </div>
@@ -171,10 +190,39 @@ const Purchases: React.FC = () => {
                       </div>
                   </div>
               ))}
-              <button onClick={() => setShowVendorModal(true)} className="border-2 border-dashed border-slate-200 rounded-[2.5rem] p-10 flex flex-col items-center justify-center gap-4 text-slate-300 hover:text-sky-600 hover:border-sky-300 transition-all bg-slate-50/30">
+              <button onClick={() => setShowVendorModal(true)} className="border-2 border-dashed border-slate-200 rounded-[2.5rem] p-10 flex flex-col items-center justify-center gap-4 text-slate-300 hover:text-sky-600 hover:border-sky-300 transition-all bg-slate-50/30 min-h-[250px]">
                   <Plus size={48} />
                   <span className="font-black uppercase text-xs tracking-widest">Añadir Socio Comercial</span>
               </button>
+          </div>
+      )}
+
+      {/* MODAL PROVEEDOR */}
+      {showVendorModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6">
+              <div className="bg-white w-full max-w-lg rounded-[3rem] shadow-2xl p-10 animate-in zoom-in duration-300">
+                  <div className="flex justify-between items-center mb-8">
+                      <h3 className="text-2xl font-black text-slate-900 uppercase">Alta de Proveedor</h3>
+                      <button onClick={() => setShowVendorModal(false)}><X className="text-slate-400"/></button>
+                  </div>
+                  <div className="space-y-6">
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Razón Social</label>
+                          <input className="w-full p-4 bg-slate-50 border rounded-2xl font-bold" value={vendorForm.name} onChange={e=>setVendorForm({...vendorForm, name: e.target.value})} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">RFC</label>
+                              <input className="w-full p-4 bg-slate-50 border rounded-2xl font-bold uppercase" value={vendorForm.rfc} onChange={e=>setVendorForm({...vendorForm, rfc: e.target.value})} />
+                          </div>
+                          <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Días de Crédito</label>
+                              <input type="number" className="w-full p-4 bg-slate-50 border rounded-2xl font-bold" value={vendorForm.credit_days} onChange={e=>setVendorForm({...vendorForm, credit_days: parseInt(e.target.value)})} />
+                          </div>
+                      </div>
+                      <button onClick={handleSaveVendor} className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs shadow-xl">Guardar Proveedor</button>
+                  </div>
+              </div>
           </div>
       )}
 
@@ -214,7 +262,6 @@ const Purchases: React.FC = () => {
                                       <option value="">No vincular todavía...</option>
                                       {fiscalInbox.map(f => <option key={f.uuid} value={f.uuid}>{f.legalName} - {formatCurrency(f.amount)}</option>)}
                                   </select>
-                                  <button onClick={() => setShowFiscalVault(true)} className="p-4 bg-white border rounded-2xl hover:bg-slate-50 transition-all shadow-sm"><Search size={20}/></button>
                               </div>
                           </div>
                       </div>
@@ -241,7 +288,7 @@ const Purchases: React.FC = () => {
                                       <div className="col-span-2">
                                           <input type="number" placeholder="Cant" className="w-full p-3 bg-white border border-slate-200 rounded-xl text-center font-black" value={item.quantity} onChange={e => {
                                               const newItems = [...purchaseForm.items];
-                                              newItems[idx].quantity = e.target.value;
+                                              newItems[idx].quantity = parseInt(e.target.value);
                                               setPurchaseForm({ ...purchaseForm, items: newItems });
                                           }}/>
                                       </div>
@@ -250,7 +297,7 @@ const Purchases: React.FC = () => {
                                               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">$</span>
                                               <input type="number" placeholder="Costo" className="w-full pl-7 p-3 bg-white border border-slate-200 rounded-xl font-bold" value={item.cost} onChange={e => {
                                                   const newItems = [...purchaseForm.items];
-                                                  newItems[idx].cost = e.target.value;
+                                                  newItems[idx].cost = parseFloat(e.target.value);
                                                   setPurchaseForm({ ...purchaseForm, items: newItems });
                                               }}/>
                                           </div>

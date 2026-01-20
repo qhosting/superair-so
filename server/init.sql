@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS products (
     price DECIMAL(12,2) NOT NULL,
     cost DECIMAL(12,2) NOT NULL,
     stock DECIMAL(12,2) DEFAULT 0,
+    min_stock DECIMAL(12,2) DEFAULT 5,
     category VARCHAR(100),
     unit_of_measure VARCHAR(20) DEFAULT 'Pza'
 );
@@ -52,6 +53,39 @@ CREATE TABLE IF NOT EXISTS warehouses (
     name VARCHAR(255) NOT NULL,
     type VARCHAR(50) DEFAULT 'Unidad Móvil',
     responsible_id INTEGER REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS vendors (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    rfc VARCHAR(15),
+    email VARCHAR(255),
+    phone VARCHAR(20),
+    credit_days INTEGER DEFAULT 0,
+    current_balance DECIMAL(12,2) DEFAULT 0,
+    status VARCHAR(20) DEFAULT 'Activo'
+);
+
+CREATE TABLE IF NOT EXISTS purchases (
+    id SERIAL PRIMARY KEY,
+    vendor_id INTEGER REFERENCES vendors(id),
+    warehouse_id INTEGER REFERENCES warehouses(id),
+    total DECIMAL(12,2) NOT NULL,
+    status VARCHAR(50) DEFAULT 'Borrador',
+    fiscal_uuid VARCHAR(100),
+    items JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS fiscal_inbox (
+    id SERIAL PRIMARY KEY,
+    uuid VARCHAR(100) UNIQUE,
+    rfc_emitter VARCHAR(15),
+    legal_name VARCHAR(255),
+    amount DECIMAL(12,2),
+    xml_url TEXT,
+    status VARCHAR(20) DEFAULT 'Unlinked',
+    created_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS quotes (
@@ -101,6 +135,8 @@ CREATE TABLE IF NOT EXISTS cms_content (
 INSERT INTO users (name, email, password, role, status) 
 VALUES ('Admin SuperAir', 'admin@superair.com.mx', 'admin123', 'Super Admin', 'Activo')
 ON CONFLICT DO NOTHING;
+
+INSERT INTO warehouses (name, type) VALUES ('Almacén Central Queretaro', 'Central') ON CONFLICT DO NOTHING;
 
 INSERT INTO app_settings (category, data) 
 VALUES ('general_info', '{"companyName": "SuperAir", "isMaintenance": false}')
