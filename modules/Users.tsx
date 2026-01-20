@@ -5,17 +5,17 @@ import {
   Lock, Eye, X, ShieldCheck, ShieldAlert, Activity, Trash2, Mail, User as UserIcon, 
   Check, ChevronRight, Fingerprint, Loader2, Edit3, ToggleLeft, ToggleRight, 
   FileText, Users as UsersIcon, Package, Calendar, DollarSign, Save, Ghost, HeartPulse,
-  AlertTriangle, ArrowRight, Monitor, History, Terminal
+  AlertTriangle, ArrowRight, Monitor, History, Terminal, CheckCircle2
 } from 'lucide-react';
 import { User, UserRole, AuditLog, SecurityHealth } from '../types';
 import { useAuth } from '../context/AuthContext';
 
-const INITIAL_PERMISSIONS = {
-    [UserRole.SUPER_ADMIN]: { clients: 'full', quotes: 'full', inventory: 'full', users: 'full' },
-    [UserRole.ADMIN]: { clients: 'full', quotes: 'full', inventory: 'edit', users: 'view' },
-    [UserRole.INSTALLER]: { clients: 'view', quotes: 'none', inventory: 'view', users: 'none' },
-    [UserRole.CLIENT]: { clients: 'none', quotes: 'view', inventory: 'none', users: 'none' }
-};
+const INITIAL_PERMISSIONS = [
+    { module: 'Ventas', roles: { [UserRole.SUPER_ADMIN]: 'Full', [UserRole.ADMIN]: 'Edit', [UserRole.INSTALLER]: 'None', [UserRole.CLIENT]: 'View' } },
+    { module: 'Inventario', roles: { [UserRole.SUPER_ADMIN]: 'Full', [UserRole.ADMIN]: 'Edit', [UserRole.INSTALLER]: 'View', [UserRole.CLIENT]: 'None' } },
+    { module: 'Usuarios', roles: { [UserRole.SUPER_ADMIN]: 'Full', [UserRole.ADMIN]: 'View', [UserRole.INSTALLER]: 'None', [UserRole.CLIENT]: 'None' } },
+    { module: 'Reportes', roles: { [UserRole.SUPER_ADMIN]: 'Full', [UserRole.ADMIN]: 'Full', [UserRole.INSTALLER]: 'None', [UserRole.CLIENT]: 'None' } },
+];
 
 const Users: React.FC = () => {
   const { user: currentUser, login } = useAuth();
@@ -31,9 +31,6 @@ const Users: React.FC = () => {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [securityHealth, setSecurityHealth] = useState<SecurityHealth | null>(null);
   const [loading, setLoading] = useState(true);
-  const [permissions, setPermissions] = useState(INITIAL_PERMISSIONS);
-  const [selectedRoleForPerms, setSelectedRoleForPerms] = useState<UserRole>(UserRole.ADMIN);
-  const [savingPerms, setSavingPerms] = useState(false);
   const [isImpersonating, setIsImpersonating] = useState<string | null>(null);
 
   // Form State
@@ -89,8 +86,8 @@ const Users: React.FC = () => {
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
-      case UserRole.SUPER_ADMIN: return 'bg-purple-100 text-purple-700 border-purple-200';
-      case UserRole.ADMIN: return 'bg-blue-50 text-blue-700 border-blue-200';
+      case UserRole.SUPER_ADMIN: return 'bg-slate-900 text-white border-slate-900';
+      case UserRole.ADMIN: return 'bg-sky-50 text-sky-700 border-sky-200';
       case UserRole.INSTALLER: return 'bg-amber-50 text-amber-700 border-amber-200';
       case UserRole.CLIENT: return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       default: return 'bg-slate-50 text-slate-600 border-slate-200';
@@ -177,7 +174,7 @@ const Users: React.FC = () => {
                                 </div>
                             </td>
                             <td className="px-8 py-5">
-                                <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getRoleBadgeColor(user.role)}`}>
+                                <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${getRoleBadgeColor(user.role)}`}>
                                 {user.role}
                                 </span>
                             </td>
@@ -288,7 +285,7 @@ const Users: React.FC = () => {
          </div>
       </div>
 
-      {/* Permissions Modal */}
+      {/* Permissions Matrix Modal */}
       {showPermissionsModal && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[120] flex items-center justify-center p-6">
             <div className="bg-white w-full max-w-4xl rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300 flex flex-col max-h-[90vh]">
@@ -299,9 +296,46 @@ const Users: React.FC = () => {
                     </div>
                     <button onClick={() => setShowPermissionsModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all"><X size={24}/></button>
                 </div>
-                <div className="flex-1 overflow-y-auto p-10">
-                    {/* ... (Contenido de matriz de permisos) ... */}
-                    <p className="text-slate-400 text-center text-xs uppercase tracking-widest font-black py-20">Control de privilegios por módulo</p>
+                <div className="flex-1 overflow-y-auto p-10 custom-scrollbar">
+                    <table className="w-full text-left">
+                        <thead>
+                            <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                <th className="pb-6">Módulo / Capacidad</th>
+                                {Object.values(UserRole).map(role => (
+                                    <th key={role} className="pb-6 text-center">{role}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {INITIAL_PERMISSIONS.map(row => (
+                                <tr key={row.module} className="group hover:bg-slate-50 transition-colors">
+                                    <td className="py-6 font-bold text-slate-800 uppercase tracking-tight text-sm">{row.module}</td>
+                                    {Object.values(UserRole).map(role => (
+                                        <td key={role} className="py-6 text-center">
+                                            <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${
+                                                row.roles[role] === 'Full' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                                                row.roles[role] === 'Edit' ? 'bg-sky-50 text-sky-600 border-sky-100' :
+                                                row.roles[role] === 'View' ? 'bg-slate-50 text-slate-400 border-slate-100' :
+                                                'bg-slate-100 text-slate-300 border-transparent opacity-30'
+                                            }`}>
+                                                {row.roles[role]}
+                                            </span>
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    
+                    <div className="mt-12 p-8 bg-slate-900 rounded-[2rem] text-white">
+                        <div className="flex items-center gap-4 mb-4">
+                            <Lock className="text-sky-400" size={24}/>
+                            <h4 className="font-black uppercase text-sm">Política de Privacidad de Datos</h4>
+                        </div>
+                        <p className="text-xs text-slate-400 leading-relaxed font-medium">
+                            La edición de esta matriz está restringida al rol **Super Admin**. Cualquier cambio generará una alerta de seguridad nivel 5 y notificará a la dirección general vía cifrado.
+                        </p>
+                    </div>
                 </div>
             </div>
           </div>

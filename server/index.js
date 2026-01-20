@@ -1,7 +1,6 @@
 
 import express from 'express';
 import * as db from './db.js';
-import * as services from './services.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -17,7 +16,59 @@ db.initDatabase();
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// --- CMS & BUILDER ENDPOINTS ---
+// --- CONFIGURACIONES (SETTINGS) ---
+
+// Obtener todas las configuraciones para el panel de admin
+app.get('/api/settings', async (req, res) => {
+    try {
+        const result = await db.query("SELECT category, data FROM app_settings");
+        const settings = {};
+        result.rows.forEach(row => {
+            settings[row.category] = row.data;
+        });
+        res.json(settings);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Obtener configuraciones públicas (Logo, Nombre, Maintenance) para la Landing
+app.get('/api/settings/public', async (req, res) => {
+    try {
+        const result = await db.query("SELECT category, data FROM app_settings WHERE category IN ('general_info', 'quote_design')");
+        const publicSettings = {};
+        result.rows.forEach(row => {
+            if (row.category === 'general_info') {
+                publicSettings.companyName = row.data.companyName;
+                publicSettings.logoUrl = row.data.logoUrl;
+                publicSettings.isMaintenance = row.data.isMaintenance;
+            }
+            if (row.category === 'quote_design') {
+                publicSettings.quote_design = row.data;
+            }
+        });
+        res.json(publicSettings);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Guardar configuración por categoría
+app.post('/api/settings', async (req, res) => {
+    const { category, data } = req.body;
+    try {
+        await db.query(
+            "INSERT INTO app_settings (category, data) VALUES ($1, $2) ON CONFLICT (category) DO UPDATE SET data = $2",
+            [category, JSON.stringify(data)]
+        );
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Mock de subida de archivos para logos (En producción usar S3 o Cloudinary)
+app.post('/api/upload', (req, res) => {
+    // Por brevedad, simulamos la subida devolviendo una URL base64 o placeholder
+    // En una implementación real se usaría multer y se guardaría el buffer
+    res.json({ url: 'https://cdn-icons-png.flaticon.com/512/1169/1169382.png', status: 'success' });
+});
+
+// --- CMS & MANUALS (EXISTENTES) ---
 
 app.get('/api/cms/content', async (req, res) => {
     try {
@@ -37,28 +88,19 @@ app.post('/api/cms/content', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// AI: Copywriter para el Builder
-app.post('/api/ai/copywrite', async (req, res) => {
-    const { field, context, currentText } = req.body;
+app.get('/api/manuals', async (req, res) => {
+    const userId = req.headers['x-user-id'] || 0;
     try {
-        const prompt = `Actúa como un experto en Marketing para empresas de Aire Acondicionado (SuperAir).
-        Mejora el siguiente texto para un sitio web profesional.
-        Campo: ${field} (ej: Título, Subtítulo)
-        Contexto de la sección: ${context}
-        Texto actual: "${currentText}"
-        Reglas: Debe ser persuasivo, técnico y breve. Máximo 15 palabras para títulos, 30 para subtítulos.
-        Responde solo con el texto mejorado, sin comillas.`;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: prompt
-        });
-
-        res.json({ improvedText: response.text.trim() });
+        const result = await db.query(`
+            SELECT a.*, 
+            EXISTS(SELECT 1 FROM manual_reads r WHERE r.article_id = a.id AND r.user_id = $1) as is_read
+            FROM manual_articles a 
+            ORDER BY a.updated_at DESC
+        `, [userId]);
+        res.json(result.rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- OTROS ENDPOINTS (MANTENIDOS) ---
 app.get('/api/health', (req, res) => res.json({ status: 'active', db: 'connected' }));
 
 const distPath = path.join(__dirname, '../dist');
