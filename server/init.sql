@@ -1,5 +1,5 @@
 
--- --- TABLAS MAESTRAS ---
+-- --- TABLAS MAESTRAS (EXISTENTES Y NUEVAS) ---
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -8,19 +8,6 @@ CREATE TABLE IF NOT EXISTS users (
     role VARCHAR(50) DEFAULT 'Instalador',
     status VARCHAR(20) DEFAULT 'Activo',
     created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS leads (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    email VARCHAR(255),
-    phone VARCHAR(20),
-    source VARCHAR(50) DEFAULT 'Web',
-    status VARCHAR(50) DEFAULT 'Nuevo',
-    notes TEXT,
-    history JSONB DEFAULT '[]',
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS clients (
@@ -55,36 +42,36 @@ CREATE TABLE IF NOT EXISTS warehouses (
     responsible_id INTEGER REFERENCES users(id)
 );
 
-CREATE TABLE IF NOT EXISTS vendors (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    rfc VARCHAR(15),
-    email VARCHAR(255),
-    phone VARCHAR(20),
-    credit_days INTEGER DEFAULT 0,
-    current_balance DECIMAL(12,2) DEFAULT 0,
-    status VARCHAR(20) DEFAULT 'Activo'
+-- NUEVA: Control de existencias por ubicación específica
+CREATE TABLE IF NOT EXISTS warehouse_inventory (
+    warehouse_id INTEGER REFERENCES warehouses(id),
+    product_id INTEGER REFERENCES products(id),
+    stock DECIMAL(12,2) DEFAULT 0,
+    PRIMARY KEY (warehouse_id, product_id)
 );
 
-CREATE TABLE IF NOT EXISTS purchases (
+-- NUEVA: Plantillas de carga (Kits)
+CREATE TABLE IF NOT EXISTS inventory_kits (
     id SERIAL PRIMARY KEY,
-    vendor_id INTEGER REFERENCES vendors(id),
-    warehouse_id INTEGER REFERENCES warehouses(id),
-    total DECIMAL(12,2) NOT NULL,
-    status VARCHAR(50) DEFAULT 'Borrador',
-    fiscal_uuid VARCHAR(100),
-    items JSONB,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS fiscal_inbox (
+CREATE TABLE IF NOT EXISTS inventory_kit_items (
+    kit_id INTEGER REFERENCES inventory_kits(id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES products(id),
+    quantity DECIMAL(12,2) NOT NULL,
+    PRIMARY KEY (kit_id, product_id)
+);
+
+-- NUEVA: Registro de movimientos entre almacenes
+CREATE TABLE IF NOT EXISTS inventory_transfers (
     id SERIAL PRIMARY KEY,
-    uuid VARCHAR(100) UNIQUE,
-    rfc_emitter VARCHAR(15),
-    legal_name VARCHAR(255),
-    amount DECIMAL(12,2),
-    xml_url TEXT,
-    status VARCHAR(20) DEFAULT 'Unlinked',
+    from_warehouse_id INTEGER REFERENCES warehouses(id),
+    to_warehouse_id INTEGER REFERENCES warehouses(id),
+    status VARCHAR(50) DEFAULT 'Pendiente',
+    items JSONB NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -100,32 +87,6 @@ CREATE TABLE IF NOT EXISTS quotes (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS orders (
-    id SERIAL PRIMARY KEY,
-    quote_id INTEGER REFERENCES quotes(id),
-    client_id INTEGER REFERENCES clients(id),
-    client_name VARCHAR(255),
-    total DECIMAL(12,2) NOT NULL,
-    paid_amount DECIMAL(12,2) DEFAULT 0,
-    cost_total DECIMAL(12,2) DEFAULT 0,
-    status VARCHAR(50) DEFAULT 'Pendiente',
-    payment_terms TEXT,
-    evidence_url TEXT,
-    due_date DATE,
-    profit_margin DECIMAL(5,2),
-    commission DECIMAL(12,2) DEFAULT 0,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS order_payments (
-    id SERIAL PRIMARY KEY,
-    order_id INTEGER REFERENCES orders(id),
-    amount DECIMAL(12,2) NOT NULL,
-    method VARCHAR(50),
-    reference VARCHAR(100),
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
 CREATE TABLE IF NOT EXISTS appointments (
     id SERIAL PRIMARY KEY,
     client_id INTEGER REFERENCES clients(id),
@@ -136,25 +97,9 @@ CREATE TABLE IF NOT EXISTS appointments (
     status VARCHAR(50) DEFAULT 'Programada'
 );
 
-CREATE TABLE IF NOT EXISTS client_assets (
-    id SERIAL PRIMARY KEY,
-    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
-    brand VARCHAR(100),
-    model VARCHAR(100),
-    btu INTEGER,
-    type VARCHAR(50),
-    install_date DATE
-);
-
 CREATE TABLE IF NOT EXISTS app_settings (
     category VARCHAR(50) PRIMARY KEY,
     data JSONB NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS cms_content (
-    id SERIAL PRIMARY KEY,
-    content JSONB NOT NULL,
-    updated_at TIMESTAMP DEFAULT NOW()
 );
 
 -- --- DATOS DE ARRANQUE ---
