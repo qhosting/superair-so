@@ -4,7 +4,7 @@ import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Clock, 
   MapPin, User, ExternalLink, X, Truck, Wrench, Camera, ClipboardList, 
   Phone, MessageSquare, Loader2, CheckCircle2, AlertTriangle, CalendarCheck, Edit3, Save,
-  Briefcase, RefreshCw, Link as LinkIcon, Globe
+  Briefcase, RefreshCw, Link as LinkIcon, Globe, Navigation
 } from 'lucide-react';
 import { Appointment, User as UserType, UserRole } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -16,20 +16,14 @@ const Appointments: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedApt, setSelectedApt] = useState<any | null>(null);
   const [showNewAptModal, setShowNewAptModal] = useState(false);
-  const [showIntegrations, setShowIntegrations] = useState(false);
   
-  // Filter & Edit State
   const isInstaller = user?.role === UserRole.INSTALLER;
   const [selectedTechFilter, setSelectedTechFilter] = useState(isInstaller ? user.name : 'Todos');
 
-  // Data State
   const [appointments, setAppointments] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [installers, setInstallers] = useState<UserType[]>([]);
-  
   const [loading, setLoading] = useState(true);
-  const [isGoogleConnected, setIsGoogleConnected] = useState(false);
-  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
 
   const [newApt, setNewApt] = useState({
       client_id: '',
@@ -38,74 +32,30 @@ const Appointments: React.FC = () => {
       time: '10:00',
       duration: 60,
       type: 'Instalación',
-      status: 'Programada'
+      notes: ''
   });
 
   const fetchData = async () => {
     setLoading(true);
     try {
-        const responses = await Promise.all([
+        const [aptsRes, cliRes, uRes] = await Promise.all([
             fetch('/api/appointments'),
             fetch('/api/clients'),
             fetch('/api/users')
         ]);
-        
-        const results = await Promise.all(responses.map(async r => {
-            if (!r.ok) return [];
-            try {
-                return await r.json();
-            } catch (e) {
-                console.error("Error parsing JSON from", r.url);
-                return [];
-            }
-        }));
-
-        const [aptsData, clientsData, usersData] = results;
-
-        setAppointments(Array.isArray(aptsData) ? aptsData : []);
-        setClients(Array.isArray(clientsData) ? clientsData : []);
-        
-        if (Array.isArray(usersData)) {
-            const techList = usersData.filter((u: any) => (u.role === 'Instalador' || u.role === 'Admin') && u.status === 'Activo');
-            setInstallers(techList);
-            if (!isInstaller && techList.length > 0 && !newApt.technician) {
-                setNewApt(prev => ({ ...prev, technician: techList[0].name }));
-            }
+        if (aptsRes.ok) setAppointments(await aptsRes.json());
+        if (cliRes.ok) setClients(await cliRes.json());
+        if (uRes.ok) {
+            const users = await uRes.json();
+            setInstallers(users.filter((u:any) => u.role === 'Instalador' || u.role === 'Admin'));
         }
-    } catch (e) {
-        console.error("Calendar fetch error:", e);
-        showToast("Error de conexión con el servidor de calendario.", "error");
-    } finally {
-        setLoading(false);
-    }
+    } catch (e) { showToast("Error cargando agenda", "error"); }
+    finally { setLoading(false); }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, [user, isInstaller]);
+  useEffect(() => { fetchData(); }, []);
 
-  const handleSaveAppointment = async () => {
-      if (!newApt.client_id || !newApt.technician) return;
-      try {
-          const payload = { 
-              ...newApt, 
-              client_id: parseInt(newApt.client_id, 10), 
-              duration: parseInt(newApt.duration.toString(), 10) || 60 
-          };
-          const res = await fetch('/api/appointments', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-          });
-          if(res.ok) {
-              showToast("Cita agendada correctamente");
-              fetchData();
-              setShowNewAptModal(false);
-          }
-      } catch(e) { showToast("Error al guardar la cita", "error"); }
-  };
-
-  const updateStatus = async (id: string, newStatus: string) => {
+  const updateStatus = async (id: string | number, newStatus: string) => {
       try {
           const res = await fetch(`/api/appointments/${id}`, {
               method: 'PUT',
@@ -113,220 +63,198 @@ const Appointments: React.FC = () => {
               body: JSON.stringify({ status: newStatus })
           });
           if (res.ok) {
-              setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
-              if (selectedApt && selectedApt.id === id) setSelectedApt((prev: any) => ({ ...prev, status: newStatus }));
-              showToast(`Servicio actualizado a: ${newStatus}`);
+              showToast(`Servicio ${newStatus === 'En Proceso' ? 'en camino' : 'completado'}`);
+              fetchData();
+              setSelectedApt(null);
           }
       } catch(e) { console.error(e); }
   };
 
+  // Calendar Logic
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
-  const monthName = new Intl.DateTimeFormat('es-MX', { month: 'long' }).format(currentDate);
-  const firstDayOfMonth = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDay = new Date(year, month, 1).getDay();
   
   const calendarDays = useMemo(() => {
     const days = [];
-    for (let i = 0; i < firstDayOfMonth; i++) days.push(null);
+    for (let i = 0; i < firstDay; i++) days.push(null);
     for (let i = 1; i <= daysInMonth; i++) days.push(i);
     return days;
-  }, [year, month, firstDayOfMonth, daysInMonth]);
-
-  const getAptsForDay = (day: number | null) => {
-    if (!day) return [];
-    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return appointments.filter(a => {
-        const aDate = a.date ? (typeof a.date === 'string' ? a.date.substring(0,10) : new Date(a.date).toISOString().substring(0,10)) : '';
-        const isSameDate = aDate === dateStr;
-        const isSameTech = selectedTechFilter === 'Todos' || a.technician === selectedTechFilter;
-        return isSameDate && isSameTech;
-    });
-  };
-
-  const getStatusColor = (status: string) => {
-    switch(status) {
-      case 'Completada': return 'bg-emerald-50 text-emerald-600 border-emerald-100';
-      case 'En Proceso': return 'bg-sky-50 text-sky-600 border-sky-100';
-      case 'Cancelada': return 'bg-rose-50 text-rose-600 border-rose-100';
-      default: return 'bg-amber-50 text-amber-600 border-amber-100';
-    }
-  };
+  }, [year, month, firstDay, daysInMonth]);
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-4 gap-8 h-full pb-20 relative">
-      <div className="xl:col-span-3 space-y-6">
-        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
-          <div className="flex flex-col md:flex-row items-center justify-between mb-10 gap-6">
-            <div>
-              <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter capitalize">{monthName} {year}</h2>
-              {!isInstaller && (
-                  <div className="flex items-center gap-4 mt-2">
-                    <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Filtro Técnico:</p>
-                    <select value={selectedTechFilter} onChange={e => setSelectedTechFilter(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-sky-500 transition-all">
-                        <option value="Todos">Todos los Técnicos</option>
-                        {installers.map(ins => <option key={ins.id} value={ins.name}>{ins.name}</option>)}
-                    </select>
-                  </div>
-              )}
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex bg-slate-100 p-1.5 rounded-2xl">
-                <button onClick={() => setCurrentDate(new Date(year, month - 1, 1))} className="p-3 hover:bg-white hover:shadow-lg rounded-xl transition-all text-slate-600"><ChevronLeft size={20} /></button>
-                <button onClick={() => setCurrentDate(new Date())} className="px-6 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-sky-600">Hoy</button>
-                <button onClick={() => setCurrentDate(new Date(year, month + 1, 1))} className="p-3 hover:bg-white hover:shadow-lg rounded-xl transition-all text-slate-600"><ChevronRight size={20} /></button>
+    <div className="space-y-8 pb-20 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+        <div>
+          <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter italic">Gestión de Campo</h2>
+          <p className="text-slate-500 text-sm font-medium">Cronograma de servicios técnicos y despacho de unidades.</p>
+        </div>
+        <div className="flex gap-3">
+            <select value={selectedTechFilter} onChange={e => setSelectedTechFilter(e.target.value)} className="px-6 py-3 bg-white border border-slate-200 rounded-2xl font-black uppercase text-[10px] tracking-widest outline-none">
+                <option value="Todos">Toda la Flota</option>
+                {installers.map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
+            </select>
+            <button onClick={() => setShowNewAptModal(true)} className="px-8 py-3 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-sky-600 transition-all shadow-xl">
+                Nueva Cita
+            </button>
+        </div>
+      </div>
+
+      <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between mb-10">
+              <h3 className="text-xl font-black uppercase tracking-tighter text-sky-600">{new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric' }).format(currentDate)}</h3>
+              <div className="flex bg-slate-100 p-1 rounded-xl">
+                  <button onClick={() => setCurrentDate(new Date(year, month - 1, 1))} className="p-2 hover:bg-white rounded-lg transition-all"><ChevronLeft size={18}/></button>
+                  <button onClick={() => setCurrentDate(new Date())} className="px-4 py-2 text-[10px] font-black uppercase">Hoy</button>
+                  <button onClick={() => setCurrentDate(new Date(year, month + 1, 1))} className="p-2 hover:bg-white rounded-lg transition-all"><ChevronRight size={18}/></button>
               </div>
-              {!isInstaller && (
-                  <button onClick={() => setShowNewAptModal(true)} className="flex items-center gap-2 px-8 py-3.5 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-sky-700 shadow-xl shadow-sky-600/20 transition-all">
-                    <Plus size={18} /> Nueva Cita
-                  </button>
-              )}
-            </div>
           </div>
 
-          {loading ? <div className="h-96 flex items-center justify-center bg-slate-50 rounded-[2rem]"><Loader2 className="animate-spin text-sky-600" size={32} /></div> : (
-            <div className="grid grid-cols-7 gap-px bg-slate-100 border border-slate-100 rounded-[2rem] overflow-hidden shadow-inner">
-                {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(day => <div key={day} className="bg-slate-50 py-4 text-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{day}</div>)}
-                {calendarDays.map((day, idx) => {
-                const dayApts = getAptsForDay(day);
-                const isToday = day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear();
-                return (
-                    <div key={idx} className={`bg-white h-40 p-4 group hover:bg-slate-50/80 transition-all cursor-pointer relative border-r border-b border-slate-50 ${!day ? 'bg-slate-50/30' : ''}`}>
-                    {day && (
-                        <>
-                        <span className={`text-sm font-black transition-all ${isToday ? 'bg-sky-600 text-white w-8 h-8 flex items-center justify-center rounded-xl shadow-lg' : 'text-slate-300 group-hover:text-slate-900'}`}>{day}</span>
-                        <div className="mt-3 space-y-1.5 overflow-y-auto max-h-[100px] custom-scrollbar">
-                            {dayApts.map(apt => (
-                            <div key={apt.id} onClick={(e) => { e.stopPropagation(); setSelectedApt(apt); }} className={`text-[9px] p-2 rounded-lg font-black uppercase tracking-tighter truncate border shadow-sm transition-transform hover:scale-105 ${getStatusColor(apt.status)}`}>
-                                <div className="flex items-center gap-1"><Clock size={10} /> {apt.time}</div>
-                                <div className="mt-0.5 truncate">{apt.client_name || 'Cliente'}</div>
-                            </div>
-                            ))}
-                        </div>
-                        </>
-                    )}
-                    </div>
-                );
-                })}
-            </div>
-          )}
-        </div>
+          <div className="grid grid-cols-7 gap-px bg-slate-100 rounded-3xl overflow-hidden border border-slate-100 shadow-inner">
+              {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(d => <div key={d} className="bg-slate-50 p-4 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">{d}</div>)}
+              {calendarDays.map((day, idx) => {
+                  if (!day) return <div key={idx} className="bg-slate-50/30 h-32" />;
+                  const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                  const dayApts = appointments.filter(a => a.date.substring(0,10) === dateStr && (selectedTechFilter === 'Todos' || a.technician === selectedTechFilter));
+                  return (
+                      <div key={idx} className="bg-white h-32 p-3 border-r border-b border-slate-50 group hover:bg-sky-50/20 transition-all cursor-default">
+                          <span className={`text-xs font-black ${day === new Date().getDate() && month === new Date().getMonth() ? 'text-sky-600' : 'text-slate-300'}`}>{day}</span>
+                          <div className="mt-2 space-y-1">
+                              {dayApts.map(a => (
+                                  <button key={a.id} onClick={() => setSelectedApt(a)} className={`w-full text-left p-1.5 rounded-lg text-[8px] font-black uppercase truncate border ${a.status === 'Completada' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : a.status === 'En Proceso' ? 'bg-sky-50 text-sky-600 border-sky-100 animate-pulse' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
+                                      {a.time.substring(0,5)} {a.client_name}
+                                  </button>
+                              ))}
+                          </div>
+                      </div>
+                  );
+              })}
+          </div>
       </div>
 
-      <div className="space-y-6">
-        <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-xl relative overflow-hidden">
-            <h4 className="font-black text-lg uppercase mb-4 flex items-center gap-2">
-                <RefreshCw size={20} className="text-sky-400" /> Sincronización
-            </h4>
-            <div className="space-y-4 relative z-10">
-                <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
-                    <p className="text-[10px] font-black text-sky-400 uppercase tracking-widest mb-1">Status Automations</p>
-                    <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                        <span className="text-xs font-bold">Cloud Synced</span>
-                    </div>
-                </div>
-                <button 
-                    onClick={() => setShowIntegrations(true)}
-                    className="w-full py-3 bg-sky-600 hover:bg-sky-50 text-white rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2"
-                >
-                    <LinkIcon size={14} /> Gestionar Integraciones
-                </button>
-            </div>
-        </div>
-
-        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
-            <h4 className="font-black text-slate-800 uppercase tracking-tight mb-4 flex items-center gap-2">
-                <AlertTriangle size={18} className="text-amber-500" /> Notas de Seguridad
-            </h4>
-            <p className="text-[10px] text-slate-400 leading-relaxed font-medium uppercase tracking-wide">
-                Toda cita programada se sincroniza automáticamente con las terminales de los técnicos. Los cambios manuales requieren auditoría.
-            </p>
-        </div>
-      </div>
-
+      {/* DETALLE DE CITA / DESPACHO */}
       {selectedApt && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[200] flex justify-end">
-           <div className="w-full max-w-2xl bg-white h-full shadow-2xl animate-in slide-in-from-right duration-500 flex flex-col">
-              <div className="p-10 border-b border-slate-100 flex items-center justify-between shrink-0">
-                 <div className="flex items-center gap-5">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-white ${getStatusColor(selectedApt.status).split(' ')[1] === 'text-sky-600' ? 'bg-sky-600' : 'bg-slate-900'}`}>
-                       {selectedApt.type === 'Instalación' ? <Truck size={28}/> : <Wrench size={28}/>}
-                    </div>
-                    <div>
-                       <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Detalle de Servicio</h3>
-                       <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">{selectedApt.client_name}</p>
-                    </div>
-                 </div>
-                 <button onClick={() => setSelectedApt(null)} className="p-3 hover:bg-slate-100 rounded-2xl transition-all"><X size={24} className="text-slate-400" /></button>
-              </div>
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex justify-end">
+              <div className="w-full max-w-xl bg-white h-full shadow-2xl animate-in slide-in-from-right duration-500 flex flex-col border-l border-slate-200">
+                  <div className="p-10 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/50">
+                      <div className="flex items-center gap-5">
+                          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-white shadow-lg ${selectedApt.status === 'Completada' ? 'bg-emerald-500' : 'bg-slate-900'}`}>
+                              {selectedApt.type === 'Instalación' ? <Wrench size={24}/> : <CalendarCheck size={24}/>}
+                          </div>
+                          <div>
+                              <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Orden de Servicio</h3>
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ID #{selectedApt.id} • {selectedApt.status}</p>
+                          </div>
+                      </div>
+                      <button onClick={() => setSelectedApt(null)} className="p-3 hover:bg-slate-100 rounded-2xl transition-all"><X size={24}/></button>
+                  </div>
 
-              <div className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
-                 <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 space-y-6">
-                    <div className="flex items-center justify-between">
-                       <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Estatus de la Orden</h5>
-                       <span className={`px-4 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${getStatusColor(selectedApt.status)}`}>{selectedApt.status}</span>
-                    </div>
+                  <div className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
+                      <div className="space-y-4">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cliente y Ubicación</p>
+                          <div className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100 relative group">
+                              <h4 className="text-xl font-black text-slate-900 uppercase mb-2">{selectedApt.client_name}</h4>
+                              <p className="text-sm text-slate-500 font-medium leading-relaxed mb-6">{selectedApt.client_address}</p>
+                              
+                              <a 
+                                href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(selectedApt.client_address)}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center gap-3 w-full py-4 bg-white text-slate-900 border border-slate-200 rounded-2xl font-black uppercase text-[10px] tracking-widest justify-center hover:bg-slate-900 hover:text-white transition-all shadow-sm"
+                              >
+                                  <Navigation size={16}/> Abrir en Navegador (Ruta GPS)
+                              </a>
+                          </div>
+                      </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                        {selectedApt.status === 'Programada' && (
-                            <button onClick={() => updateStatus(selectedApt.id, 'En Proceso')} className="col-span-2 py-3 bg-sky-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-sky-700 shadow-lg flex items-center justify-center gap-2">
-                                <Truck size={16} /> Iniciar Ruta (Notificar Cliente)
-                            </button>
-                        )}
-                        {selectedApt.status === 'En Proceso' && (
-                            <button onClick={() => updateStatus(selectedApt.id, 'Completada')} className="col-span-2 py-3 bg-emerald-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-700 shadow-lg flex items-center justify-center gap-2">
-                                <CheckCircle2 size={16} /> Finalizar Servicio
-                            </button>
-                        )}
-                    </div>
-                 </div>
-                 <div className="grid grid-cols-2 gap-10">
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-3"><User size={18} className="text-sky-500" /><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Técnico Asignado</p></div>
-                        <p className="font-black text-slate-800 pl-7">{selectedApt.technician}</p>
-                    </div>
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-3"><Clock size={18} className="text-sky-500" /><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Horario Programado</p></div>
-                        <p className="font-black text-slate-800 pl-7">{selectedApt.time} HRS</p>
-                    </div>
-                 </div>
+                      <div className="grid grid-cols-2 gap-8">
+                          <div className="space-y-2">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Técnico Asignado</p>
+                              <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl">
+                                  <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-sky-600 shadow-sm"><User size={20}/></div>
+                                  <p className="font-bold text-slate-700">{selectedApt.technician}</p>
+                              </div>
+                          </div>
+                          <div className="space-y-2">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Horario</p>
+                              <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl">
+                                  <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-amber-600 shadow-sm"><Clock size={20}/></div>
+                                  <p className="font-bold text-slate-700">{selectedApt.time.substring(0,5)} HRS</p>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div className="pt-8 border-t border-slate-100">
+                          {selectedApt.status === 'Programada' && (
+                              <button onClick={() => updateStatus(selectedApt.id, 'En Proceso')} className="w-full py-5 bg-sky-600 text-white rounded-2xl font-black uppercase text-xs shadow-xl flex items-center justify-center gap-3 hover:bg-sky-700">
+                                  <Truck size={20}/> Notificar: Voy en camino
+                              </button>
+                          )}
+                          {selectedApt.status === 'En Proceso' && (
+                              <button onClick={() => updateStatus(selectedApt.id, 'Completada')} className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs shadow-xl flex items-center justify-center gap-3 hover:bg-emerald-700">
+                                  <CheckCircle2 size={20}/> Finalizar y Registrar Evidencia
+                              </button>
+                          )}
+                          {selectedApt.status === 'Completada' && (
+                              <div className="p-6 bg-emerald-50 border border-emerald-100 rounded-3xl flex items-center gap-4 text-emerald-600">
+                                  <CheckCircle2 size={24}/>
+                                  <p className="font-black uppercase text-xs tracking-widest">Servicio Cerrado con Éxito</p>
+                              </div>
+                          )}
+                      </div>
+                  </div>
               </div>
-           </div>
-        </div>
+          </div>
       )}
 
-      {showNewAptModal && !isInstaller && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[300] flex items-center justify-center p-4">
-           <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-300 flex flex-col max-h-[90vh]">
-              <div className="p-8 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
-                 <div><h3 className="text-2xl font-black text-slate-900 tracking-tighter uppercase">Programar Cita</h3></div>
-                 <button onClick={() => setShowNewAptModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all"><X size={20} className="text-slate-400"/></button>
+      {/* MODAL NUEVA CITA */}
+      {showNewAptModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6">
+              <div className="bg-white w-full max-w-lg rounded-[3rem] shadow-2xl p-10 animate-in zoom-in duration-300">
+                  <div className="flex justify-between items-center mb-8">
+                      <h3 className="text-2xl font-black text-slate-900 uppercase">Programar Servicio</h3>
+                      <button onClick={() => setShowNewAptModal(false)}><X className="text-slate-400" /></button>
+                  </div>
+                  <div className="space-y-6">
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cliente Solicitante</label>
+                          <select className="w-full p-4 bg-slate-50 border rounded-2xl font-bold" value={newApt.client_id} onChange={e=>setNewApt({...newApt, client_id: e.target.value})}>
+                              <option value="">Seleccionar...</option>
+                              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fecha</label>
+                              <input type="date" className="w-full p-4 bg-slate-50 border rounded-2xl font-bold" value={newApt.date} onChange={e=>setNewApt({...newApt, date: e.target.value})} />
+                          </div>
+                          <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Hora</label>
+                              <input type="time" className="w-full p-4 bg-slate-50 border rounded-2xl font-bold" value={newApt.time} onChange={e=>setNewApt({...newApt, time: e.target.value})} />
+                          </div>
+                      </div>
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Asignar Técnico</label>
+                          <select className="w-full p-4 bg-slate-50 border rounded-2xl font-bold" value={newApt.technician} onChange={e=>setNewApt({...newApt, technician: e.target.value})}>
+                              <option value="">-- Sin Asignar --</option>
+                              {installers.map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
+                          </select>
+                      </div>
+                      <button 
+                        onClick={async () => {
+                            if (!newApt.client_id || !newApt.technician) return;
+                            const res = await fetch('/api/appointments', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(newApt)});
+                            if (res.ok) { setShowNewAptModal(false); fetchData(); }
+                            else { const err = await res.json(); alert(err.error); }
+                        }}
+                        className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs shadow-xl"
+                      >
+                        Confirmar Cita en Agenda
+                      </button>
+                  </div>
               </div>
-              <div className="p-8 overflow-y-auto custom-scrollbar space-y-6">
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cliente</label>
-                    <select className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-sky-500 font-bold" value={newApt.client_id} onChange={(e) => setNewApt({...newApt, client_id: e.target.value})}>
-                        <option value="">Seleccionar Cliente</option>
-                        {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                 </div>
-                 <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</label><input type="date" className="w-full p-4 bg-slate-50 border rounded-2xl font-bold" value={newApt.date} onChange={(e) => setNewApt({...newApt, date: e.target.value})}/></div>
-                    <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Hora</label><input type="time" className="w-full p-4 bg-slate-50 border rounded-2xl font-bold" value={newApt.time} onChange={(e) => setNewApt({...newApt, time: e.target.value})}/></div>
-                 </div>
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Técnico</label>
-                    <select className="w-full p-4 bg-slate-50 border rounded-2xl font-bold" value={newApt.technician} onChange={(e) => setNewApt({...newApt, technician: e.target.value})}>
-                        {installers.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
-                    </select>
-                 </div>
-              </div>
-              <div className="p-8 border-t border-slate-100 flex gap-4 bg-slate-50/50 shrink-0">
-                 <button onClick={handleSaveAppointment} disabled={!newApt.client_id || !newApt.technician} className="flex-1 py-4 bg-sky-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-xl disabled:opacity-50">Confirmar Cita</button>
-              </div>
-           </div>
-        </div>
+          </div>
       )}
     </div>
   );

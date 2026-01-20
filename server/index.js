@@ -1,7 +1,7 @@
 
 import express from 'express';
 import * as db from './db.js';
-import multer from 'multer';
+import * as services from './services.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -16,167 +16,78 @@ app.use(express.json({ limit: '10mb' }));
 // --- INICIALIZACIÓN DE DB ---
 db.initDatabase();
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || 'AIzaSyAeHjI__WWaBp17nZLm4AaalYYXs_RDyzs' });
-
-// --- WAREHOUSES & LOGISTICS ---
-app.get('/api/warehouses', async (req, res) => {
+// --- APPOINTMENTS (AGENDA Y CAMPO) ---
+app.get('/api/appointments', async (req, res) => {
     try {
         const result = await db.query(`
-            SELECT w.*, u.name as responsible_name 
-            FROM warehouses w 
-            LEFT JOIN users u ON w.responsible_id = u.id 
-            ORDER BY w.type DESC, w.name ASC
+            SELECT a.*, c.name as client_name, c.phone as client_phone, c.address as client_address
+            FROM appointments a
+            JOIN clients c ON a.client_id = c.id
+            ORDER BY a.date ASC, a.time ASC
         `);
         res.json(result.rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/warehouses', async (req, res) => {
-    const { name, responsible_id, type } = req.body;
+app.post('/api/appointments', async (req, res) => {
+    const { client_id, technician, date, time, duration, type, notes } = req.body;
     try {
-        const result = await db.query(
-            "INSERT INTO warehouses (name, responsible_id, type) VALUES ($1, $2, $3) RETURNING *",
-            [name, responsible_id, type || 'Unidad Móvil']
+        // 1. Validar traslape de horario para el mismo técnico
+        const conflictRes = await db.query(
+            "SELECT id FROM appointments WHERE technician = $1 AND date = $2 AND time = $3 AND status != 'Cancelada'",
+            [technician, date, time]
         );
+        
+        if (conflictRes.rows.length > 0) {
+            return res.status(400).json({ error: "El técnico ya tiene una cita asignada en ese horario." });
+        }
+
+        const result = await db.query(
+            `INSERT INTO appointments (client_id, technician, date, time, duration, type, notes, status) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'Programada') RETURNING *`,
+            [client_id, technician, date, time, duration || 60, type, notes]
+        );
+        
         res.json(result.rows[0]);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Obtener niveles de stock específicos de un almacén
-app.get('/api/inventory/levels/:id', async (req, res) => {
+app.put('/api/appointments/:id', async (req, res) => {
     const { id } = req.params;
+    const { status, actual_duration } = req.body;
     try {
-        const result = await db.query(`
-            SELECT p.id, p.name, p.code, p.unit_of_measure, COALESCE(wi.stock, 0) as stock
-            FROM products p
-            LEFT JOIN warehouse_inventory wi ON p.id = wi.product_id AND wi.warehouse_id = $1
-            ORDER BY p.name ASC
-        `, [id]);
-        res.json(result.rows);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Traspaso de material (Carga de Unidad)
-app.post('/api/inventory/transfer', async (req, res) => {
-    const { from, to, items } = req.body;
-    try {
-        await db.query("BEGIN");
-
-        // Registrar el traspaso como pendiente
-        const transferRes = await db.query(
-            "INSERT INTO inventory_transfers (from_warehouse_id, to_warehouse_id, items, status) VALUES ($1, $2, $3, $4) RETURNING id",
-            [from, to, JSON.stringify(items), 'Pendiente']
+        const aptRes = await db.query(
+            "UPDATE appointments SET status = $1, actual_duration = COALESCE($2, actual_duration) WHERE id = $3 RETURNING *",
+            [status, actual_duration, id]
         );
+        const apt = aptRes.rows[0];
 
-        // Restar stock del origen inmediatamente
-        for (const item of items) {
-            await db.query(`
-                INSERT INTO warehouse_inventory (warehouse_id, product_id, stock) 
-                VALUES ($1, $2, -$3)
-                ON CONFLICT (warehouse_id, product_id) 
-                DO UPDATE SET stock = warehouse_inventory.stock - $3
-            `, [from, item.product_id, item.quantity]);
-        }
+        // 2. Disparar notificaciones inteligentes vía WhatsApp
+        const clientRes = await db.query("SELECT name, phone FROM clients WHERE id = $1", [apt.client_id]);
+        const client = clientRes.rows[0];
 
-        await db.query("COMMIT");
-        res.json({ success: true, transfer_id: transferRes.rows[0].id });
-    } catch (e) { 
-        await db.query("ROLLBACK");
-        res.status(500).json({ error: e.message }); 
-    }
-});
+        if (client && client.phone) {
+            let msg = "";
+            if (status === 'En Proceso') {
+                msg = `Hola ${client.name}, el técnico de SuperAir va en camino a tu domicilio para el servicio de ${apt.type}. ¡Nos vemos pronto!`;
+            } else if (status === 'Completada') {
+                msg = `¡Servicio Concluido! ${client.name}, tu ${apt.type} ha sido finalizado con éxito. Gracias por confiar en SuperAir.`;
+            }
 
-// Confirmar recepción de traspaso (El técnico acepta la carga)
-app.post('/api/inventory/transfers/:id/confirm', async (req, res) => {
-    const { id } = req.params;
-    try {
-        await db.query("BEGIN");
-
-        const transferRes = await db.query("SELECT * FROM inventory_transfers WHERE id = $1", [id]);
-        const transfer = transferRes.rows[0];
-
-        if (!transfer || transfer.status !== 'Pendiente') {
-            throw new Error("Traspaso no encontrado o ya procesado");
-        }
-
-        const items = typeof transfer.items === 'string' ? JSON.parse(transfer.items) : transfer.items;
-
-        // Sumar stock al destino
-        for (const item of items) {
-            await db.query(`
-                INSERT INTO warehouse_inventory (warehouse_id, product_id, stock) 
-                VALUES ($1, $2, $3)
-                ON CONFLICT (warehouse_id, product_id) 
-                DO UPDATE SET stock = warehouse_inventory.stock + $3
-            `, [transfer.to_warehouse_id, item.product_id, item.quantity]);
-        }
-
-        await db.query("UPDATE inventory_transfers SET status = 'Completado' WHERE id = $1", [id]);
-
-        await db.query("COMMIT");
-        res.json({ success: true });
-    } catch (e) { 
-        await db.query("ROLLBACK");
-        res.status(500).json({ error: e.message }); 
-    }
-});
-
-// Obtener traspasos pendientes para un almacén (Notificaciones para técnicos)
-app.get('/api/inventory/transfers/pending/:warehouse_id', async (req, res) => {
-    const { warehouse_id } = req.params;
-    try {
-        const result = await db.query(`
-            SELECT t.*, w.name as from_name 
-            FROM inventory_transfers t
-            JOIN warehouses w ON t.from_warehouse_id = w.id
-            WHERE t.to_warehouse_id = $1 AND t.status = 'Pendiente'
-        `, [warehouse_id]);
-        res.json(result.rows);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Gestión de KITS
-app.get('/api/inventory/kits', async (req, res) => {
-    try {
-        const kitsRes = await db.query("SELECT * FROM inventory_kits ORDER BY name ASC");
-        const kits = kitsRes.rows;
-        for (const kit of kits) {
-            const itemsRes = await db.query(`
-                SELECT ki.*, p.name as product_name 
-                FROM inventory_kit_items ki 
-                JOIN products p ON ki.product_id = p.id 
-                WHERE ki.kit_id = $1
-            `, [kit.id]);
-            kit.items = itemsRes.rows;
-        }
-        res.json(kits);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/inventory/kits', async (req, res) => {
-    const { name, description, items } = req.body;
-    try {
-        await db.query("BEGIN");
-        const kitRes = await db.query("INSERT INTO inventory_kits (name, description) VALUES ($1, $2) RETURNING id", [name, description]);
-        const kitId = kitRes.rows[0].id;
-
-        if (items && items.length > 0) {
-            for (const item of items) {
-                await db.query("INSERT INTO inventory_kit_items (kit_id, product_id, quantity) VALUES ($1, $2, $3)", [kitId, item.product_id, item.quantity]);
+            if (msg) {
+                try { await services.sendWhatsApp(client.phone, msg); } 
+                catch (err) { console.error("Error enviando notificación WhatsApp:", err.message); }
             }
         }
-        await db.query("COMMIT");
-        res.json({ success: true, id: kitId });
-    } catch (e) { 
-        await db.query("ROLLBACK");
-        res.status(500).json({ error: e.message }); 
-    }
+
+        res.json(apt);
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- OTRAS RUTAS ---
-app.get('/api/products', async (req, res) => {
+// --- CLIENTS & AUTH ---
+app.get('/api/clients', async (req, res) => {
     try {
-        const result = await db.query("SELECT * FROM products ORDER BY name ASC");
+        const result = await db.query("SELECT * FROM clients ORDER BY name ASC");
         res.json(result.rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
