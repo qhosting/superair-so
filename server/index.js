@@ -18,135 +18,113 @@ db.initDatabase();
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || 'AIzaSyAeHjI__WWaBp17nZLm4AaalYYXs_RDyzs' });
 
-// --- VENDORS ---
-app.get('/api/vendors', async (req, res) => {
+// --- QUOTES & ACCEPTANCE ---
+app.post('/api/quotes/public/:token/accept', async (req, res) => {
+    const { token } = req.params;
     try {
-        const result = await db.query("SELECT * FROM vendors ORDER BY name ASC");
-        res.json(result.rows);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
+        // 1. Marcar cotización como aceptada
+        const quoteRes = await db.query("UPDATE quotes SET status = 'Aceptada' WHERE public_token = $1 RETURNING *", [token]);
+        const quote = quoteRes.rows[0];
+        if (!quote) return res.status(404).json({ error: "Quote not found" });
 
-app.post('/api/vendors', async (req, res) => {
-    const { name, rfc, email, phone, credit_days } = req.body;
-    try {
-        const result = await db.query(
-            "INSERT INTO vendors (name, rfc, email, phone, credit_days) VALUES ($1, $2, $3, $4, $5) RETURNING *",
-            [name, rfc, email, phone, credit_days || 0]
-        );
-        res.json(result.rows[0]);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// --- PURCHASES ---
-app.get('/api/purchases', async (req, res) => {
-    try {
-        const result = await db.query(`
-            SELECT p.*, v.name as vendor_name, w.name as warehouse_name 
-            FROM purchases p 
-            LEFT JOIN vendors v ON p.vendor_id = v.id 
-            LEFT JOIN warehouses w ON p.warehouse_id = w.id 
-            ORDER BY p.created_at DESC
-        `);
-        res.json(result.rows);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/purchases', async (req, res) => {
-    const { vendor_id, warehouse_id, total, items, fiscal_uuid } = req.body;
-    try {
-        const result = await db.query(
-            "INSERT INTO purchases (vendor_id, warehouse_id, total, items, fiscal_uuid, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-            [vendor_id, warehouse_id, total, JSON.stringify(items), fiscal_uuid, 'Borrador']
-        );
-        res.json(result.rows[0]);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/purchases/:id/receive', async (req, res) => {
-    const { id } = req.params;
-    try {
-        const purchaseRes = await db.query("SELECT * FROM purchases WHERE id = $1", [id]);
-        const purchase = purchaseRes.rows[0];
+        // 2. Crear la Orden de Venta automáticamente
+        const items = typeof quote.items === 'string' ? JSON.parse(quote.items) : quote.items;
+        const costTotal = items.reduce((acc, i) => acc + (i.quantity * (i.cost || 0)), 0);
+        const margin = quote.total > 0 ? ((quote.total - (costTotal * 1.16)) / quote.total) * 100 : 0;
         
-        if (!purchase || purchase.status === 'Recibido') {
-            return res.status(400).json({ error: "Orden ya recibida o no encontrada" });
-        }
+        // Fecha vencimiento +15 días por defecto
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + 15);
 
-        const items = typeof purchase.items === 'string' ? JSON.parse(purchase.items) : purchase.items;
+        await db.query(
+            `INSERT INTO orders (quote_id, client_id, client_name, total, cost_total, status, payment_terms, due_date, profit_margin) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [quote.id, quote.client_id, quote.client_name, quote.total, costTotal, 'Pendiente', quote.payment_terms, dueDate, margin]
+        );
 
-        // Actualizar stock de cada producto
-        for (const item of items) {
-            await db.query(
-                "UPDATE products SET stock = stock + $1, cost = $2 WHERE id = $3",
-                [item.quantity, item.cost, item.product_id]
-            );
-        }
-
-        await db.query("UPDATE purchases SET status = 'Recibido' WHERE id = $1", [id]);
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- AI SUGGESTIONS FOR PURCHASES ---
-app.get('/api/purchases/ai-suggest', async (req, res) => {
+// --- SALES / ORDERS ---
+app.get('/api/orders', async (req, res) => {
     try {
-        const productsRes = await db.query("SELECT id, name, stock, min_stock FROM products WHERE stock < min_stock");
-        const criticalItems = productsRes.rows;
-
-        if (criticalItems.length === 0) {
-            return res.json({ suggested_items: [] });
-        }
-
-        const context = criticalItems.map(p => `${p.name} (Stock: ${p.stock}, Min: ${p.min_stock})`).join(', ');
-        const prompt = `Actúa como un Jefe de Compras HVAC. Tenemos los siguientes productos con stock crítico (por debajo del mínimo): ${context}. 
-                       Sugiere cantidades a comprar para cada uno para cubrir al menos 2 meses de operación. 
-                       Responde estrictamente en JSON con este formato: {"suggested_items": [{"product_id": number, "quantity": number}]}`;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: prompt,
-            config: { responseMimeType: "application/json" }
-        });
-
-        res.json(JSON.parse(response.text));
+        const result = await db.query(`
+            SELECT *, 
+            (due_date < CURRENT_DATE AND status != 'Completado') as is_overdue,
+            (total - paid_amount) as balance
+            FROM orders 
+            ORDER BY created_at DESC
+        `);
+        res.json(result.rows.map(r => ({
+            ...r,
+            clientName: r.client_name,
+            paidAmount: r.paid_amount,
+            costTotal: r.cost_total,
+            dueDate: r.due_date,
+            profitMargin: parseFloat(r.profit_margin),
+            isOverdue: r.is_overdue,
+            paymentTerms: r.payment_terms,
+            evidenceUrl: r.evidence_url
+        })));
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- FISCAL INBOX ---
-app.get('/api/fiscal/inbox', async (req, res) => {
+app.post('/api/orders/pay', async (req, res) => {
+    const { orderId, amount, method } = req.body;
     try {
-        const result = await db.query("SELECT * FROM fiscal_inbox WHERE status = 'Unlinked' ORDER BY created_at DESC");
-        res.json(result.rows.map(r => ({ ...r, legalName: r.legal_name })));
+        await db.query("BEGIN");
+        
+        // Registrar el pago
+        await db.query(
+            "INSERT INTO order_payments (order_id, amount, method) VALUES ($1, $2, $3)",
+            [orderId, amount, method]
+        );
+
+        // Actualizar monto pagado en la orden
+        const updateRes = await db.query(
+            "UPDATE orders SET paid_amount = paid_amount + $1 WHERE id = $2 RETURNING *",
+            [amount, orderId]
+        );
+        
+        const order = updateRes.rows[0];
+        let newStatus = order.status;
+        if (order.paid_amount >= order.total) newStatus = 'Completado';
+        else if (order.paid_amount > 0) newStatus = 'Parcial';
+
+        await db.query("UPDATE orders SET status = $1 WHERE id = $2", [newStatus, orderId]);
+        
+        // Actualizar LTV del cliente
+        await db.query("UPDATE clients SET ltv = ltv + $1 WHERE id = $2", [amount, order.client_id]);
+
+        await db.query("COMMIT");
+        res.json({ success: true });
+    } catch (e) { 
+        await db.query("ROLLBACK");
+        res.status(500).json({ error: e.message }); 
+    }
+});
+
+app.post('/api/orders/:id/close-technical', async (req, res) => {
+    const { id } = req.params;
+    const { evidenceUrl } = req.body;
+    try {
+        await db.query("UPDATE orders SET evidence_url = $1 WHERE id = $2", [evidenceUrl, id]);
+        res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- REST OF ENDPOINTS (CLIENTS, QUOTES, ETC) ---
-app.get('/api/settings/public', async (req, res) => {
+// --- REST OF ENDPOINTS ---
+app.get('/api/quotes', async (req, res) => {
     try {
-        const result = await db.query("SELECT category, data FROM app_settings WHERE category IN ('general_info', 'quote_design')");
-        const settings = {};
-        result.rows.forEach(row => settings[row.category] = row.data);
-        res.json(settings);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/products', async (req, res) => {
-    try {
-        const result = await db.query("SELECT * FROM products ORDER BY name ASC");
+        const result = await db.query("SELECT * FROM quotes ORDER BY created_at DESC");
         res.json(result.rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/warehouses', async (req, res) => {
+app.get('/api/clients', async (req, res) => {
     try {
-        const result = await db.query("SELECT w.*, u.name as responsible_name FROM warehouses w LEFT JOIN users u ON w.responsible_id = u.id ORDER BY w.id ASC");
-        res.json(result.rows);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/users', async (req, res) => {
-    try {
-        const result = await db.query("SELECT id, name, email, role, status FROM users");
+        const result = await db.query("SELECT * FROM clients ORDER BY name ASC");
         res.json(result.rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });

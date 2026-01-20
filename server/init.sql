@@ -100,6 +100,32 @@ CREATE TABLE IF NOT EXISTS quotes (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS orders (
+    id SERIAL PRIMARY KEY,
+    quote_id INTEGER REFERENCES quotes(id),
+    client_id INTEGER REFERENCES clients(id),
+    client_name VARCHAR(255),
+    total DECIMAL(12,2) NOT NULL,
+    paid_amount DECIMAL(12,2) DEFAULT 0,
+    cost_total DECIMAL(12,2) DEFAULT 0,
+    status VARCHAR(50) DEFAULT 'Pendiente',
+    payment_terms TEXT,
+    evidence_url TEXT,
+    due_date DATE,
+    profit_margin DECIMAL(5,2),
+    commission DECIMAL(12,2) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS order_payments (
+    id SERIAL PRIMARY KEY,
+    order_id INTEGER REFERENCES orders(id),
+    amount DECIMAL(12,2) NOT NULL,
+    method VARCHAR(50),
+    reference VARCHAR(100),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS appointments (
     id SERIAL PRIMARY KEY,
     client_id INTEGER REFERENCES clients(id),
