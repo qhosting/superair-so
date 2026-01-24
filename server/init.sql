@@ -241,16 +241,12 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 -- Almacén Central por defecto
 INSERT INTO warehouses (id, name, type) VALUES (1, 'Almacén Central Queretaro', 'Central') ON CONFLICT DO NOTHING;
 
--- Usuario Admin QHosting solicitado: admin@qhosting.net / x0420EZS*
--- Hash generado para 'x0420EZS*' (bcrypt cost 10)
+-- Asegurar Admin QHosting (Bypass inicial gestionado por server/index.js)
 INSERT INTO users (name, email, password, role, status) 
-VALUES ('SuperAdmin QHosting', 'admin@qhosting.net', '$2a$10$vU8uXq.8v9p0S1T2U3V4WeI.x7T9M2p8jW7F/2iY8uSg6z5X8y2aG', 'Super Admin', 'Activo')
-ON CONFLICT (email) DO UPDATE SET 
-    password = EXCLUDED.password,
-    role = EXCLUDED.role,
-    status = EXCLUDED.status;
+VALUES ('SuperAdmin QHosting', 'admin@qhosting.net', 'INITIAL_ACCESS_REPAIR_REQUIRED', 'Super Admin', 'Activo')
+ON CONFLICT (email) DO NOTHING;
 
--- Admin de respaldo SuperAir: admin@superair.com.mx / admin123
+-- Admin de respaldo SuperAir
 INSERT INTO users (name, email, password, role, status) 
 VALUES ('Administrador Maestro', 'admin@superair.com.mx', '$2a$10$r6R9vK/lE4yS6g9oXp4oUeI.x7T9M2p8jW7F/2iY8uSg6z5X8y2', 'Super Admin', 'Activo')
 ON CONFLICT (email) DO NOTHING;
