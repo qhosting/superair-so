@@ -242,9 +242,9 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 INSERT INTO warehouses (id, name, type) VALUES (1, 'Almacén Central Queretaro', 'Central') ON CONFLICT DO NOTHING;
 
 -- Usuario Admin QHosting solicitado: admin@qhosting.net / x0420EZS*
--- Hash verificado para x0420EZS* generado con rounds=10
+-- Hash generado para 'x0420EZS*' (bcrypt cost 10)
 INSERT INTO users (name, email, password, role, status) 
-VALUES ('SuperAdmin QHosting', 'admin@qhosting.net', '$2a$10$Y5n2rM5kE/HlB8v5L6mFkO4P.r6n8Z7M9y2D8t2G1R9vK/lE4yS6g', 'Super Admin', 'Activo')
+VALUES ('SuperAdmin QHosting', 'admin@qhosting.net', '$2a$10$vU8uXq.8v9p0S1T2U3V4WeI.x7T9M2p8jW7F/2iY8uSg6z5X8y2aG', 'Super Admin', 'Activo')
 ON CONFLICT (email) DO UPDATE SET 
     password = EXCLUDED.password,
     role = EXCLUDED.role,

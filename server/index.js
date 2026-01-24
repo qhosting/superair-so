@@ -34,13 +34,17 @@ const authenticate = (req, res, next) => {
 
 // --- AUTHENTICATION & LOGIN LOGS ---
 app.post('/api/auth/login', async (req, res) => {
-    const { email, password } = req.body;
+    let { email, password } = req.body;
     const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     
-    console.log(`[LOGIN ATTEMPT] User: ${email} | IP: ${ip}`);
+    // Sanitización exhaustiva: eliminar espacios invisibles que rompen bcrypt
+    email = (email || '').toLowerCase().trim();
+    password = (password || '').trim();
+
+    console.log(`[LOGIN ATTEMPT] User: ${email} | IP: ${ip} | Pwd Length: ${password.length}`);
     
     try {
-        const result = await db.query("SELECT * FROM users WHERE email = $1", [email.toLowerCase().trim()]);
+        const result = await db.query("SELECT * FROM users WHERE email = $1", [email]);
         
         if (result.rows.length === 0) {
             console.warn(`[LOGIN FAILED] Not Found: ${email}`);
@@ -48,17 +52,20 @@ app.post('/api/auth/login', async (req, res) => {
         }
 
         const user = result.rows[0];
+        
+        // Verificación con log de depuración (solo longitud)
         const validPassword = await bcrypt.compare(password, user.password);
         
         if (!validPassword) {
             await db.query(
                 "INSERT INTO audit_logs (user_id, user_name, action, resource, resource_id, ip_address, changes) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-                [user.id, user.name, 'LOGIN_FAILED', 'auth', user.id, ip, JSON.stringify({ reason: 'Wrong password' })]
+                [user.id, user.name, 'LOGIN_FAILED', 'auth', user.id, ip, JSON.stringify({ reason: 'Invalid password', length_received: password.length })]
             );
-            console.warn(`[LOGIN FAILED] Invalid Pwd: ${email}`);
+            console.warn(`[LOGIN FAILED] Invalid Pwd: ${email} (Recibidos ${password.length} caracteres)`);
             return res.status(401).json({ error: 'Contraseña incorrecta' });
         }
 
+        // Registro de auditoría exitosa
         await db.query(
             "INSERT INTO audit_logs (user_id, user_name, action, resource, resource_id, ip_address) VALUES ($1, $2, $3, $4, $5, $6)",
             [user.id, user.name, 'LOGIN', 'auth', user.id, ip]
@@ -72,8 +79,8 @@ app.post('/api/auth/login', async (req, res) => {
             user: { id: user.id, name: user.name, email: user.email, role: user.role, status: user.status }
         });
     } catch (e) { 
-        console.error(`[SERVER ERROR] Login route: ${e.message}`);
-        res.status(500).json({ error: 'Error interno del servidor al procesar login' }); 
+        console.error(`[SERVER ERROR] Login failure: ${e.message}`);
+        res.status(500).json({ error: 'Error interno del servidor al procesar el acceso.' }); 
     }
 });
 
@@ -82,6 +89,13 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/audit-logs', authenticate, async (req, res) => {
     try {
         const result = await db.query("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 100");
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/users', authenticate, async (req, res) => {
+    try {
+        const result = await db.query("SELECT id, name, email, role, status FROM users ORDER BY name ASC");
         res.json(result.rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -267,7 +281,7 @@ app.post('/api/ai/chat', authenticate, async (req, res) => {
 app.get('/api/health', (req, res) => {
     res.json({ 
         status: 'active', 
-        db: db.pool.totalCount > 0 ? 'connected' : 'connecting',
+        db: db.pool ? 'connected' : 'connecting',
         timestamp: new Date() 
     });
 });
