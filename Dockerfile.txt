@@ -4,7 +4,6 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Argumentos de construcción para inyectar variables en el build de Vite.
-# Easypanel pasará la API_KEY configurada en sus variables de entorno.
 ARG API_KEY
 ENV API_KEY=$API_KEY
 
@@ -36,7 +35,7 @@ ENV PORT=3000
 ARG API_KEY
 ENV API_KEY=$API_KEY
 
-# Crear directorios para persistencia de archivos (Uploads de evidencias y logos)
+# Crear directorios para persistencia de archivos
 RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 
 # Instalación de dependencias de producción únicamente
@@ -44,19 +43,16 @@ COPY --chown=node:node package*.json ./
 RUN npm config set fetch-retries 5 && \
     npm install --omit=dev
 
-# Copiar lógica del servidor y los archivos estáticos compilados desde la etapa anterior
+# Copiar lógica del servidor y los archivos estáticos compilados
 COPY --chown=node:node server ./server
 COPY --chown=node:node --from=builder /app/dist ./dist
 
-# Puerto expuesto para el ERP de SuperAir
 EXPOSE 3000
 
-# Verificación de salud (Healthcheck) para permitir que Docker/Easypanel sepa si la app está lista
+# Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/api/health').then((r) => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
 
-# Ejecución segura con usuario no-root
 USER node
 
-# Comando de inicio del servidor que ya incluye la lógica de espera para la base de datos
 CMD ["node", "server/index.js"]

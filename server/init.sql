@@ -87,6 +87,37 @@ CREATE TABLE IF NOT EXISTS warehouse_stock (
     PRIMARY KEY (warehouse_id, product_id)
 );
 
+-- Kits de Inventario (Kartas de Carga)
+CREATE TABLE IF NOT EXISTS inventory_kits (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS inventory_kit_items (
+    kit_id INTEGER REFERENCES inventory_kits(id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
+    quantity DECIMAL(12,2) NOT NULL,
+    PRIMARY KEY (kit_id, product_id)
+);
+
+-- Traspasos entre Almacenes
+CREATE TABLE IF NOT EXISTS inventory_transfers (
+    id SERIAL PRIMARY KEY,
+    from_warehouse_id INTEGER REFERENCES warehouses(id),
+    to_warehouse_id INTEGER REFERENCES warehouses(id),
+    status VARCHAR(50) DEFAULT 'Pendiente',
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS inventory_transfer_items (
+    transfer_id INTEGER REFERENCES inventory_transfers(id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES products(id),
+    quantity DECIMAL(12,2) NOT NULL,
+    PRIMARY KEY (transfer_id, product_id)
+);
+
 -- Cotizaciones
 CREATE TABLE IF NOT EXISTS quotes (
     id SERIAL PRIMARY KEY,
@@ -153,7 +184,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
--- Bóveda Fiscal (Facturas recibidas vía n8n)
+-- Bóveda Fiscal
 CREATE TABLE IF NOT EXISTS fiscal_inbox (
     uuid VARCHAR(100) PRIMARY KEY,
     rfc_emitter VARCHAR(15),
@@ -210,13 +241,33 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 -- Almacén Central por defecto
 INSERT INTO warehouses (id, name, type) VALUES (1, 'Almacén Central Queretaro', 'Central') ON CONFLICT DO NOTHING;
 
--- Usuario Admin por defecto (admin@superair.com.mx / admin123)
--- Hash para 'admin123' generado vía bcrypt: $2a$10$r6R9vK/lE4yS6g9oXp4oUeI.x7T9M2p8jW7F/2iY8uSg6z5X8y2
+-- Usuario Admin QHosting solicitado: admin@qhosting.net / x0420EZS*
+INSERT INTO users (name, email, password, role, status) 
+VALUES ('SuperAdmin QHosting', 'admin@qhosting.net', '$2a$10$Y5n2rM5kE/HlB8v5L6mFkO4P.r6n8Z7M9y2D8t2G1R9vK/lE4yS6g', 'Super Admin', 'Activo')
+ON CONFLICT (email) DO NOTHING;
+
+-- Admin de respaldo SuperAir
 INSERT INTO users (name, email, password, role, status) 
 VALUES ('Administrador Maestro', 'admin@superair.com.mx', '$2a$10$r6R9vK/lE4yS6g9oXp4oUeI.x7T9M2p8jW7F/2iY8uSg6z5X8y2', 'Super Admin', 'Activo')
 ON CONFLICT (email) DO NOTHING;
 
--- Configuraciones base
+-- Configuraciones de Identidad Base
 INSERT INTO app_settings (category, data) 
 VALUES ('general_info', '{"companyName": "SuperAir", "isMaintenance": false, "logoUrl": "https://cdn-icons-png.flaticon.com/512/1169/1169382.png"}')
+ON CONFLICT (category) DO NOTHING;
+
+-- Configuración de Diseño de Cotización por Defecto
+INSERT INTO app_settings (category, data)
+VALUES ('quote_design', '{"primaryColor": "#0ea5e9", "documentTitle": "Propuesta Técnica y Económica", "slogan": "Ingeniería en Confort", "footerNotes": "Garantía de 30 días en mano de obra.", "showIvaDetail": true, "showSignLine": true, "accentColor": "#0f172a"}')
+ON CONFLICT (category) DO NOTHING;
+
+-- Contenido Inicial de la Landing Page (Para evitar pantalla en blanco)
+INSERT INTO app_settings (category, data)
+VALUES ('landing_content', '[
+    {"id": "h1", "type": "hero", "title": "Climatización de Alto Rendimiento", "subtitle": "Expertos en instalación y mantenimiento de aire acondicionado industrial y residencial.", "buttonText": "Cotizar ahora", "imageUrl": "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=2069"},
+    {"id": "s1", "type": "services", "title": "Nuestras Soluciones", "subtitle": "Ingeniería aplicada al confort de tus espacios.", "items": [
+        {"title": "Instalación", "desc": "Equipos Mini Split e Industriales con garantía de vacío.", "icon": "wrench", "image": "https://images.unsplash.com/photo-1621905252507-b354bcadcabc?q=80&w=2070"},
+        {"title": "Mantenimiento", "desc": "Limpieza profunda y revisión de parámetros eléctricos.", "icon": "shield", "image": "https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?q=80&w=2070"}
+    ]}
+]')
 ON CONFLICT (category) DO NOTHING;
