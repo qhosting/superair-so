@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { User, UserRole } from '../types';
 
-// --- ROUTER SHIM ---
+// --- ROUTER SHIM ENHANCED ---
 const LocationContext = createContext<{ pathname: string; search: string; hash: string }>({ pathname: '/', search: '', hash: '' });
 const NavigateContext = createContext<(to: string | number, options?: any) => void>(() => {});
 
@@ -13,7 +13,9 @@ export const HashRouter: React.FC<{ children: ReactNode }> = ({ children }) => {
   const parseHash = (hash: string) => {
     const cleanHash = hash.startsWith('#') ? hash.substring(1) : hash;
     const [pathname, search] = cleanHash.split('?');
-    return { pathname: pathname || '/', search: search ? '?' + search : '', hash: hash };
+    // Aseguramos que el pathname siempre empiece con / para comparaciones consistentes
+    const normalizedPath = pathname.startsWith('/') ? pathname : '/' + pathname;
+    return { pathname: normalizedPath || '/', search: search ? '?' + search : '', hash: hash };
   };
 
   const [loc, setLoc] = useState(() => parseHash(window.location.hash || '#/'));
@@ -31,17 +33,14 @@ export const HashRouter: React.FC<{ children: ReactNode }> = ({ children }) => {
       }
       
       const target = to.toString().startsWith('/') ? to.toString() : '/' + to.toString();
-      
-      // Primero actualizamos el estado interno para que la UI reaccione inmediatamente
       setLoc(parseHash(target));
       
-      // Intentamos actualizar la URL real, pero fallamos silenciosamente si el navegador lo bloquea
       try {
           if (window.location.hash !== '#' + target) {
             window.location.hash = '#' + target;
           }
       } catch (e) {
-          console.warn('La navegación por Hash fue bloqueada por el navegador, usando solo estado interno.', e);
+          console.warn('Navigation blocked by environment, using internal state.', e);
       }
   };
 
@@ -56,32 +55,58 @@ export const HashRouter: React.FC<{ children: ReactNode }> = ({ children }) => {
 
 export const Routes: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { pathname } = useLocation();
+  
+  const childrenArray = React.Children.toArray(children);
   let element: ReactNode = null;
-  React.Children.forEach(children, (child) => {
-    if (element) return;
+
+  // Primero buscamos una coincidencia exacta o parametrizada
+  for (const child of childrenArray) {
     if (React.isValidElement(child)) {
-      const props = child.props as any;
-      if (props.path === '*' || props.path === pathname) {
-        element = props.element;
+      const { path } = child.props as any;
+      if (path === pathname) {
+        element = (child.props as any).element;
+        break;
+      }
+      // Soporte básico para parámetros como :token
+      if (path?.includes(':')) {
+        const base = path.split('/:')[0];
+        if (pathname.startsWith(base) && base !== '') {
+          element = (child.props as any).element;
+          break;
+        }
       }
     }
-  });
+  }
+
+  // Si no hay coincidencia, buscamos el wildcard '*'
+  if (!element) {
+    const wildcard = childrenArray.find(child => React.isValidElement(child) && (child.props as any).path === '*');
+    if (wildcard && React.isValidElement(wildcard)) {
+      element = wildcard.props.element;
+    }
+  }
+
   return <>{element}</>;
 };
 
 export const Route: React.FC<{ path: string; element: ReactNode }> = ({ element }) => <>{element}</>;
-// --- FIX: Added state prop to Navigate component to avoid TS error in App.tsx ---
+
 export const Navigate: React.FC<{ to: string; state?: any }> = ({ to }) => {
   const navigate = useNavigate();
-  React.useEffect(() => { navigate(to); }, [to]);
+  React.useEffect(() => {
+    // Pequeño delay para evitar colisiones en el ciclo de renderizado de React
+    const t = setTimeout(() => navigate(to), 0);
+    return () => clearTimeout(t);
+  }, [to, navigate]);
   return null;
 };
+
 export const Link: React.FC<any> = ({ to, children, className, ...props }) => {
   const navigate = useNavigate();
   return <a href={`#${to}`} onClick={(e) => { e.preventDefault(); navigate(to); }} className={className} {...props}>{children}</a>;
 };
 
-// --- AUTH CONTEXT (FORCED BYPASS) ---
+// --- AUTH CONTEXT ---
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
@@ -92,29 +117,34 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>(null!);
 
-const DEV_USER: User = {
-    id: '1',
-    name: 'Admin SuperAir',
-    email: 'admin@superair.com.mx',
-    role: UserRole.SUPER_ADMIN,
-    status: 'Activo',
-    lastLogin: new Date().toISOString()
-};
-
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // bypass: Iniciamos logueados al 100%
-  const [user, setUser] = useState<User | null>(DEV_USER);
+  const [user, setUser] = useState<User | null>(() => {
+      const stored = localStorage.getItem('superair_user');
+      if (stored) {
+          try { return JSON.parse(stored); } catch (e) { return null; }
+      }
+      return null;
+  });
 
-  const login = (data: any) => setUser(data.user);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const login = (data: any) => {
+      if (data.token) localStorage.setItem('superair_token', data.token);
+      if (data.user) {
+          localStorage.setItem('superair_user', JSON.stringify(data.user));
+          setUser(data.user);
+      }
+  };
+
   const logout = () => { 
+    localStorage.removeItem('superair_token');
+    localStorage.removeItem('superair_user');
     setUser(null); 
-    try {
-        window.location.hash = '#/login';
-    } catch(e) {}
+    window.location.hash = '#/login';
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading: false, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

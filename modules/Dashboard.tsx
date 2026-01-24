@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { 
   TrendingUp, Users, ShoppingCart, Loader2, Calendar, AlertTriangle, 
   Zap, MapPin, ThermometerSun, Wrench, BrainCircuit, ArrowRight,
@@ -27,59 +27,65 @@ const Dashboard: React.FC = () => {
 
   const formatMXN = (val: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const [aptsRes, quotesRes, leadsRes, healthRes] = await Promise.all([
-        fetch('/api/appointments').then(r => r.ok ? r.json() : []).catch(() => []),
-        fetch('/api/quotes').then(r => r.ok ? r.json() : []).catch(() => []),
-        fetch('/api/leads').then(r => r.ok ? r.json() : []).catch(() => []),
-        fetch('/api/health').then(r => r.ok ? true : false).catch(() => false)
-      ]);
-
-      setAppointments(aptsRes);
-      setQuotes(quotesRes);
-      setLeads(leadsRes);
-      setApiHealth({ 
-          server: healthRes ? 'Online' : 'Offline', 
-          db: healthRes ? 'Conectada' : 'Error' 
-      });
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  useEffect(() => {
-    if (!loading && !aiBriefing) generateDailyBriefing();
-  }, [loading]);
-
-  const generateDailyBriefing = async () => {
-    if (!process.env.API_KEY) {
-        setAiBriefing("Prioridad: Revisar mantenimientos preventivos ante el pronóstico de calor extremo.");
+  const generateDailyBriefing = useCallback(async (currentLeads: number, currentQuotes: number) => {
+    if (!process.env.API_KEY || process.env.API_KEY === 'undefined') {
+        setAiBriefing("Prioridad: Revisar mantenimientos preventivos ante el pronóstico de calor extremo en la zona.");
         return;
     }
     setAiLoading(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Contexto Operativo SuperAir: Tenemos ${leads.length} prospectos, ${quotes.length} cotizaciones totales y la temperatura en Querétaro es de 31°C (Ola de calor). 
+      const prompt = `Contexto Operativo SuperAir: Tenemos ${currentLeads} prospectos, ${currentQuotes} cotizaciones totales y la temperatura en Querétaro es de 31°C (Ola de calor). 
                      Como Director de Operaciones, dame un resumen ejecutivo de 3 lineas sobre el riesgo de saturación de servicios y qué stock deberíamos priorizar hoy.`;
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: prompt
       });
-      setAiBriefing(response.text);
+      setAiBriefing(response.text || "Sistemas operativos listos.");
     } catch (e) {
-      setAiBriefing("Recomendación: Optimizar rutas de técnicos en Juriquilla por alta demanda de reparaciones.");
+      setAiBriefing("Recomendación: Optimizar rutas de técnicos en Juriquilla por alta demanda de reparaciones por calor.");
     } finally {
       setAiLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [aptsRes, quotesRes, leadsRes, healthRes] = await Promise.all([
+          fetch('/api/appointments').then(r => r.ok ? r.json() : []).catch(() => []),
+          fetch('/api/quotes').then(r => r.ok ? r.json() : []).catch(() => []),
+          fetch('/api/leads').then(r => r.ok ? r.json() : []).catch(() => []),
+          fetch('/api/health').then(r => r.ok ? true : false).catch(() => false)
+        ]);
+
+        if (!isMounted) return;
+
+        setAppointments(aptsRes);
+        setQuotes(quotesRes);
+        setLeads(leadsRes);
+        setApiHealth({ 
+            server: healthRes ? 'Online' : 'Offline', 
+            db: healthRes ? 'Conectada' : 'Error' 
+        });
+
+        // Llamar a la IA una sola vez después de obtener los datos base
+        if (!aiBriefing) {
+            generateDailyBriefing(leadsRes.length, quotesRes.length);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchData();
+    return () => { isMounted = false; };
+  }, [generateDailyBriefing]); // aiBriefing no es dependencia para evitar ciclos
 
   const stats = useMemo(() => {
     const revenue = quotes.filter(q => q.status === 'Aceptada' || q.status === 'Ejecutada').reduce((acc, q) => acc + Number(q.total), 0);
@@ -108,7 +114,7 @@ const Dashboard: React.FC = () => {
                         <p className="text-[10px] text-slate-500 font-bold uppercase">Análisis Predictivo Gemini</p>
                     </div>
                 </div>
-                <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem] backdrop-blur-sm">
+                <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem] backdrop-blur-sm min-h-[100px] flex items-center">
                     {aiLoading ? (
                         <div className="flex gap-2 p-2">
                             <div className="w-2 h-2 bg-sky-400 rounded-full animate-bounce"></div>
