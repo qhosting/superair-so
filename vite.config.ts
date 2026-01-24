@@ -8,7 +8,9 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define: {
-      'process.env.API_KEY': JSON.stringify(env.API_KEY || 'AIzaSyAeHjI__WWaBp17nZLm4AaalYYXs_RDyzs'),
+      // Se elimina el fallback hardcoded para cumplir con la política de seguridad.
+      // La API_KEY debe ser proporcionada en las variables de entorno de Easypanel.
+      'process.env.API_KEY': JSON.stringify(env.API_KEY),
     },
     server: {
       port: 5173,
