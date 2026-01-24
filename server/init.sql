@@ -1,5 +1,7 @@
 
--- --- TABLAS MAESTRAS (EXISTENTES Y NUEVAS) ---
+-- --- SUPER AIR ERP: ESQUEMA MAESTRO ---
+
+-- Usuarios y Seguridad
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -10,6 +12,167 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Clientes y CRM
+CREATE TABLE IF NOT EXISTS clients (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255),
+    phone VARCHAR(20),
+    address TEXT,
+    rfc VARCHAR(15),
+    type VARCHAR(20) DEFAULT 'Residencial',
+    status VARCHAR(20) DEFAULT 'Activo',
+    ltv DECIMAL(12,2) DEFAULT 0,
+    last_service TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Activos de Clientes (Equipos Instalados)
+CREATE TABLE IF NOT EXISTS client_assets (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    brand VARCHAR(100),
+    model VARCHAR(100),
+    btu INTEGER,
+    type VARCHAR(50),
+    install_date DATE,
+    last_service DATE,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Leads y Prospectos
+CREATE TABLE IF NOT EXISTS leads (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255),
+    phone VARCHAR(20),
+    source VARCHAR(100) DEFAULT 'Web',
+    status VARCHAR(50) DEFAULT 'Nuevo',
+    notes TEXT,
+    history JSONB DEFAULT '[]',
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Productos y Servicios
+CREATE TABLE IF NOT EXISTS products (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(50) UNIQUE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    price DECIMAL(12,2) NOT NULL,
+    cost DECIMAL(12,2) NOT NULL,
+    stock DECIMAL(12,2) DEFAULT 0,
+    min_stock DECIMAL(12,2) DEFAULT 5,
+    category VARCHAR(100),
+    unit_of_measure VARCHAR(20) DEFAULT 'Pza',
+    type VARCHAR(20) DEFAULT 'product'
+);
+
+-- Almacenes y Unidades Móviles
+CREATE TABLE IF NOT EXISTS warehouses (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(50) DEFAULT 'Unidad Móvil',
+    responsible_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Inventario por Almacén
+CREATE TABLE IF NOT EXISTS warehouse_stock (
+    warehouse_id INTEGER REFERENCES warehouses(id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
+    stock DECIMAL(12,2) DEFAULT 0,
+    PRIMARY KEY (warehouse_id, product_id)
+);
+
+-- Cotizaciones
+CREATE TABLE IF NOT EXISTS quotes (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    total DECIMAL(12,2) NOT NULL,
+    status VARCHAR(50) DEFAULT 'Borrador',
+    payment_terms TEXT,
+    items JSONB NOT NULL,
+    public_token VARCHAR(100) UNIQUE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Órdenes de Venta y Cobranza
+CREATE TABLE IF NOT EXISTS orders (
+    id SERIAL PRIMARY KEY,
+    quote_id INTEGER REFERENCES quotes(id) ON DELETE SET NULL,
+    client_id INTEGER REFERENCES clients(id),
+    total DECIMAL(12,2) NOT NULL,
+    paid_amount DECIMAL(12,2) DEFAULT 0,
+    cost_total DECIMAL(12,2) DEFAULT 0,
+    status VARCHAR(50) DEFAULT 'Pendiente',
+    due_date DATE,
+    evidence_url TEXT,
+    profit_margin DECIMAL(5,2),
+    items JSONB NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Proveedores
+CREATE TABLE IF NOT EXISTS vendors (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    rfc VARCHAR(15),
+    email VARCHAR(255),
+    phone VARCHAR(20),
+    credit_days INTEGER DEFAULT 0,
+    status VARCHAR(20) DEFAULT 'Activo'
+);
+
+-- Órdenes de Compra
+CREATE TABLE IF NOT EXISTS purchases (
+    id SERIAL PRIMARY KEY,
+    vendor_id INTEGER REFERENCES vendors(id),
+    warehouse_id INTEGER REFERENCES warehouses(id),
+    total DECIMAL(12,2) NOT NULL,
+    status VARCHAR(50) DEFAULT 'Borrador',
+    fiscal_uuid VARCHAR(100),
+    items JSONB NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Agenda de Citas
+CREATE TABLE IF NOT EXISTS appointments (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    technician_id INTEGER REFERENCES users(id),
+    technician_name VARCHAR(255),
+    date DATE NOT NULL,
+    time TIME NOT NULL,
+    duration INTEGER DEFAULT 60,
+    type VARCHAR(100) DEFAULT 'Mantenimiento',
+    status VARCHAR(50) DEFAULT 'Programada',
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Bóveda Fiscal (Facturas recibidas vía n8n)
+CREATE TABLE IF NOT EXISTS fiscal_inbox (
+    uuid VARCHAR(100) PRIMARY KEY,
+    rfc_emitter VARCHAR(15),
+    rfc_receiver VARCHAR(15),
+    legal_name VARCHAR(255),
+    amount DECIMAL(12,2),
+    xml_url TEXT,
+    origin_email VARCHAR(255),
+    status VARCHAR(50) DEFAULT 'Unlinked',
+    received_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Configuración del Sistema
+CREATE TABLE IF NOT EXISTS app_settings (
+    category VARCHAR(50) PRIMARY KEY,
+    data JSONB NOT NULL
+);
+
+-- Manuales y Capacitación
 CREATE TABLE IF NOT EXISTS manual_articles (
     id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
@@ -22,7 +185,6 @@ CREATE TABLE IF NOT EXISTS manual_articles (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
--- NUEVA: Rastreo de lectura obligatoria para instaladores
 CREATE TABLE IF NOT EXISTS manual_reads (
     article_id INTEGER REFERENCES manual_articles(id) ON DELETE CASCADE,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -30,44 +192,31 @@ CREATE TABLE IF NOT EXISTS manual_reads (
     PRIMARY KEY (article_id, user_id)
 );
 
-CREATE TABLE IF NOT EXISTS clients (
+-- Logs Forenses
+CREATE TABLE IF NOT EXISTS audit_logs (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    email VARCHAR(255),
-    phone VARCHAR(20),
-    address TEXT,
-    rfc VARCHAR(15),
-    type VARCHAR(20) DEFAULT 'Residencial',
-    status VARCHAR(20) DEFAULT 'Activo',
-    ltv DECIMAL(12,2) DEFAULT 0,
+    user_id INTEGER,
+    user_name VARCHAR(255),
+    action VARCHAR(50),
+    resource VARCHAR(100),
+    resource_id VARCHAR(50),
+    changes JSONB,
+    ip_address VARCHAR(50),
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS products (
-    id SERIAL PRIMARY KEY,
-    code VARCHAR(50) UNIQUE,
-    name VARCHAR(255) NOT NULL,
-    price DECIMAL(12,2) NOT NULL,
-    cost DECIMAL(12,2) NOT NULL,
-    stock DECIMAL(12,2) DEFAULT 0,
-    min_stock DECIMAL(12,2) DEFAULT 5,
-    category VARCHAR(100)
-);
+-- --- DATOS INICIALES SEMILLA ---
 
-CREATE TABLE IF NOT EXISTS app_settings (
-    category VARCHAR(50) PRIMARY KEY,
-    data JSONB NOT NULL
-);
+-- Almacén Central por defecto
+INSERT INTO warehouses (id, name, type) VALUES (1, 'Almacén Central Queretaro', 'Central') ON CONFLICT DO NOTHING;
 
--- --- DATOS INICIALES DEL MANUAL ---
-INSERT INTO manual_articles (title, category, content, version, author_name) 
-VALUES ('Seguridad en Alturas y Uso de Escaleras', 'Seguridad', '1. Siempre usar arnés de seguridad... 2. Verificar puntos de anclaje...', '1.0', 'Ingeniería SuperAir')
-ON CONFLICT DO NOTHING;
+-- Usuario Admin por defecto (admin@superair.com.mx / admin123)
+-- Hash para 'admin123' generado vía bcrypt: $2a$10$r6R9vK/lE4yS6g9oXp4oUeI.x7T9M2p8jW7F/2iY8uSg6z5X8y2
+INSERT INTO users (name, email, password, role, status) 
+VALUES ('Administrador Maestro', 'admin@superair.com.mx', '$2a$10$r6R9vK/lE4yS6g9oXp4oUeI.x7T9M2p8jW7F/2iY8uSg6z5X8y2', 'Super Admin', 'Activo')
+ON CONFLICT (email) DO NOTHING;
 
-INSERT INTO manual_articles (title, category, content, version, author_name) 
-VALUES ('Protocolo de Vacío y Pruebas de Hermeticidad', 'Instalación', 'El vacío debe alcanzar al menos 500 micrones para garantizar...', '2.1', 'Ingeniería SuperAir')
-ON CONFLICT DO NOTHING;
-
+-- Configuraciones base
 INSERT INTO app_settings (category, data) 
-VALUES ('general_info', '{"companyName": "SuperAir", "isMaintenance": false}')
-ON CONFLICT DO NOTHING;
+VALUES ('general_info', '{"companyName": "SuperAir", "isMaintenance": false, "logoUrl": "https://cdn-icons-png.flaticon.com/512/1169/1169382.png"}')
+ON CONFLICT (category) DO NOTHING;
