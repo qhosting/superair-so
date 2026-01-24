@@ -1,4 +1,3 @@
-
 import express from 'express';
 import * as db from './db.js';
 import path from 'path';
@@ -15,21 +14,11 @@ const JWT_SECRET = process.env.JWT_SECRET || 'superair_secret_key_2024';
 const app = express();
 app.use(express.json({ limit: '20mb' }));
 
+// Middleware para extraer IP real tras proxies (Easypanel/Nginx)
+app.set('trust proxy', true);
+
 // Iniciar DB y realizar diagnóstico
-db.initDatabase().then(async () => {
-    try {
-        const usersCount = await db.query("SELECT count(*) FROM users");
-        const adminCheck = await db.query("SELECT email, role FROM users WHERE email = 'admin@qhosting.net'");
-        console.log(`[DB STATUS] Total usuarios: ${usersCount.rows[0].count}`);
-        if (adminCheck.rows.length > 0) {
-            console.log(`[DB STATUS] Admin qhosting encontrado con rol: ${adminCheck.rows[0].role}`);
-        } else {
-            console.error(`[DB ERROR] Admin qhosting NO encontrado en la base de datos.`);
-        }
-    } catch (e) {
-        console.error("[DB DIAGNOSTIC ERROR]", e.message);
-    }
-});
+db.initDatabase();
 
 // --- MIDDLEWARES ---
 const authenticate = (req, res, next) => {
@@ -43,16 +32,18 @@ const authenticate = (req, res, next) => {
     } catch (e) { res.status(403).json({ error: 'Token inválido' }); }
 };
 
-// --- AUTHENTICATION ---
+// --- AUTHENTICATION & LOGIN LOGS ---
 app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
-    console.log(`[LOGIN ATTEMPT] Email: ${email}`);
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    
+    console.log(`[LOGIN ATTEMPT] User: ${email} | IP: ${ip}`);
     
     try {
         const result = await db.query("SELECT * FROM users WHERE email = $1", [email.toLowerCase().trim()]);
         
         if (result.rows.length === 0) {
-            console.warn(`[LOGIN FAILED] Usuario no encontrado: ${email}`);
+            console.warn(`[LOGIN FAILED] Not Found: ${email}`);
             return res.status(401).json({ error: 'Usuario no encontrado' });
         }
 
@@ -60,11 +51,20 @@ app.post('/api/auth/login', async (req, res) => {
         const validPassword = await bcrypt.compare(password, user.password);
         
         if (!validPassword) {
-            console.warn(`[LOGIN FAILED] Contraseña incorrecta para: ${email}`);
+            await db.query(
+                "INSERT INTO audit_logs (user_id, user_name, action, resource, resource_id, ip_address, changes) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                [user.id, user.name, 'LOGIN_FAILED', 'auth', user.id, ip, JSON.stringify({ reason: 'Wrong password' })]
+            );
+            console.warn(`[LOGIN FAILED] Invalid Pwd: ${email}`);
             return res.status(401).json({ error: 'Contraseña incorrecta' });
         }
 
-        console.log(`[LOGIN SUCCESS] Usuario: ${email} (${user.role})`);
+        await db.query(
+            "INSERT INTO audit_logs (user_id, user_name, action, resource, resource_id, ip_address) VALUES ($1, $2, $3, $4, $5, $6)",
+            [user.id, user.name, 'LOGIN', 'auth', user.id, ip]
+        );
+
+        console.log(`[LOGIN SUCCESS] User: ${email} (${user.role})`);
         const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
         
         res.json({
@@ -72,12 +72,20 @@ app.post('/api/auth/login', async (req, res) => {
             user: { id: user.id, name: user.name, email: user.email, role: user.role, status: user.status }
         });
     } catch (e) { 
-        console.error(`[LOGIN ERROR] ${e.message}`);
-        res.status(500).json({ error: e.message }); 
+        console.error(`[SERVER ERROR] Login route: ${e.message}`);
+        res.status(500).json({ error: 'Error interno del servidor al procesar login' }); 
     }
 });
 
-// --- CLIENTS ---
+// --- API ROUTES ---
+
+app.get('/api/audit-logs', authenticate, async (req, res) => {
+    try {
+        const result = await db.query("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 100");
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/clients', authenticate, async (req, res) => {
     try {
         const result = await db.query("SELECT * FROM clients ORDER BY name ASC");
@@ -113,7 +121,6 @@ app.get('/api/clients/:id/360', authenticate, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- LEADS ---
 app.get('/api/leads', authenticate, async (req, res) => {
     try {
         const result = await db.query("SELECT * FROM leads ORDER BY created_at DESC");
@@ -132,7 +139,6 @@ app.post('/api/leads', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- PRODUCTS & INVENTORY ---
 app.get('/api/products', authenticate, async (req, res) => {
     try {
         const result = await db.query("SELECT * FROM products ORDER BY name ASC");
@@ -151,7 +157,6 @@ app.post('/api/products', authenticate, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- QUOTES ---
 app.get('/api/quotes', authenticate, async (req, res) => {
     try {
         const result = await db.query(`
@@ -176,7 +181,6 @@ app.post('/api/quotes', authenticate, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Cotización Pública
 app.get('/api/quotes/public/:token', async (req, res) => {
     try {
         const result = await db.query(`
@@ -190,7 +194,6 @@ app.get('/api/quotes/public/:token', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- APPOINTMENTS ---
 app.get('/api/appointments', authenticate, async (req, res) => {
     try {
         const result = await db.query(`
@@ -214,7 +217,6 @@ app.post('/api/appointments', authenticate, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- SETTINGS ---
 app.get('/api/settings', authenticate, async (req, res) => {
     try {
         const result = await db.query("SELECT category, data FROM app_settings");
@@ -249,7 +251,6 @@ app.post('/api/settings', authenticate, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- AI INTEGRATION (GEMINI) ---
 app.post('/api/ai/chat', authenticate, async (req, res) => {
     const { message } = req.body;
     try {
@@ -263,8 +264,13 @@ app.post('/api/ai/chat', authenticate, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- SYSTEM ---
-app.get('/api/health', (req, res) => res.json({ status: 'active', db: 'connected', timestamp: new Date() }));
+app.get('/api/health', (req, res) => {
+    res.json({ 
+        status: 'active', 
+        db: db.pool.totalCount > 0 ? 'connected' : 'connecting',
+        timestamp: new Date() 
+    });
+});
 
 // Servir Frontend
 const distPath = path.join(__dirname, '../dist');
@@ -277,4 +283,6 @@ if (fs.existsSync(distPath)) {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Servidor ERP SuperAir corriendo en puerto ${PORT}`));
+app.listen(PORT, () => {
+    console.log(`🚀 SuperAir Server Running on Port ${PORT}`);
+});

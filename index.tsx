@@ -8,7 +8,7 @@ if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
-// --- GLOBAL FETCH INTERCEPTOR (ENHANCED) ---
+// --- GLOBAL FETCH INTERCEPTOR (ENHANCED MONITORING) ---
 (function applyInterceptor() {
     const originalFetch = window.fetch;
     if (!originalFetch) return;
@@ -50,26 +50,29 @@ if (!rootElement) {
         try {
             const response = await originalFetch(input, init);
 
+            // Manejo de errores de autenticación
             if ((response.status === 401 || response.status === 403) && !url.includes('/api/auth/login')) {
                 const currentHash = window.location.hash;
                 if (!currentHash.includes('/login')) {
                     localStorage.removeItem('superair_token');
                     localStorage.removeItem('superair_user');
-                    try {
-                        window.location.hash = '#/login';
-                    } catch (e) {
-                        console.error("Redirect to login failed due to environment restrictions.");
-                    }
+                    window.location.hash = '#/login';
                 }
+            }
+
+            // Detección de errores de servidor (Posible caída de DB)
+            if (response.status >= 500) {
+                console.error("🚨 [SERVER ERROR 500] Error crítico en el backend.");
+                window.dispatchEvent(new CustomEvent('superair_server_error', { 
+                    detail: { message: "El servidor encontró un error (DB). Reintenta en unos segundos." } 
+                }));
             }
 
             return response;
         } catch (error) {
-            // Network error / DNS / Timeout handling
-            console.error("🌐 Network Error detected:", error);
-            // We dispatch a custom event that NotificationContext can listen to if needed
+            console.error("🌐 [NETWORK ERROR] No se pudo contactar al servidor:", error);
             window.dispatchEvent(new CustomEvent('superair_network_error', { 
-                detail: { message: "Error de conexión con el servidor. Verifica tu internet." } 
+                detail: { message: "Sin conexión con el servidor. Verifica tu internet." } 
             }));
             throw error;
         }

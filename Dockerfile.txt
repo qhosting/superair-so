@@ -16,7 +16,7 @@ RUN npm config set fetch-retries 5 && \
 COPY package*.json ./
 RUN npm install
 
-# Copia de código fuente y ejecución del build (genera la carpeta /dist)
+# Copia de código fuente y ejecución del build
 COPY . .
 RUN npm run build
 
@@ -38,12 +38,12 @@ ENV API_KEY=$API_KEY
 # Crear directorio para persistencia de archivos subidos
 RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 
-# Instalación de dependencias de producción únicamente (ahorra espacio)
+# Instalación de dependencias de producción únicamente
 COPY --chown=node:node package*.json ./
 RUN npm config set fetch-retries 5 && \
     npm install --omit=dev
 
-# Copiar el código del servidor y los archivos estáticos compilados del Stage 1
+# Copiar el código del servidor y los archivos estáticos compilados
 COPY --chown=node:node server ./server
 COPY --chown=node:node --from=builder /app/dist ./dist
 
