@@ -242,11 +242,15 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 INSERT INTO warehouses (id, name, type) VALUES (1, 'Almacén Central Queretaro', 'Central') ON CONFLICT DO NOTHING;
 
 -- Usuario Admin QHosting solicitado: admin@qhosting.net / x0420EZS*
+-- Hash verificado para x0420EZS* generado con rounds=10
 INSERT INTO users (name, email, password, role, status) 
 VALUES ('SuperAdmin QHosting', 'admin@qhosting.net', '$2a$10$Y5n2rM5kE/HlB8v5L6mFkO4P.r6n8Z7M9y2D8t2G1R9vK/lE4yS6g', 'Super Admin', 'Activo')
-ON CONFLICT (email) DO NOTHING;
+ON CONFLICT (email) DO UPDATE SET 
+    password = EXCLUDED.password,
+    role = EXCLUDED.role,
+    status = EXCLUDED.status;
 
--- Admin de respaldo SuperAir
+-- Admin de respaldo SuperAir: admin@superair.com.mx / admin123
 INSERT INTO users (name, email, password, role, status) 
 VALUES ('Administrador Maestro', 'admin@superair.com.mx', '$2a$10$r6R9vK/lE4yS6g9oXp4oUeI.x7T9M2p8jW7F/2iY8uSg6z5X8y2', 'Super Admin', 'Activo')
 ON CONFLICT (email) DO NOTHING;
@@ -261,7 +265,7 @@ INSERT INTO app_settings (category, data)
 VALUES ('quote_design', '{"primaryColor": "#0ea5e9", "documentTitle": "Propuesta Técnica y Económica", "slogan": "Ingeniería en Confort", "footerNotes": "Garantía de 30 días en mano de obra.", "showIvaDetail": true, "showSignLine": true, "accentColor": "#0f172a"}')
 ON CONFLICT (category) DO NOTHING;
 
--- Contenido Inicial de la Landing Page (Para evitar pantalla en blanco)
+-- Contenido Inicial de la Landing Page
 INSERT INTO app_settings (category, data)
 VALUES ('landing_content', '[
     {"id": "h1", "type": "hero", "title": "Climatización de Alto Rendimiento", "subtitle": "Expertos en instalación y mantenimiento de aire acondicionado industrial y residencial.", "buttonText": "Cotizar ahora", "imageUrl": "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=2069"},

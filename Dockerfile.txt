@@ -3,7 +3,7 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Argumentos de construcción para inyectar variables en el build de Vite.
+# Argumento de construcción para que Vite pueda inyectar la API_KEY en el frontend
 ARG API_KEY
 ENV API_KEY=$API_KEY
 
@@ -12,11 +12,11 @@ RUN npm config set fetch-retries 5 && \
     npm config set fetch-retry-mintimeout 20000 && \
     npm config set fetch-retry-maxtimeout 120000
 
-# Instalación de dependencias
+# Instalación de dependencias de construcción
 COPY package*.json ./
 RUN npm install
 
-# Copia de código fuente y construcción del bundle estático
+# Copia de código fuente y ejecución del build (genera la carpeta /dist)
 COPY . .
 RUN npm run build
 
@@ -31,28 +31,30 @@ ENV TZ=America/Mexico_City
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# El API_KEY es necesario en runtime para los servicios de Gemini en el backend
+# La API_KEY es necesaria en runtime para los servicios de Gemini en el backend
 ARG API_KEY
 ENV API_KEY=$API_KEY
 
-# Crear directorios para persistencia de archivos
+# Crear directorio para persistencia de archivos subidos
 RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 
-# Instalación de dependencias de producción únicamente
+# Instalación de dependencias de producción únicamente (ahorra espacio)
 COPY --chown=node:node package*.json ./
 RUN npm config set fetch-retries 5 && \
     npm install --omit=dev
 
-# Copiar lógica del servidor y los archivos estáticos compilados
+# Copiar el código del servidor y los archivos estáticos compilados del Stage 1
 COPY --chown=node:node server ./server
 COPY --chown=node:node --from=builder /app/dist ./dist
 
+# Exponer el puerto configurado
 EXPOSE 3000
 
-# Healthcheck
+# Healthcheck para monitoreo en Easypanel/Docker
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/api/health').then((r) => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
 
+# Ejecutar como usuario no-root por seguridad
 USER node
 
 CMD ["node", "server/index.js"]
