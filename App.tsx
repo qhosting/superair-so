@@ -28,6 +28,7 @@ import Leads from './modules/Leads';
 import Purchases from './modules/Purchases';
 import WarehouseManager from './modules/WarehouseManager';
 import KnowledgeBase from './modules/KnowledgeBase';
+import CalculatorModule from './modules/Calculator';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isLoading } = useAuth();
@@ -103,6 +104,7 @@ const AppRoutes: React.FC = () => {
         <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
         <Route path="/builder" element={<ProtectedRoute><LandingBuilder /></ProtectedRoute>} />
+        <Route path="/calculator" element={<ProtectedRoute><CalculatorModule /></ProtectedRoute>} />
 
         <Route path="*" element={<Navigate to="/dashboard" />} />
       </Routes>

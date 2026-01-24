@@ -1,4 +1,3 @@
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -8,28 +7,23 @@ if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
-// --- GLOBAL FETCH INTERCEPTOR (ENHANCED MONITORING) ---
+// --- GLOBAL FETCH INTERCEPTOR (ROBUST VERSION) ---
 (function applyInterceptor() {
     const originalFetch = window.fetch;
     if (!originalFetch) return;
 
     const wrappedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         let url = '';
+        if (typeof input === 'string') url = input;
+        else if (input instanceof URL) url = input.toString();
+        else if (input instanceof Request) url = input.url;
 
-        if (typeof input === 'string') {
-            url = input;
-        } else if (input instanceof URL) {
-            url = input.toString();
-        } else if (input instanceof Request) {
-            url = input.url;
-        }
-
-        const isApiCall = url.startsWith('/api') || url.includes('/api/');
+        const isApiCall = url.includes('/api/');
+        const isLoginPath = url.includes('/api/auth/login');
         
         if (isApiCall) {
-            const token = localStorage.getItem('superair_token') || sessionStorage.getItem('superair_token');
-            
-            if (token) {
+            const token = localStorage.getItem('superair_token');
+            if (token && !isLoginPath) {
                 if (!(input instanceof Request)) {
                     init = init || {};
                     const headers = new Headers(init.headers || {});
@@ -37,12 +31,6 @@ if (!rootElement) {
                         headers.set('Authorization', `Bearer ${token}`);
                     }
                     init.headers = headers;
-                } else {
-                    try {
-                        if (!input.headers.has('Authorization')) {
-                            input.headers.set('Authorization', `Bearer ${token}`);
-                        }
-                    } catch (e) { }
                 }
             }
         }
@@ -50,29 +38,33 @@ if (!rootElement) {
         try {
             const response = await originalFetch(input, init);
 
-            // Manejo de errores de autenticación
-            if ((response.status === 401 || response.status === 403) && !url.includes('/api/auth/login')) {
-                const currentHash = window.location.hash;
-                if (!currentHash.includes('/login')) {
+            // Solo redirigir si el error es de autorización y NO es la ruta de login
+            if ((response.status === 401 || response.status === 403) && !isLoginPath) {
+                const currentToken = localStorage.getItem('superair_token');
+                // Si teníamos un token y falló, es que expiró o es inválido (ej. cambio de secret en server)
+                if (currentToken) {
+                    console.warn("🔐 Sesión inválida o expirada. Limpiando credenciales...");
                     localStorage.removeItem('superair_token');
                     localStorage.removeItem('superair_user');
-                    window.location.hash = '#/login';
+                    
+                    if (!window.location.hash.includes('/login')) {
+                        // Usamos replaceState + Event para evitar el error de setter en Location.hash
+                        window.history.replaceState(null, '', '#/login');
+                        window.dispatchEvent(new Event('hashchange'));
+                    }
                 }
             }
 
-            // Detección de errores de servidor (Posible caída de DB)
             if (response.status >= 500) {
-                console.error("🚨 [SERVER ERROR 500] Error crítico en el backend.");
                 window.dispatchEvent(new CustomEvent('superair_server_error', { 
-                    detail: { message: "El servidor encontró un error (DB). Reintenta en unos segundos." } 
+                    detail: { message: "Error de servidor. Reintenta en unos segundos." } 
                 }));
             }
 
             return response;
         } catch (error) {
-            console.error("🌐 [NETWORK ERROR] No se pudo contactar al servidor:", error);
             window.dispatchEvent(new CustomEvent('superair_network_error', { 
-                detail: { message: "Sin conexión con el servidor. Verifica tu internet." } 
+                detail: { message: "Sin conexión con el servidor." } 
             }));
             throw error;
         }
@@ -81,14 +73,7 @@ if (!rootElement) {
     try {
         window.fetch = wrappedFetch;
     } catch (e) {
-        try {
-            Object.defineProperty(window, 'fetch', {
-                value: wrappedFetch,
-                configurable: true,
-                writable: true,
-                enumerable: true
-            });
-        } catch (defineError) { }
+        Object.defineProperty(window, 'fetch', { value: wrappedFetch, configurable: true, writable: true });
     }
 })();
 
@@ -99,15 +84,8 @@ root.render(
   </React.StrictMode>
 );
 
-// PWA Service Worker Registration
 if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js')
-      .then(registration => {
-        console.log('SW registered');
-      })
-      .catch(registrationError => {
-        console.debug('SW registration failed');
-      });
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
   });
 }

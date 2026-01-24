@@ -4,7 +4,7 @@ import { Link, useLocation } from '../context/AuthContext';
 import { 
   LayoutDashboard, Construction, Users, FileText, Package, Calendar, Settings, Menu, X, Wind,
   ShieldCheck, ShoppingBag, BarChart3, LogOut, Bell, CheckCircle2, AlertTriangle, Info, Magnet,
-  Truck, Warehouse, ShoppingCart, BookOpen
+  Truck, Warehouse, ShoppingCart, BookOpen, Calculator
 } from 'lucide-react';
 import { AppRoute, UserRole } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -39,6 +39,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Mi Inventario', icon: Package, route: AppRoute.INVENTORY, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.INSTALLER] },
     { name: 'Almacenes / Unidades', icon: Warehouse, route: AppRoute.WAREHOUSES, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN] },
     { name: 'Citas e Instalación', icon: Calendar, route: AppRoute.APPOINTMENTS, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.INSTALLER] },
+    { name: 'Calculadora BTU', icon: Calculator, route: AppRoute.CALCULATOR, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.INSTALLER] },
     { name: 'Reportes e Insights', icon: BarChart3, route: AppRoute.REPORTS, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN] },
     { name: 'Manual Operativo', icon: BookOpen, route: AppRoute.MANUAL, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.INSTALLER] },
     { name: 'Constructor Web', icon: Construction, route: AppRoute.BUILDER, roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN] },

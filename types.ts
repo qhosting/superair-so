@@ -13,7 +13,8 @@ export enum AppRoute {
   MANUAL = 'manual',
   BUILDER = 'builder',
   USERS = 'users',
-  SETTINGS = 'settings'
+  SETTINGS = 'settings',
+  CALCULATOR = 'calculator'
 }
 
 // --- AUTH & RBAC ---
