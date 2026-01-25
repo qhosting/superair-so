@@ -322,7 +322,7 @@ app.post('/api/clients/:id/ai-analysis', authenticate, async (req, res) => {
 
 // --- HEALTH ---
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'active', db: db.pool ? 'connected' : 'connecting', timestamp: new Date(), version: '1.2.4' });
+    res.json({ status: 'active', db: db.pool ? 'connected' : 'connecting', timestamp: new Date(), version: '1.2.5' });
 });
 
 // Servir Frontend
