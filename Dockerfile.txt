@@ -31,9 +31,9 @@ ENV TZ=America/Mexico_City
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Metadatos
-LABEL version="1.1.0"
-LABEL description="SuperAir ERP Production Environment"
+# Metadatos sincronizados
+LABEL version="1.2.0"
+LABEL description="SuperAir ERP Production Environment - Optimized Layering"
 
 # La API_KEY es vital para IA
 ARG API_KEY

@@ -16,14 +16,17 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS clients (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
+    contact_name VARCHAR(255),
     email VARCHAR(255),
     phone VARCHAR(20),
     address TEXT,
     rfc VARCHAR(15),
     type VARCHAR(20) DEFAULT 'Residencial',
+    category VARCHAR(20) DEFAULT 'Bronze', -- Bronze, Silver, Gold
     status VARCHAR(20) DEFAULT 'Activo',
     ltv DECIMAL(12,2) DEFAULT 0,
     last_service TIMESTAMP,
+    notes TEXT,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
