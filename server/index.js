@@ -1,3 +1,4 @@
+
 import express from 'express';
 import * as db from './db.js';
 import path from 'path';
@@ -20,16 +21,33 @@ app.set('trust proxy', true);
 // Iniciar DB
 db.initDatabase();
 
-// --- MIDDLEWARES ---
+// --- MIDDLEWARES DE SEGURIDAD ---
+
 const authenticate = (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No autorizado' });
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Sesión no válida o inexistente. Por favor, reingresa al sistema.' });
+    }
+    
     const token = authHeader.split(' ')[1];
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
         req.user = decoded;
         next();
-    } catch (e) { res.status(403).json({ error: 'Token inválido' }); }
+    } catch (e) { 
+        return res.status(401).json({ error: 'Sesión expirada' }); 
+    }
+};
+
+// Middleware para restringir por roles (RBAC)
+const authorize = (roles = []) => {
+    return (req, res, next) => {
+        if (!req.user) return res.status(401).json({ error: 'No autenticado' });
+        if (roles.length && !roles.includes(req.user.role)) {
+            return res.status(403).json({ error: 'No tienes permisos suficientes para acceder a este módulo.' });
+        }
+        next();
+    };
 };
 
 // --- AUTHENTICATION ---
@@ -60,8 +78,8 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-// --- LEADS API (FIXED FOR PROD) ---
-app.get('/api/leads', authenticate, async (req, res) => {
+// --- LEADS API (PROTECTED WITH RBAC) ---
+app.get('/api/leads', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
     try {
         const result = await db.query(`
             SELECT 
@@ -101,7 +119,7 @@ app.post('/api/leads', async (req, res) => {
     }
 });
 
-app.put('/api/leads/:id', authenticate, async (req, res) => {
+app.put('/api/leads/:id', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
     const { id } = req.params;
     const { status, history, notes, name, email, phone } = req.body;
     try {
@@ -125,7 +143,7 @@ app.put('/api/leads/:id', authenticate, async (req, res) => {
     }
 });
 
-app.post('/api/leads/:id/convert', authenticate, async (req, res) => {
+app.post('/api/leads/:id/convert', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
     const { id } = req.params;
     try {
         const leadRes = await db.query("SELECT * FROM leads WHERE id = $1::integer", [id]);
@@ -161,7 +179,7 @@ app.get('/api/clients', authenticate, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/clients', authenticate, async (req, res) => {
+app.post('/api/clients', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
     const { name, contact_name, email, phone, address, rfc, type, category, notes } = req.body;
     if (!name) return res.status(400).json({ error: 'El nombre es obligatorio' });
     try {
@@ -173,7 +191,7 @@ app.post('/api/clients', authenticate, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.put('/api/clients/:id', authenticate, async (req, res) => {
+app.put('/api/clients/:id', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
     const { id } = req.params;
     const { name, contact_name, email, phone, address, rfc, type, category, status, notes } = req.body;
     try {
@@ -197,7 +215,7 @@ app.put('/api/clients/:id', authenticate, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/clients/:id', authenticate, async (req, res) => {
+app.delete('/api/clients/:id', authenticate, authorize(['Super Admin']), async (req, res) => {
     const { id } = req.params;
     try {
         await db.query("DELETE FROM clients WHERE id = $1::integer", [id]);
@@ -298,7 +316,7 @@ app.post('/api/clients/:id/ai-analysis', authenticate, async (req, res) => {
 
 // --- HEALTH ---
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'active', db: db.pool ? 'connected' : 'connecting', timestamp: new Date(), version: '1.2.3' });
+    res.json({ status: 'active', db: db.pool ? 'connected' : 'connecting', timestamp: new Date(), version: '1.2.4' });
 });
 
 // Servir Frontend

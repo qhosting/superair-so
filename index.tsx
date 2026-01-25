@@ -1,3 +1,4 @@
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -7,12 +8,11 @@ if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
-// --- GLOBAL FETCH INTERCEPTOR (ROBUST VERSION) ---
+// --- GLOBAL FETCH INTERCEPTOR (FIXED FOR GETTER-ONLY ENVIRONMENTS) ---
 (function applyInterceptor() {
-    const originalFetch = window.fetch;
-    if (!originalFetch) return;
-
-    const wrappedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const originalFetch = window.fetch.bind(window);
+    
+    const interceptedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         let url = '';
         if (typeof input === 'string') url = input;
         else if (input instanceof URL) url = input.toString();
@@ -21,59 +21,72 @@ if (!rootElement) {
         const isApiCall = url.includes('/api/');
         const isLoginPath = url.includes('/api/auth/login');
         
-        if (isApiCall) {
+        if (isApiCall && !isLoginPath) {
             const token = localStorage.getItem('superair_token');
-            if (token && !isLoginPath) {
-                if (!(input instanceof Request)) {
-                    init = init || {};
-                    const headers = new Headers(init.headers || {});
-                    if (!headers.has('Authorization')) {
-                        headers.set('Authorization', `Bearer ${token}`);
+            if (token) {
+                init = init || {};
+                const headers: Record<string, string> = {};
+                
+                if (init.headers) {
+                    if (init.headers instanceof Headers) {
+                        init.headers.forEach((value, key) => { headers[key] = value; });
+                    } else if (Array.isArray(init.headers)) {
+                        init.headers.forEach(([key, value]) => { headers[key] = value; });
+                    } else {
+                        Object.assign(headers, init.headers);
                     }
-                    init.headers = headers;
                 }
+
+                if (!headers['Authorization'] && !headers['authorization']) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+                
+                init.headers = headers;
             }
         }
 
         try {
             const response = await originalFetch(input, init);
 
-            // Solo redirigir si el error es de autorización y NO es la ruta de login
             if ((response.status === 401 || response.status === 403) && !isLoginPath) {
                 const currentToken = localStorage.getItem('superair_token');
-                // Si teníamos un token y falló, es que expiró o es inválido (ej. cambio de secret en server)
                 if (currentToken) {
-                    console.warn("🔐 Sesión inválida o expirada. Limpiando credenciales...");
-                    localStorage.removeItem('superair_token');
-                    localStorage.removeItem('superair_user');
+                    console.warn(`🔐 Acceso denegado (${response.status}) para: ${url}. Verificando sesión...`);
                     
-                    if (!window.location.hash.includes('/login')) {
-                        // Usamos replaceState + Event para evitar el error de setter en Location.hash
+                    if (response.status === 401) {
+                        localStorage.removeItem('superair_token');
+                        localStorage.removeItem('superair_user');
                         window.history.replaceState(null, '', '#/login');
                         window.dispatchEvent(new Event('hashchange'));
                     }
                 }
             }
 
-            if (response.status >= 500) {
-                window.dispatchEvent(new CustomEvent('superair_server_error', { 
-                    detail: { message: "Error de servidor. Reintenta en unos segundos." } 
-                }));
-            }
-
             return response;
         } catch (error) {
             window.dispatchEvent(new CustomEvent('superair_network_error', { 
-                detail: { message: "Sin conexión con el servidor." } 
+                detail: { message: "Error de comunicación con el servidor ERP." } 
             }));
             throw error;
         }
     };
 
     try {
-        window.fetch = wrappedFetch;
+        // Usamos defineProperty para evitar el error de "getter-only property" en ciertos navegadores/entornos
+        Object.defineProperty(window, 'fetch', {
+            configurable: true,
+            enumerable: true,
+            writable: true,
+            value: interceptedFetch
+        });
     } catch (e) {
-        Object.defineProperty(window, 'fetch', { value: wrappedFetch, configurable: true, writable: true });
+        // Fallback extremo si el objeto window está muy protegido
+        console.error("No se pudo interceptar fetch mediante defineProperty, intentando asignación directa.");
+        try {
+            window.fetch = interceptedFetch;
+        } catch (err) {
+            console.error("Falla crítica al inyectar interceptor de seguridad.");
+        }
     }
 })();
 
