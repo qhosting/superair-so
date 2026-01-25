@@ -60,7 +60,100 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-// --- CLIENTS API (PROD-READY) ---
+// --- LEADS API (FIXED FOR PROD) ---
+app.get('/api/leads', authenticate, async (req, res) => {
+    try {
+        const result = await db.query(`
+            SELECT 
+                id::text, 
+                name, 
+                email, 
+                phone, 
+                source, 
+                status, 
+                notes, 
+                history, 
+                created_at AS "createdAt", 
+                updated_at AS "updatedAt" 
+            FROM leads 
+            ORDER BY created_at DESC
+        `);
+        res.json(result.rows);
+    } catch (e) { 
+        res.status(500).json({ error: 'Error al consultar leads: ' + e.message }); 
+    }
+});
+
+app.post('/api/leads', async (req, res) => {
+    const { name, email, phone, source, notes, status } = req.body;
+    if (!name) return res.status(400).json({ error: 'El nombre del prospecto es obligatorio.' });
+    
+    try {
+        const result = await db.query(
+            `INSERT INTO leads (name, email, phone, source, notes, status, history) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7) 
+             RETURNING id::text, name, email, phone, source, status, notes, history, created_at AS "createdAt"`,
+            [name, email || null, phone || null, source || 'Manual', notes || '', status || 'Nuevo', JSON.stringify([])]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { 
+        res.status(500).json({ error: 'Error al guardar lead: ' + e.message }); 
+    }
+});
+
+app.put('/api/leads/:id', authenticate, async (req, res) => {
+    const { id } = req.params;
+    const { status, history, notes, name, email, phone } = req.body;
+    try {
+        const result = await db.query(
+            `UPDATE leads SET 
+                status = COALESCE($1, status), 
+                history = COALESCE($2, history),
+                notes = COALESCE($3, notes),
+                name = COALESCE($4, name),
+                email = COALESCE($5, email),
+                phone = COALESCE($6, phone),
+                updated_at = NOW()
+            WHERE id = $7::integer 
+            RETURNING id::text, name, email, phone, source, status, notes, history, created_at AS "createdAt"`,
+            [status || null, history ? JSON.stringify(history) : null, notes || null, name || null, email || null, phone || null, id]
+        );
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Lead no encontrado' });
+        res.json(result.rows[0]);
+    } catch (e) { 
+        res.status(500).json({ error: 'Error al actualizar lead: ' + e.message }); 
+    }
+});
+
+app.post('/api/leads/:id/convert', authenticate, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const leadRes = await db.query("SELECT * FROM leads WHERE id = $1::integer", [id]);
+        if (leadRes.rows.length === 0) return res.status(404).json({ error: 'Lead no encontrado' });
+        
+        const lead = leadRes.rows[0];
+        
+        // Iniciar transacción
+        await db.query("BEGIN");
+        
+        // Crear cliente
+        const clientRes = await db.query(
+            "INSERT INTO clients (name, email, phone, notes, type, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id::text",
+            [lead.name, lead.email, lead.phone, lead.notes, 'Residencial', 'Activo']
+        );
+        
+        // Actualizar lead
+        await db.query("UPDATE leads SET status = 'Ganado' WHERE id = $1::integer", [id]);
+        
+        await db.query("COMMIT");
+        res.json({ success: true, clientId: clientRes.rows[0].id });
+    } catch (e) {
+        await db.query("ROLLBACK");
+        res.status(500).json({ error: 'Falla en la conversión: ' + e.message });
+    }
+});
+
+// --- CLIENTS API ---
 app.get('/api/clients', authenticate, async (req, res) => {
     try {
         const result = await db.query("SELECT *, id::text as id, ltv::float as ltv FROM clients ORDER BY name ASC");
@@ -203,9 +296,9 @@ app.post('/api/clients/:id/ai-analysis', authenticate, async (req, res) => {
     }
 });
 
-// --- OTROS MODULOS (FALLBACKS) ---
+// --- HEALTH ---
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'active', db: db.pool ? 'connected' : 'connecting', timestamp: new Date(), version: '1.2.2' });
+    res.json({ status: 'active', db: db.pool ? 'connected' : 'connecting', timestamp: new Date(), version: '1.2.3' });
 });
 
 // Servir Frontend

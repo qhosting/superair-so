@@ -35,10 +35,14 @@ const Leads: React.FC = () => {
     try {
         const res = await fetch('/api/leads');
         const data = await res.json();
-        setLeads(Array.isArray(data) ? data : []);
+        if (res.ok) {
+            setLeads(Array.isArray(data) ? data : []);
+        } else {
+            showToast(data.error || "Error al sincronizar prospectos", "error");
+        }
     } catch (e) {
         console.error("Error fetching leads:", e);
-        showToast("Error al sincronizar prospectos", "error");
+        showToast("Error de red al conectar con el ERP", "error");
     } finally {
         setLoading(false);
     }
@@ -61,12 +65,13 @@ const Leads: React.FC = () => {
           if (res.ok) {
               showToast(`Lead movido a: ${status}`);
           } else {
+              const err = await res.json();
+              showToast(err.error || "Falla en actualización remota", "error");
               fetchLeads(); // Rollback
-              showToast("Error al actualizar estado en servidor", "error");
           }
       } catch (e) { 
+          showToast("Error de conexión al servidor", "error");
           fetchLeads(); 
-          showToast("Error de conexión", "error");
       }
   };
 
@@ -76,15 +81,15 @@ const Leads: React.FC = () => {
       setIsSaving(true);
       try {
           const res = await fetch(`/api/leads/${lead.id}/convert`, { method: 'POST' });
+          const data = await res.json();
           if (res.ok) {
               showToast("¡Cliente generado con éxito!");
               navigate('/clients');
           } else {
-              const err = await res.json();
-              showToast(err.error || "Error al convertir lead", "error");
+              showToast(data.error || "Error al convertir lead", "error");
           }
       } catch (e) {
-          showToast("Error de conexión.", "error");
+          showToast("Error de conexión durante la conversión", "error");
       } finally {
           setIsSaving(false);
       }
@@ -109,14 +114,14 @@ const Leads: React.FC = () => {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ history: updatedHistory })
           });
+          const saved = await res.json();
           if (res.ok) {
-              const saved = await res.json();
               setSelectedLead(saved);
               setLeads(leads.map(l => l.id === saved.id ? saved : l));
               setNewComment('');
               showToast("Bitácora actualizada");
           } else {
-              showToast("No se pudo guardar el comentario", "error");
+              showToast(saved.error || "Error al guardar nota", "error");
           }
       } catch (e) { 
           showToast("Error de conexión al servidor", "error"); 
@@ -134,16 +139,17 @@ const Leads: React.FC = () => {
               headers: {'Content-Type':'application/json'}, 
               body: JSON.stringify(leadForm) 
           });
+          const data = await res.json();
           if(res.ok) { 
               fetchLeads(); 
               setShowAddModal(false); 
               showToast("Prospecto inyectado al sistema");
               setLeadForm({ name: '', phone: '', email: '', notes: '', source: 'Manual', status: 'Nuevo' });
           } else {
-              showToast("Error al registrar información", "error");
+              showToast(data.error || "Error al registrar prospecto", "error");
           }
       } catch (e) { 
-          showToast("Error de conexión.", "error"); 
+          showToast("Error crítico de red.", "error"); 
       } finally { 
           setIsSaving(false); 
       }
