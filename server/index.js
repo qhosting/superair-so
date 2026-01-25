@@ -1,4 +1,3 @@
-
 import express from 'express';
 import * as db from './db.js';
 import path from 'path';
@@ -145,29 +144,36 @@ app.put('/api/leads/:id', authenticate, authorize(['Super Admin', 'Admin']), asy
 
 app.post('/api/leads/:id/convert', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
     const { id } = req.params;
+    const client = await db.pool.connect(); // Obtener cliente dedicado para transacción
+    
     try {
-        const leadRes = await db.query("SELECT * FROM leads WHERE id = $1::integer", [id]);
-        if (leadRes.rows.length === 0) return res.status(404).json({ error: 'Lead no encontrado' });
+        const leadRes = await client.query("SELECT * FROM leads WHERE id = $1::integer", [id]);
+        if (leadRes.rows.length === 0) {
+            client.release();
+            return res.status(404).json({ error: 'Lead no encontrado' });
+        }
         
         const lead = leadRes.rows[0];
         
-        // Iniciar transacción
-        await db.query("BEGIN");
+        await client.query("BEGIN");
         
         // Crear cliente
-        const clientRes = await db.query(
-            "INSERT INTO clients (name, email, phone, notes, type, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id::text",
-            [lead.name, lead.email, lead.phone, lead.notes, 'Residencial', 'Activo']
+        const clientRes = await client.query(
+            "INSERT INTO clients (name, contact_name, email, phone, notes, type, status, category) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id::text",
+            [lead.name, lead.name, lead.email, lead.phone, lead.notes, 'Residencial', 'Activo', 'Bronze']
         );
         
         // Actualizar lead
-        await db.query("UPDATE leads SET status = 'Ganado' WHERE id = $1::integer", [id]);
+        await client.query("UPDATE leads SET status = 'Ganado' WHERE id = $1::integer", [id]);
         
-        await db.query("COMMIT");
+        await client.query("COMMIT");
         res.json({ success: true, clientId: clientRes.rows[0].id });
     } catch (e) {
-        await db.query("ROLLBACK");
-        res.status(500).json({ error: 'Falla en la conversión: ' + e.message });
+        await client.query("ROLLBACK");
+        console.error("Conversion Error:", e.message);
+        res.status(500).json({ error: 'Falla técnica en la conversión. Por favor contacte a soporte.' });
+    } finally {
+        client.release();
     }
 });
 
