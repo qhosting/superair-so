@@ -1,4 +1,3 @@
-
 # --- STAGE 1: BUILD FRONTEND (Vite) ---
 FROM node:20-alpine AS builder
 
@@ -32,8 +31,8 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 # Metadatos sincronizados
-LABEL version="1.2.0"
-LABEL description="SuperAir ERP Production Environment - Optimized Layering"
+LABEL version="1.2.2"
+LABEL description="SuperAir ERP Production Environment - High Performance"
 
 # La API_KEY es vital para IA
 ARG API_KEY
@@ -53,7 +52,7 @@ COPY --chown=node:node --from=builder /app/dist ./dist
 # Exponer puerto
 EXPOSE 3000
 
-# Healthcheck robusto
+# Healthcheck robusto para el orquestador
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/api/health').then((r) => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
 

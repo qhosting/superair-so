@@ -1,4 +1,3 @@
-
 import express from 'express';
 import * as db from './db.js';
 import path from 'path';
@@ -15,10 +14,10 @@ const JWT_SECRET = process.env.JWT_SECRET || 'superair_secret_key_2024';
 const app = express();
 app.use(express.json({ limit: '20mb' }));
 
-// Middleware para extraer IP real tras proxies (Easypanel/Nginx)
+// Middleware para extraer IP real tras proxies
 app.set('trust proxy', true);
 
-// Iniciar DB y realizar diagnóstico
+// Iniciar DB
 db.initDatabase();
 
 // --- MIDDLEWARES ---
@@ -54,23 +53,24 @@ app.post('/api/auth/login', async (req, res) => {
         
         if (!validPassword) return res.status(401).json({ error: 'Contraseña incorrecta' });
 
-        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+        const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '24h' });
         res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, status: user.status } });
     } catch (e) { 
-        res.status(500).json({ error: 'Error interno al procesar el acceso.' }); 
+        res.status(500).json({ error: 'Error interno de autenticación' }); 
     }
 });
 
-// --- CLIENTS API (REAL & ROBUSTA) ---
+// --- CLIENTS API (PROD-READY) ---
 app.get('/api/clients', authenticate, async (req, res) => {
     try {
-        const result = await db.query("SELECT *, id::text as id FROM clients ORDER BY name ASC");
+        const result = await db.query("SELECT *, id::text as id, ltv::float as ltv FROM clients ORDER BY name ASC");
         res.json(result.rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/clients', authenticate, async (req, res) => {
     const { name, contact_name, email, phone, address, rfc, type, category, notes } = req.body;
+    if (!name) return res.status(400).json({ error: 'El nombre es obligatorio' });
     try {
         const result = await db.query(
             "INSERT INTO clients (name, contact_name, email, phone, address, rfc, type, category, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *, id::text as id",
@@ -116,11 +116,12 @@ app.get('/api/clients/:id/360', authenticate, async (req, res) => {
     const { id } = req.params;
     try {
         const client = await db.query("SELECT *, id::text as id FROM clients WHERE id = $1::integer", [id]);
+        if (client.rows.length === 0) return res.status(404).json({ error: 'Cliente no encontrado' });
+        
         const assets = await db.query("SELECT *, id::text as id FROM client_assets WHERE client_id = $1::integer ORDER BY created_at DESC", [id]);
         const appointments = await db.query("SELECT a.*, a.id::text as id, c.name as client_name, c.address as client_address FROM appointments a JOIN clients c ON a.client_id = c.id WHERE a.client_id = $1::integer ORDER BY a.date DESC", [id]);
         const quotes = await db.query("SELECT q.*, q.id::text as id, c.name as client_name FROM quotes q JOIN clients c ON q.client_id = c.id WHERE q.client_id = $1::integer ORDER BY q.created_at DESC", [id]);
         
-        // Determinar salud dinámica
         const sixMonthsAgo = new Date();
         sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
         const criticalAssets = assets.rows.filter(a => !a.last_service || new Date(a.last_service) < sixMonthsAgo).length;
@@ -184,10 +185,10 @@ app.post('/api/clients/:id/ai-analysis', authenticate, async (req, res) => {
         Analiza el perfil del cliente "${client.name}" (${client.type}) que tiene instalados estos equipos:
         ${assets.map(a => `- ${a.brand} ${a.model}, ${a.btu} BTU, Tipo: ${a.type}, Instalado: ${a.install_date}`).join('\n')}
         
-        Genera un dictamen técnico de 4-5 líneas que incluya:
+        Genera un dictamen técnico profesional de 4-5 líneas que incluya:
         1. Estado de obsolescencia de los equipos según su fecha de instalación.
-        2. Recomendación de mantenimiento preventivo basado en el clima actual (31°C en Querétaro).
-        3. Riesgos detectados si los hay.
+        2. Recomendación de mantenimiento preventivo basado en el clima extremo (Bajío MX).
+        3. Riesgos operativos detectados.
         No uses introducciones, ve directo al dictamen técnico.`;
 
         const response = await ai.models.generateContent({
@@ -202,67 +203,9 @@ app.post('/api/clients/:id/ai-analysis', authenticate, async (req, res) => {
     }
 });
 
-// --- OTROS MODULOS (SIMPLIFICADOS PARA ESTE EJEMPLO) ---
-app.get('/api/leads', authenticate, async (req, res) => {
-    try {
-        const result = await db.query("SELECT *, id::text as id, created_at as \"createdAt\" FROM leads ORDER BY created_at DESC");
-        res.json(result.rows);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/products', authenticate, async (req, res) => {
-    try {
-        const result = await db.query("SELECT *, id::text as id FROM products ORDER BY name ASC");
-        res.json(result.rows);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/quotes', authenticate, async (req, res) => {
-    try {
-        const result = await db.query(`
-            SELECT q.*, q.id::text as id, c.name as client_name 
-            FROM quotes q 
-            JOIN clients c ON q.client_id = c.id 
-            ORDER BY q.created_at DESC
-        `);
-        res.json(result.rows);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/appointments', authenticate, async (req, res) => {
-    try {
-        const result = await db.query(`
-            SELECT a.*, a.id::text as id, c.name as client_name, c.address as client_address
-            FROM appointments a
-            JOIN clients c ON a.client_id = c.id
-            ORDER BY a.date ASC, a.time ASC
-        `);
-        res.json(result.rows);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/settings', authenticate, async (req, res) => {
-    try {
-        const result = await db.query("SELECT category, data FROM app_settings");
-        const settings = {};
-        result.rows.forEach(row => settings[row.category] = row.data);
-        res.json(settings);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/settings', authenticate, async (req, res) => {
-    const { category, data } = req.body;
-    try {
-        await db.query(
-            "INSERT INTO app_settings (category, data) VALUES ($1, $2) ON CONFLICT (category) DO UPDATE SET data = $2",
-            [category, JSON.stringify(data)]
-        );
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
+// --- OTROS MODULOS (FALLBACKS) ---
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'active', db: db.pool ? 'connected' : 'connecting', timestamp: new Date() });
+    res.json({ status: 'active', db: db.pool ? 'connected' : 'connecting', timestamp: new Date(), version: '1.2.2' });
 });
 
 // Servir Frontend
