@@ -3,20 +3,20 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Argumento de construcción para la API_KEY
+# Argumento de construcción para la API_KEY (Gemini/IA)
 ARG API_KEY
 ENV API_KEY=$API_KEY
 
 # Copiar archivos de configuración de dependencias
 COPY package*.json ./
 
-# Instalar todas las dependencias
+# Instalar todas las dependencias incluyendo devDeps para el build
 RUN npm install
 
-# Copiar el resto del código
+# Copiar el resto del código fuente
 COPY . .
 
-# Compilar el frontend (Vite genera /dist)
+# Compilar el frontend (Vite genera la carpeta /dist)
 RUN npm run build
 
 # --- STAGE 2: PRODUCTION SERVER (Node.js) ---
@@ -24,40 +24,40 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Configuración de entorno y zona horaria
+# Configuración de entorno y zona horaria para México
 RUN apk add --no-cache tzdata
 ENV TZ=America/Mexico_City
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Metadatos sincronizados
-LABEL version="1.2.3"
-LABEL description="SuperAir ERP Production Environment - Bug Fixes in Leads Module"
+# Metadatos de versión sincronizados con server/index.js
+LABEL version="1.2.4"
+LABEL description="SuperAir ERP Production Environment - Security & Interceptor Patches"
 
-# La API_KEY es vital para IA
+# Inyectar API_KEY en el entorno de ejecución del servidor
 ARG API_KEY
 ENV API_KEY=$API_KEY
 
-# Preparar directorio de persistencia
+# Preparar directorio de persistencia para activos dinámicos (logos, PDFs)
 RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 
-# Copiar dependencias de producción
+# Copiar dependencias exclusivas de producción para optimizar imagen
 COPY --chown=node:node package*.json ./
 RUN npm install --omit=dev
 
-# Copiar el servidor y frontend compilado
+# Copiar el core del servidor y el bundle compilado del frontend
 COPY --chown=node:node server ./server
 COPY --chown=node:node --from=builder /app/dist ./dist
 
-# Exponer puerto
+# Puerto expuesto para el orquestador
 EXPOSE 3000
 
-# Healthcheck robusto para el orquestador
+# Healthcheck avanzado para monitorear estado de API y DB
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/api/health').then((r) => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
 
-# Seguridad
+# Seguridad: Ejecutar proceso como usuario limitado
 USER node
 
-# Inicio
+# Punto de entrada principal
 CMD ["node", "server/index.js"]
