@@ -1,8 +1,7 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   User, Search, Plus, MapPin, Phone, Mail, FileText, Trash2, 
-  Loader2, UploadCloud, CheckCircle2, AlertCircle, X, BrainCircuit, ExternalLink,
+  Loader2, CheckCircle2, AlertCircle, X, BrainCircuit, ExternalLink,
   Edit3, Save, Wind, History, DollarSign, Wallet, Calendar, Thermometer, ChevronRight,
   PlusCircle, Info, Settings, Factory, Layout, Wrench, MessageSquare, Sparkles
 } from 'lucide-react';
@@ -33,7 +32,7 @@ const Clients: React.FC = () => {
   });
 
   const [newClient, setNewClient] = useState<Partial<Client>>({
-    name: '', email: '', phone: '', address: '', rfc: '', type: 'Residencial', status: 'Prospecto', notes: ''
+    name: '', email: '', phone: '', address: '', rfc: '', type: 'Residencial', status: 'Activo', notes: ''
   });
 
   const [isEditing, setIsEditing] = useState(false);
@@ -50,7 +49,7 @@ const Clients: React.FC = () => {
       const data = await res.json();
       if (Array.isArray(data)) setClients(data);
     } catch (e) {
-      console.error(e);
+      showToast("Error al conectar con la base de datos", "error");
     } finally {
       setLoading(false);
     }
@@ -75,7 +74,12 @@ const Clients: React.FC = () => {
       try {
           const res = await fetch(`/api/clients/${selectedClientId}/ai-analysis`, { method: 'POST' });
           const data = await res.json();
-          setAiAnalysis(data.analysis);
+          if (data.analysis) {
+            setAiAnalysis(data.analysis);
+            showToast("Análisis Gemini completado");
+          } else {
+            showToast("No se pudo generar el análisis", "error");
+          }
       } catch (e) {
           showToast("Error en el diagnóstico de IA", "error");
       } finally {
@@ -96,6 +100,7 @@ const Clients: React.FC = () => {
               setShowAssetModal(false);
               loadClient360(selectedClientId);
               showToast("Equipo registrado correctamente");
+              setAssetForm({ brand: '', model: '', btu: 12000, type: 'MiniSplit', install_date: new Date().toISOString().split('T')[0], notes: '' });
           }
       } catch (e) { showToast("Error guardando equipo", "error"); }
       finally { setIsSaving(false); }
@@ -104,9 +109,31 @@ const Clients: React.FC = () => {
   const handleDeleteAsset = async (assetId: string) => {
       if (!confirm("¿Eliminar este equipo del expediente?")) return;
       try {
-          await fetch(`/api/assets/${assetId}`, { method: 'DELETE' });
-          loadClient360(selectedClientId!);
-      } catch (e) { console.error(e); }
+          const res = await fetch(`/api/assets/${assetId}`, { method: 'DELETE' });
+          if (res.ok) {
+              showToast("Equipo eliminado");
+              loadClient360(selectedClientId!);
+          }
+      } catch (e) { showToast("Error al eliminar equipo", "error"); }
+  };
+
+  const handleDeleteClient = async (id: string) => {
+      if (!confirm("¿Eliminar este cliente y todos sus datos permanentemente?")) return;
+      try {
+          const res = await fetch(`/api/clients/${id}`, { method: 'DELETE' });
+          if (res.ok) {
+              showToast("Expediente eliminado");
+              setSelectedClientId(null);
+              fetchClients();
+          }
+      } catch (e) { showToast("Error al eliminar cliente", "error"); }
+  };
+
+  const handleOpenEditClient = () => {
+      if (!profile360) return;
+      setNewClient(profile360.client);
+      setIsEditing(true);
+      setShowAddModal(true);
   };
 
   const isMaintenanceDue = (lastService?: string) => {
@@ -118,16 +145,18 @@ const Clients: React.FC = () => {
 
   const sendWhatsAppReminder = async () => {
       if (!profile360?.client?.phone) return;
-      try {
-          const msg = `Hola ${profile360.client.name}, en SuperAir notamos que tus equipos requieren mantenimiento preventivo para evitar fallas por calor. ¿Te gustaría agendar una visita técnica?`;
-          window.open(`https://wa.me/52${profile360.client.phone.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`, '_blank');
-      } catch (e) {}
+      const msg = `Hola ${profile360.client.name}, en SuperAir notamos que tus equipos requieren mantenimiento preventivo para evitar fallas por calor. ¿Te gustaría agendar una visita técnica?`;
+      window.open(`https://wa.me/52${profile360.client.phone.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
   const formatMXN = (val: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
 
   const filteredClients = useMemo(() => {
-    return clients.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()) || (c.rfc && c.rfc.toLowerCase().includes(searchTerm.toLowerCase())));
+    return clients.filter(c => 
+        c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        (c.rfc && c.rfc.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (c.phone && c.phone.includes(searchTerm))
+    );
   }, [clients, searchTerm]);
 
   return (
@@ -137,7 +166,11 @@ const Clients: React.FC = () => {
           <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">Expediente de Clientes 360</h2>
           <p className="text-slate-500 text-sm font-medium">CRM Técnico con monitoreo de activos y salud de equipos HVAC.</p>
         </div>
-        <button onClick={() => { setIsEditing(false); setShowAddModal(true); }} className="flex items-center gap-2 px-8 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-sky-600 shadow-2xl transition-all">
+        <button onClick={() => { 
+            setNewClient({name: '', email: '', phone: '', address: '', rfc: '', type: 'Residencial', status: 'Activo', notes: ''});
+            setIsEditing(false); 
+            setShowAddModal(true); 
+        }} className="flex items-center gap-2 px-8 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-sky-600 shadow-2xl transition-all">
             <Plus size={18} /> Nuevo Cliente
         </button>
       </div>
@@ -165,7 +198,7 @@ const Clients: React.FC = () => {
          <div className="p-8 border-b border-slate-100 flex items-center gap-4">
              <Search className="text-slate-400" />
              <input 
-                placeholder="Buscar por nombre, RFC o dirección de instalación..." 
+                placeholder="Buscar por nombre, RFC, teléfono o dirección..." 
                 className="w-full outline-none font-bold text-slate-700"
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
@@ -182,7 +215,7 @@ const Clients: React.FC = () => {
                              <th className="px-8 py-5">Tipo</th>
                              <th className="px-8 py-5">Salud de Equipos</th>
                              <th className="px-8 py-5">LTV (Venta Acum.)</th>
-                             <th className="px-8 py-5 text-right">Detalle</th>
+                             <th className="px-8 py-5 text-right">Acciones</th>
                          </tr>
                      </thead>
                      <tbody className="divide-y divide-slate-100">
@@ -195,7 +228,7 @@ const Clients: React.FC = () => {
                                         <div className="text-[10px] text-slate-400 font-bold uppercase mt-0.5 flex items-center gap-1"><MapPin size={10}/> {client.address || 'Ubicación no registrada'}</div>
                                     </td>
                                     <td className="px-8 py-5">
-                                        <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${client.type === 'Comercial' ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>
+                                        <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${client.type === 'Comercial' ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
                                             {client.type}
                                         </span>
                                     </td>
@@ -215,7 +248,9 @@ const Clients: React.FC = () => {
                                         <div className="font-black text-slate-900">{formatMXN(Number(client.ltv || 0))}</div>
                                     </td>
                                     <td className="px-8 py-5 text-right">
-                                        <button className="p-3 text-slate-200 group-hover:text-sky-600 group-hover:bg-white rounded-2xl shadow-sm transition-all"><ChevronRight size={18}/></button>
+                                        <div className="flex justify-end gap-2">
+                                            <button onClick={(e) => { e.stopPropagation(); loadClient360(client.id); }} className="p-2 text-slate-400 hover:text-sky-600"><ChevronRight size={18}/></button>
+                                        </div>
                                     </td>
                                 </tr>
                              );
@@ -242,6 +277,10 @@ const Clients: React.FC = () => {
                                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{profile360.client.rfc || 'PÚBLICO EN GENERAL'}</span>
                                   <span className="w-1.5 h-1.5 bg-slate-300 rounded-full" />
                                   <span className="text-[10px] font-black text-sky-600 uppercase tracking-widest">{profile360.client.type}</span>
+                              </div>
+                              <div className="mt-4 flex gap-2">
+                                  <button onClick={handleOpenEditClient} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[9px] font-black uppercase hover:bg-slate-50 transition-all"><Edit3 size={12}/> Editar Perfil</button>
+                                  <button onClick={() => handleDeleteClient(selectedClientId)} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-rose-100 text-rose-500 rounded-lg text-[9px] font-black uppercase hover:bg-rose-50 transition-all"><Trash2 size={12}/> Eliminar</button>
                               </div>
                           </div>
                       </div>
@@ -356,7 +395,7 @@ const Clients: React.FC = () => {
                                   <div className="grid grid-cols-2 gap-4 mb-6">
                                       <div className="p-6 bg-emerald-50 border border-emerald-100 rounded-[2rem]">
                                           <p className="text-[9px] font-black text-emerald-600 uppercase mb-1">Venta Total</p>
-                                          <p className="text-2xl font-black text-emerald-700">{formatMXN(profile360.quotes.filter((q:any)=>q.status==='Aceptada').reduce((acc:number, q:any)=>acc+Number(q.total), 0))}</p>
+                                          <p className="text-2xl font-black text-emerald-700">{formatMXN(profile360.quotes.filter((q:any)=>q.status==='Aceptada'||q.status==='Ejecutada').reduce((acc:number, q:any)=>acc+Number(q.total), 0))}</p>
                                       </div>
                                       <div className="p-6 bg-slate-50 border border-slate-200 rounded-[2rem]">
                                           <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Cotizaciones</p>
@@ -377,7 +416,7 @@ const Clients: React.FC = () => {
                               </div>
 
                               <div className="space-y-4">
-                                  <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2"><MapPin size={18} className="text-rose-500"/> Geocodificación de Servicios</h4>
+                                  <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2"><MapPin size={18} className="text-rose-500"/> Ubicación de Servicio</h4>
                                   <div className="h-56 bg-slate-100 rounded-[2.5rem] border border-slate-200 overflow-hidden relative group">
                                       <iframe 
                                         width="100%" 
@@ -386,7 +425,7 @@ const Clients: React.FC = () => {
                                         loading="lazy" 
                                         allowFullScreen 
                                         referrerPolicy="no-referrer-when-downgrade"
-                                        src={`https://www.google.com/maps/embed/v1/place?key=REPLACE_WITH_YOUR_KEY&q=${encodeURIComponent(profile360.client.address || 'Queretaro, Mexico')}`}
+                                        src={`https://www.google.com/maps/embed/v1/place?key=${process.env.GOOGLE_MAPS_KEY || 'AIzaSyA'}&q=${encodeURIComponent(profile360.client.address || 'Queretaro, Mexico')}`}
                                         className="grayscale hover:grayscale-0 transition-all duration-700"
                                       />
                                       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20">
@@ -396,7 +435,7 @@ const Clients: React.FC = () => {
                                             rel="noreferrer"
                                             className="px-8 py-3 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-2xl hover:bg-sky-600 transition-all"
                                           >
-                                              Abrir Ruta Logística
+                                              Abrir en Google Maps
                                           </a>
                                       </div>
                                   </div>
@@ -449,19 +488,19 @@ const Clients: React.FC = () => {
                           </div>
                       </div>
                       <div className="space-y-1">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha de Instalación Original</label>
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha de Instalación</label>
                           <input type="date" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none" value={assetForm.install_date} onChange={e=>setAssetForm({...assetForm, install_date: e.target.value})} />
                       </div>
                       <button onClick={handleSaveAsset} disabled={isSaving} className="w-full py-5 bg-sky-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl hover:bg-sky-700 transition-all flex items-center justify-center gap-2">
                           {isSaving ? <Loader2 className="animate-spin" size={16}/> : <CheckCircle2 size={16}/>}
-                          Guardar en Expediente Maestro
+                          Guardar en Base de Datos
                       </button>
                   </div>
               </div>
           </div>
       )}
 
-      {/* MODAL: REGISTRO CLIENTE */}
+      {/* MODAL: REGISTRO/EDICIÓN CLIENTE */}
       {showAddModal && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[120] flex items-center justify-center p-6">
               <div className="bg-white w-full max-w-4xl rounded-[3.5rem] shadow-2xl p-10 animate-in zoom-in duration-300">
@@ -537,16 +576,17 @@ const Clients: React.FC = () => {
                                 if(res.ok) { 
                                     fetchClients(); 
                                     setShowAddModal(false); 
-                                    showToast("Base de datos actualizada");
+                                    showToast(isEditing ? "Expediente actualizado" : "Cliente registrado en sistema");
+                                    if (selectedClientId) loadClient360(selectedClientId);
                                 }
-                            } catch(e) { showToast("Error al procesar alta", "error"); }
+                            } catch(e) { showToast("Error al procesar solicitud", "error"); }
                             finally { setIsSaving(false); }
                         }} 
                         disabled={isSaving}
                         className="flex-1 py-5 bg-sky-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-sky-700 transition-all flex items-center justify-center gap-2"
                       >
                           {isSaving ? <Loader2 className="animate-spin" size={16}/> : <Save size={16} />}
-                          {isEditing ? 'Confirmar Cambios' : 'Registrar Cliente'}
+                          {isEditing ? 'Confirmar Cambios en Base de Datos' : 'Registrar Cliente en Sistema'}
                       </button>
                   </div>
               </div>

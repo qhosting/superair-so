@@ -1,4 +1,3 @@
-
 import express from 'express';
 import * as db from './db.js';
 import path from 'path';
@@ -36,8 +35,6 @@ const authenticate = (req, res, next) => {
 // --- AUTHENTICATION ---
 app.post('/api/auth/login', async (req, res) => {
     let { email, password } = req.body;
-    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    
     email = (email || '').toLowerCase().trim();
     password = (password || '').trim();
 
@@ -63,6 +60,123 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+// --- CLIENTS API (MEJORADA) ---
+app.get('/api/clients', authenticate, async (req, res) => {
+    try {
+        const result = await db.query("SELECT *, id::text as id FROM clients ORDER BY name ASC");
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/clients', authenticate, async (req, res) => {
+    const { name, email, phone, address, rfc, type, notes } = req.body;
+    try {
+        const result = await db.query(
+            "INSERT INTO clients (name, email, phone, address, rfc, type, notes) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *, id::text as id",
+            [name, email, phone, address, rfc, type, notes]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/clients/:id', authenticate, async (req, res) => {
+    const { id } = req.params;
+    const { name, email, phone, address, rfc, type, status, notes } = req.body;
+    try {
+        const result = await db.query(
+            `UPDATE clients SET 
+                name = COALESCE($1, name), 
+                email = COALESCE($2, email), 
+                phone = COALESCE($3, phone), 
+                address = COALESCE($4, address), 
+                rfc = COALESCE($5, rfc), 
+                type = COALESCE($6, type), 
+                status = COALESCE($7, status),
+                notes = COALESCE($8, notes)
+            WHERE id = $9::integer RETURNING *, id::text as id`,
+            [name, email, phone, address, rfc, type, status, notes, id]
+        );
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Cliente no encontrado' });
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/clients/:id', authenticate, async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.query("DELETE FROM clients WHERE id = $1::integer", [id]);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/clients/:id/360', authenticate, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const client = await db.query("SELECT *, id::text as id FROM clients WHERE id = $1::integer", [id]);
+        const assets = await db.query("SELECT *, id::text as id FROM client_assets WHERE client_id = $1::integer ORDER BY created_at DESC", [id]);
+        const appointments = await db.query("SELECT a.*, a.id::text as id, c.name as client_name, c.address as client_address FROM appointments a JOIN clients c ON a.client_id = c.id WHERE a.client_id = $1::integer ORDER BY a.date DESC", [id]);
+        const quotes = await db.query("SELECT q.*, q.id::text as id, c.name as client_name FROM quotes q JOIN clients c ON q.client_id = c.id WHERE q.client_id = $1::integer ORDER BY q.created_at DESC", [id]);
+        
+        res.json({ client: client.rows[0], assets: assets.rows, appointments: appointments.rows, quotes: quotes.rows });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- ASSETS MANAGEMENT ---
+app.post('/api/clients/:id/assets', authenticate, async (req, res) => {
+    const { id } = req.params;
+    const { brand, model, btu, type, install_date, notes } = req.body;
+    try {
+        const result = await db.query(
+            "INSERT INTO client_assets (client_id, brand, model, btu, type, install_date, notes) VALUES ($1::integer, $2, $3, $4, $5, $6, $7) RETURNING *, id::text as id",
+            [id, brand, model, btu, type, install_date, notes]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/assets/:id', authenticate, async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.query("DELETE FROM client_assets WHERE id = $1::integer", [id]);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- AI DIAGNOSTIC ENGINE ---
+app.post('/api/clients/:id/ai-analysis', authenticate, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const clientRes = await db.query("SELECT * FROM clients WHERE id = $1::integer", [id]);
+        const assetsRes = await db.query("SELECT * FROM client_assets WHERE client_id = $1::integer", [id]);
+        
+        if (clientRes.rows.length === 0) return res.status(404).json({ error: 'Cliente no encontrado' });
+        
+        const client = clientRes.rows[0];
+        const assets = assetsRes.rows;
+
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const prompt = `Actúa como un Ingeniero Senior de HVAC de SuperAir México. 
+        Analiza el perfil del cliente "${client.name}" (${client.type}) que tiene instalados estos equipos:
+        ${assets.map(a => `- ${a.brand} ${a.model}, ${a.btu} BTU, Tipo: ${a.type}, Instalado: ${a.install_date}`).join('\n')}
+        
+        Genera un dictamen técnico de 4-5 líneas que incluya:
+        1. Estado de obsolescencia de los equipos según su fecha de instalación.
+        2. Recomendación de mantenimiento preventivo basado en el clima actual (31°C en Querétaro).
+        3. Riesgos detectados si los hay.
+        No uses introducciones, ve directo al dictamen técnico.`;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: prompt
+        });
+
+        res.json({ analysis: response.text });
+    } catch (e) { 
+        console.error("AI Error:", e.message);
+        res.status(500).json({ error: 'Falla en el motor de IA' }); 
+    }
+});
+
 // --- LEADS API ---
 app.get('/api/leads', authenticate, async (req, res) => {
     try {
@@ -73,42 +187,19 @@ app.get('/api/leads', authenticate, async (req, res) => {
 
 app.post('/api/leads', async (req, res) => {
     const { name, email, phone, source, notes, status } = req.body;
-    const user_name = "Sistema Web";
-    
     try {
         const result = await db.query(
             "INSERT INTO leads (name, email, phone, source, notes, status, history) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *, id::text as id, created_at as \"createdAt\"",
             [name, email, phone, source || 'Web', notes, status || 'Nuevo', JSON.stringify([])]
         );
-        
-        const newLead = result.rows[0];
-        
-        // Log de creación
-        await db.query(
-            "INSERT INTO audit_logs (user_name, action, resource, resource_id, ip_address) VALUES ($1, $2, $3, $4, $5)",
-            [user_name, 'CREATE', 'lead', newLead.id, req.ip]
-        );
-
-        res.json(newLead);
-    } catch (e) { 
-        console.error("Error creating lead:", e.message);
-        res.status(500).json({ error: e.message }); 
-    }
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/api/leads/:id', authenticate, async (req, res) => {
     const { id } = req.params;
     const { status, history, notes, name, email, phone } = req.body;
-    
     try {
-        // Obtenemos estado previo para log
-        const prevRes = await db.query("SELECT * FROM leads WHERE id = $1::integer", [id]);
-        if (prevRes.rows.length === 0) return res.status(404).json({ error: 'Lead no encontrado' });
-        const prevLead = prevRes.rows[0];
-
-        // Normalizar valores para COALESCE y asegurar que history sea JSON válido
-        const historyValue = Array.isArray(history) ? JSON.stringify(history) : (history ? JSON.stringify(history) : null);
-
         const result = await db.query(
             `UPDATE leads SET 
                 status = COALESCE($1, status), 
@@ -119,93 +210,9 @@ app.put('/api/leads/:id', authenticate, async (req, res) => {
                 phone = COALESCE($6, phone),
                 updated_at = NOW()
             WHERE id = $7::integer RETURNING *, id::text as id, created_at as "createdAt"`,
-            [
-                status || null, 
-                historyValue, 
-                notes || null, 
-                name || null, 
-                email || null, 
-                phone || null, 
-                id
-            ]
-        );
-
-        const updatedLead = result.rows[0];
-
-        // Log de actualización si hubo cambio de status
-        if (status && status !== prevLead.status) {
-            await db.query(
-                "INSERT INTO audit_logs (user_id, user_name, action, resource, resource_id, changes, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-                [req.user.id, req.user.name, 'UPDATE', 'lead', id, JSON.stringify([{ field: 'status', old: prevLead.status, new: status }]), req.ip]
-            );
-        }
-
-        res.json(updatedLead);
-    } catch (e) { 
-        console.error("Error updating lead:", e.message);
-        res.status(500).json({ error: e.message }); 
-    }
-});
-
-app.post('/api/leads/:id/convert', authenticate, async (req, res) => {
-    const { id } = req.params;
-    try {
-        const leadRes = await db.query("SELECT * FROM leads WHERE id = $1::integer", [id]);
-        if (leadRes.rows.length === 0) return res.status(404).json({ error: 'Lead no encontrado' });
-        const lead = leadRes.rows[0];
-
-        await db.query("BEGIN");
-        
-        const clientRes = await db.query(
-            "INSERT INTO clients (name, email, phone, status, type, notes) VALUES ($1, $2, $3, 'Activo', 'Residencial', $4) RETURNING *, id::text as id",
-            [lead.name, lead.email, lead.phone, `Convertido desde Lead ID: ${id}. Notas originales: ${lead.notes}`]
-        );
-        
-        await db.query("UPDATE leads SET status = 'Ganado', updated_at = NOW() WHERE id = $1::integer", [id]);
-        
-        // Log de conversión
-        await db.query(
-            "INSERT INTO audit_logs (user_id, user_name, action, resource, resource_id, ip_address) VALUES ($1, $2, $3, $4, $5, $6)",
-            [req.user.id, req.user.name, 'CONVERT', 'lead', id, req.ip]
-        );
-
-        await db.query("COMMIT");
-        res.json(clientRes.rows[0]);
-    } catch (e) {
-        await db.query("ROLLBACK");
-        console.error("Conversion error:", e.message);
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// --- CLIENTS API ---
-app.get('/api/clients', authenticate, async (req, res) => {
-    try {
-        const result = await db.query("SELECT *, id::text as id FROM clients ORDER BY name ASC");
-        res.json(result.rows);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/clients', authenticate, async (req, res) => {
-    const { name, email, phone, address, rfc, type } = req.body;
-    try {
-        const result = await db.query(
-            "INSERT INTO clients (name, email, phone, address, rfc, type) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *, id::text as id",
-            [name, email, phone, address, rfc, type]
+            [status || null, history ? JSON.stringify(history) : null, notes || null, name || null, email || null, phone || null, id]
         );
         res.json(result.rows[0]);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/clients/:id/360', authenticate, async (req, res) => {
-    const { id } = req.params;
-    try {
-        const client = await db.query("SELECT *, id::text as id FROM clients WHERE id = $1::integer", [id]);
-        const assets = await db.query("SELECT *, id::text as id FROM client_assets WHERE client_id = $1::integer", [id]);
-        const appointments = await db.query("SELECT a.*, a.id::text as id, c.name as client_name, c.address as client_address FROM appointments a JOIN clients c ON a.client_id = c.id WHERE a.client_id = $1::integer ORDER BY a.date DESC", [id]);
-        const quotes = await db.query("SELECT q.*, q.id::text as id, c.name as client_name FROM quotes q JOIN clients c ON q.client_id = c.id WHERE q.client_id = $1::integer ORDER BY q.created_at DESC", [id]);
-        
-        res.json({ client: client.rows[0], assets: assets.rows, appointments: appointments.rows, quotes: quotes.rows });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -273,14 +280,6 @@ app.post('/api/settings', authenticate, async (req, res) => {
             [category, JSON.stringify(data)]
         );
         res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Auditoría y Seguridad
-app.get('/api/audit-logs', authenticate, async (req, res) => {
-    try {
-        const result = await db.query("SELECT *, id::text as id FROM audit_logs ORDER BY created_at DESC LIMIT 100");
-        res.json(result.rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
