@@ -33,7 +33,10 @@ const Leads: React.FC = () => {
   const fetchLeads = async () => {
     setLoading(true);
     try {
-        const res = await fetch('/api/leads');
+        const token = localStorage.getItem('superair_token');
+        const res = await fetch('/api/leads', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
         const data = await res.json();
         if (res.ok) {
             setLeads(Array.isArray(data) ? data : []);
@@ -57,9 +60,13 @@ const Leads: React.FC = () => {
       setDraggedLead(null);
       
       try {
+          const token = localStorage.getItem('superair_token');
           const res = await fetch(`/api/leads/${draggedLead.id}`, {
               method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+              },
               body: JSON.stringify({ status })
           });
           if (res.ok) {
@@ -80,7 +87,11 @@ const Leads: React.FC = () => {
       
       setIsSaving(true);
       try {
-          const res = await fetch(`/api/leads/${lead.id}/convert`, { method: 'POST' });
+          const token = localStorage.getItem('superair_token');
+          const res = await fetch(`/api/leads/${lead.id}/convert`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
           const data = await res.json();
           if (res.ok) {
               showToast("¡Cliente generado con éxito!");
@@ -109,9 +120,13 @@ const Leads: React.FC = () => {
       setIsSaving(true);
       
       try {
+          const token = localStorage.getItem('superair_token');
           const res = await fetch(`/api/leads/${selectedLead.id}`, {
               method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+              },
               body: JSON.stringify({ history: updatedHistory })
           });
           const saved = await res.json();
@@ -134,9 +149,13 @@ const Leads: React.FC = () => {
       if (!leadForm.name || isSaving) return;
       setIsSaving(true);
       try {
+          const token = localStorage.getItem('superair_token');
           const res = await fetch('/api/leads', { 
               method: 'POST', 
-              headers: {'Content-Type':'application/json'}, 
+              headers: {
+                  'Content-Type':'application/json',
+                  'Authorization': `Bearer ${token}`
+              },
               body: JSON.stringify(leadForm) 
           });
           const data = await res.json();
