@@ -7,13 +7,30 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { GoogleGenAI } from "@google/genai";
 import { sendWhatsApp } from './services.js';
+import multer from 'multer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const JWT_SECRET = process.env.JWT_SECRET || 'superair_secret_key_2024';
 
+// Configuración de Multer para subida de archivos
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        const uploadPath = path.join(__dirname, '../uploads');
+        if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
+        cb(null, uploadPath);
+    },
+    filename: function (req, file, cb) {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+});
+const upload = multer({ storage: storage });
+
 const app = express();
 app.use(express.json({ limit: '20mb' }));
+// Servir archivos estáticos subidos
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Middleware para extraer IP real tras proxies
 app.set('trust proxy', true);
@@ -631,6 +648,101 @@ app.get('/api/appointments', authenticate, async (req, res) => {
 });
 
 // --- HEALTH ---
+// --- DASHBOARD API (STATS & AI) ---
+app.get('/api/dashboard/stats', authenticate, async (req, res) => {
+    try {
+        const [revenueRes, leadsRes, aptsRes] = await Promise.all([
+            db.query("SELECT SUM(total) as revenue FROM quotes WHERE status IN ('Aceptada', 'Ejecutada')"),
+            db.query("SELECT COUNT(*) as count FROM leads WHERE status NOT IN ('Ganado', 'Perdido')"),
+            db.query("SELECT COUNT(*) as count FROM appointments WHERE date = CURRENT_DATE")
+        ]);
+
+        res.json({
+            revenue: revenueRes.rows[0].revenue || 0,
+            activeLeads: parseInt(leadsRes.rows[0].count || 0),
+            todayApts: parseInt(aptsRes.rows[0].count || 0)
+        });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/dashboard/ai-briefing', authenticate, async (req, res) => {
+    const { currentLeads, currentQuotes } = req.body;
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const prompt = `Contexto Operativo SuperAir: Tenemos ${currentLeads} prospectos, ${currentQuotes} cotizaciones totales y la temperatura en Querétaro es de 31°C (Ola de calor).
+                       Como Director de Operaciones, dame un resumen ejecutivo de 3 lineas sobre el riesgo de saturación de servicios y qué stock deberíamos priorizar hoy.`;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: prompt
+        });
+        res.json({ text: response.text });
+    } catch (e) { res.status(500).json({ error: 'Falla en IA' }); }
+});
+
+// --- REPORTS API (SERVER SIDE AGGREGATION & AI) ---
+app.get('/api/reports/financial', authenticate, async (req, res) => {
+    const { months } = req.query; // e.g. 6
+    const limit = parseInt(months) || 6;
+    try {
+        const result = await db.query(`
+            SELECT
+                TO_CHAR(created_at, 'YYYY-MM') as key,
+                TO_CHAR(created_at, 'Mon') as name,
+                SUM(total) as ingresos,
+                SUM(total * 0.6) as gastos, -- Estimado simplificado, idealmente usar costos reales de items
+                SUM(total * 0.4) as ganancia
+            FROM quotes
+            WHERE status IN ('Aceptada', 'Ejecutada', 'Completada')
+            AND created_at > NOW() - INTERVAL '${limit} months'
+            GROUP BY 1, 2
+            ORDER BY 1 ASC
+        `);
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/reports/ai-analysis', authenticate, async (req, res) => {
+    const { contextData } = req.body;
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const prompt = `Actúa como Consultor Senior de Negocios para SuperAir (HVAC).
+          Analiza estos datos de operación real: ${JSON.stringify(contextData)}.
+          Genera un dictamen ejecutivo en formato HTML (solo tags <ul> y <li>).
+          Enfócate en:
+          1. Salud del Pipeline comercial.
+          2. Cuellos de botella en instalación (técnicos).
+          3. Estrategia de precios ante la ola de calor actual.
+          No saludes, ve directo a los puntos críticos.`;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: prompt
+        });
+        res.json({ analysis: response.text });
+    } catch (e) { res.status(500).json({ error: 'Falla en IA' }); }
+});
+
+// --- CALCULATOR LOGGING API ---
+app.post('/api/calculator/log', authenticate, async (req, res) => {
+    const { params, result, recommendedUnit } = req.body;
+    try {
+        // Guardamos en audit_logs por simplicidad, o en una tabla dedicada 'calculator_logs'
+        await db.query(
+            "INSERT INTO audit_logs (user_id, user_name, action, resource, changes, ip_address) VALUES ($1, $2, 'CALCULATOR_USE', 'TOOL', $3, $4)",
+            [req.user.id, req.user.name, JSON.stringify({ params, result, recommendedUnit }), req.ip]
+        );
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- FILE UPLOAD API ---
+app.post('/api/upload', authenticate, upload.single('file'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No se subió ningún archivo' });
+    const fileUrl = `/uploads/${req.file.filename}`;
+    res.json({ url: fileUrl, filename: req.file.filename });
+});
+
 app.get('/api/health', (req, res) => {
     res.json({ status: 'active', db: db.pool ? 'connected' : 'connecting', timestamp: new Date(), version: '1.2.5' });
 });
