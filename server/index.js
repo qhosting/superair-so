@@ -6,6 +6,7 @@ import fs from 'fs';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { GoogleGenAI } from "@google/genai";
+import { sendWhatsApp } from './services.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -60,13 +61,7 @@ app.post('/api/auth/login', async (req, res) => {
         if (result.rows.length === 0) return res.status(401).json({ error: 'Usuario no encontrado' });
 
         const user = result.rows[0];
-        let validPassword = await bcrypt.compare(password, user.password);
-        
-        if (!validPassword && email === 'admin@qhosting.net' && password === 'x0420EZS*') {
-            const newHash = await bcrypt.hash(password, 10);
-            await db.query("UPDATE users SET password = $1 WHERE id = $2", [newHash, user.id]);
-            validPassword = true;
-        }
+        const validPassword = await bcrypt.compare(password, user.password);
         
         if (!validPassword) return res.status(401).json({ error: 'Contraseña incorrecta' });
 
@@ -318,6 +313,321 @@ app.post('/api/clients/:id/ai-analysis', authenticate, async (req, res) => {
         console.error("AI Error:", e.message);
         res.status(500).json({ error: 'Falla en el motor de IA' }); 
     }
+});
+
+// --- INVENTORY API ---
+app.get('/api/products', authenticate, async (req, res) => {
+    const { warehouse_id } = req.query;
+    try {
+        let query = "SELECT *, id::text as id, price::float, cost::float, stock::float, min_stock::float FROM products ORDER BY name ASC";
+        // Future implementation: Filter by warehouse using warehouse_stock table
+        const result = await db.query(query);
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/products', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    const { code, name, description, price, cost, stock, min_stock, category, unit_of_measure } = req.body;
+    try {
+        const result = await db.query(
+            `INSERT INTO products (code, name, description, price, cost, stock, min_stock, category, unit_of_measure)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *, id::text as id`,
+            [code, name, description, price, cost, stock || 0, min_stock || 5, category, unit_of_measure]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/products/:id', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    const { id } = req.params;
+    const { code, name, description, price, cost, stock, min_stock, category, unit_of_measure } = req.body;
+    try {
+        const result = await db.query(
+            `UPDATE products SET
+                code = COALESCE($1, code),
+                name = COALESCE($2, name),
+                description = COALESCE($3, description),
+                price = COALESCE($4, price),
+                cost = COALESCE($5, cost),
+                stock = COALESCE($6, stock),
+                min_stock = COALESCE($7, min_stock),
+                category = COALESCE($8, category),
+                unit_of_measure = COALESCE($9, unit_of_measure)
+            WHERE id = $10::integer RETURNING *, id::text as id`,
+            [code, name, description, price, cost, stock, min_stock, category, unit_of_measure, id]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/products/:id', authenticate, authorize(['Super Admin']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.query("DELETE FROM products WHERE id = $1::integer", [id]);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/products/bulk', authenticate, authorize(['Super Admin']), async (req, res) => {
+    const { products } = req.body;
+    if (!Array.isArray(products)) return res.status(400).json({ error: 'Formato inválido' });
+
+    const client = await db.pool.connect();
+    try {
+        await client.query("BEGIN");
+        for (const p of products) {
+            await client.query(
+                `INSERT INTO products (code, name, category, cost, price, stock)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT (code) DO UPDATE SET stock = products.stock + $6`,
+                [p.code, p.name, p.category, p.cost, p.price, p.stock || 0]
+            );
+        }
+        await client.query("COMMIT");
+        res.json({ success: true, count: products.length });
+    } catch (e) {
+        await client.query("ROLLBACK");
+        res.status(500).json({ error: e.message });
+    } finally {
+        client.release();
+    }
+});
+
+app.post('/api/inventory/adjust', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    const { productId, newStock, reason } = req.body;
+    try {
+        const result = await db.query(
+            "UPDATE products SET stock = $1 WHERE id = $2::integer RETURNING *",
+            [newStock, productId]
+        );
+        // Aquí se podría agregar un log a tabla 'inventory_movements'
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/warehouses', authenticate, async (req, res) => {
+    try {
+        const result = await db.query("SELECT *, id::text as id FROM warehouses ORDER BY name ASC");
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- VENDORS API ---
+app.get('/api/vendors', authenticate, async (req, res) => {
+    try {
+        const result = await db.query("SELECT *, id::text as id FROM vendors ORDER BY name ASC");
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/vendors', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    const { name, rfc, email, phone, credit_days } = req.body;
+    try {
+        const result = await db.query(
+            "INSERT INTO vendors (name, rfc, email, phone, credit_days) VALUES ($1, $2, $3, $4, $5) RETURNING *, id::text as id",
+            [name, rfc, email, phone, credit_days || 0]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- QUOTES API ---
+app.get('/api/quotes', authenticate, async (req, res) => {
+    try {
+        const result = await db.query(`
+            SELECT q.*, id::text as id, q.total::float, c.name as client_name
+            FROM quotes q
+            JOIN clients c ON q.client_id = c.id
+            ORDER BY q.created_at DESC
+        `);
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/quotes', authenticate, async (req, res) => {
+    const { clientId, total, paymentTerms, items, status } = req.body;
+    const publicToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    try {
+        const result = await db.query(
+            `INSERT INTO quotes (client_id, total, payment_terms, items, status, public_token)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id::text`,
+            [clientId, total, paymentTerms, JSON.stringify(items), status || 'Borrador', publicToken]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/quotes/ai-audit', authenticate, async (req, res) => {
+    const { items } = req.body;
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const prompt = `Como experto auditor de HVAC, revisa esta lista de materiales para una instalación:
+        ${JSON.stringify(items)}
+        Identifica si faltan consumibles críticos (gas, soldadura, cinta, soportes) o si hay incompatibilidades obvias.
+        Responde en 1 párrafo corto y directo. Si todo parece bien, di "Auditoría Aprobada: Lista de materiales coherente."`;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: prompt
+        });
+        res.json({ feedback: response.text });
+    } catch (e) { res.status(500).json({ error: 'Falla en IA' }); }
+});
+
+// --- ORDERS & SALES API ---
+app.get('/api/orders', authenticate, async (req, res) => {
+    try {
+        const result = await db.query(`
+            SELECT o.*, o.id::text as id, c.name as client_name, o.total::float, o.paid_amount::float as "paidAmount", o.due_date as "dueDate"
+            FROM orders o
+            LEFT JOIN clients c ON o.client_id = c.id
+            ORDER BY o.created_at DESC
+        `);
+        const now = new Date();
+        const rows = result.rows.map(r => ({
+            ...r,
+            isOverdue: r.dueDate && new Date(r.dueDate) < now && r.status !== 'Completado'
+        }));
+        res.json(rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/orders/pay', authenticate, async (req, res) => {
+    const { orderId, amount, method } = req.body;
+    try {
+        await db.query(`
+            UPDATE orders
+            SET paid_amount = paid_amount + $1,
+                status = CASE WHEN (paid_amount + $1) >= total THEN 'Completado' ELSE status END
+            WHERE id = $2::integer
+        `, [amount, orderId]);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/orders/:id/remind', authenticate, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const orderRes = await db.query("SELECT o.*, c.phone, c.name FROM orders o JOIN clients c ON o.client_id = c.id WHERE o.id = $1::integer", [id]);
+        if (orderRes.rows.length === 0) return res.status(404).json({ error: 'Orden no encontrada' });
+
+        const order = orderRes.rows[0];
+        const message = `Hola ${order.name}, recordatorio de pago pendiente por $${order.total - order.paid_amount} referente a la orden #${order.id}. Gracias.`;
+
+        // Use sendWhatsApp from services.js
+        if (order.phone) {
+             await sendWhatsApp(order.phone, message);
+             res.json({ success: true });
+        } else {
+             res.status(400).json({ error: 'Cliente sin teléfono' });
+        }
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Error enviando recordatorio' });
+    }
+});
+
+app.post('/api/orders/:id/close-technical', authenticate, async (req, res) => {
+    const { id } = req.params;
+    const { evidenceUrl } = req.body;
+    try {
+        await db.query("UPDATE orders SET evidence_url = $1, status = 'Entregado' WHERE id = $2::integer", [evidenceUrl, id]);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- PURCHASES API ---
+app.get('/api/purchases', authenticate, async (req, res) => {
+    try {
+        const result = await db.query(`
+            SELECT p.*, p.id::text as id, v.name as vendor_name, w.name as warehouse_name
+            FROM purchases p
+            LEFT JOIN vendors v ON p.vendor_id = v.id
+            LEFT JOIN warehouses w ON p.warehouse_id = w.id
+            ORDER BY p.created_at DESC
+        `);
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/purchases', authenticate, authorize(['Super Admin']), async (req, res) => {
+    const { vendor_id, warehouse_id, total, items, fiscal_uuid } = req.body;
+    try {
+        const result = await db.query(
+            `INSERT INTO purchases (vendor_id, warehouse_id, total, items, fiscal_uuid, status)
+             VALUES ($1, $2, $3, $4, $5, 'Borrador') RETURNING id::text`,
+            [vendor_id, warehouse_id, total, JSON.stringify(items), fiscal_uuid]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/purchases/:id/receive', authenticate, authorize(['Super Admin']), async (req, res) => {
+    const { id } = req.params;
+    const client = await db.pool.connect();
+    try {
+        const pRes = await client.query("SELECT * FROM purchases WHERE id = $1::integer", [id]);
+        if (pRes.rows.length === 0) return res.status(404).json({ error: 'Compra no encontrada' });
+        const purchase = pRes.rows[0];
+
+        if (purchase.status === 'Recibido') return res.status(400).json({ error: 'Ya recibida' });
+
+        await client.query("BEGIN");
+        // Update stock for each item
+        const items = purchase.items; // JSONB is auto-parsed by pg
+        for (const item of items) {
+             await client.query(
+                 "UPDATE products SET stock = stock + $1, cost = $2 WHERE id = $3::integer",
+                 [Number(item.quantity), Number(item.cost), item.product_id]
+             );
+        }
+        await client.query("UPDATE purchases SET status = 'Recibido' WHERE id = $1::integer", [id]);
+        await client.query("COMMIT");
+        res.json({ success: true });
+    } catch (e) {
+        await client.query("ROLLBACK");
+        res.status(500).json({ error: e.message });
+    } finally {
+        client.release();
+    }
+});
+
+app.post('/api/purchases/ai-suggest', authenticate, async (req, res) => {
+    try {
+        const products = await db.query("SELECT id, name, stock, min_stock FROM products WHERE stock < min_stock");
+        const prompt = `Genera una lista de compras sugerida en JSON para estos productos con bajo stock: ${JSON.stringify(products.rows)}.
+        Calcula una cantidad razonable para reabastecer (mínimo llegar al doble del min_stock).
+        Responde solo JSON: { "suggested_items": [ { "product_id": id, "quantity": num } ] }`;
+
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const response = await ai.models.generateContent({
+             model: 'gemini-3-flash-preview',
+             contents: prompt
+        });
+
+        // Extract JSON
+        const text = response.text;
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            res.json(JSON.parse(jsonMatch[0]));
+        } else {
+            res.json({ suggested_items: [] });
+        }
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/fiscal/inbox', authenticate, async (req, res) => {
+    try {
+        const result = await db.query("SELECT * FROM fiscal_inbox WHERE status = 'Unlinked'");
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/appointments', authenticate, async (req, res) => {
+    try {
+        const result = await db.query("SELECT a.*, c.name as client_name FROM appointments a JOIN clients c ON a.client_id = c.id ORDER BY a.date DESC");
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // --- HEALTH ---
