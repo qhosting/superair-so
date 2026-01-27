@@ -131,6 +131,37 @@ app.get('/api/users', authenticate, authorize(['Super Admin', 'Admin']), async (
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/appointments', authenticate, async (req, res) => {
+    const { client_id, technician_id, date, time, type, notes } = req.body;
+    try {
+        const result = await db.query(
+            "INSERT INTO appointments (client_id, technician_id, date, time, type, notes, status) VALUES ($1, $2, $3, $4, $5, $6, 'Programada') RETURNING *",
+            [client_id, technician_id, date, time, type, notes]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/appointments/:id', authenticate, async (req, res) => {
+    const { id } = req.params;
+    const { date, time, status, notes, technician_id } = req.body;
+    try {
+        const result = await db.query(
+            "UPDATE appointments SET date=COALESCE($1, date), time=COALESCE($2, time), status=COALESCE($3, status), notes=COALESCE($4, notes), technician_id=COALESCE($5, technician_id) WHERE id=$6 RETURNING *",
+            [date, time, status, notes, technician_id, id]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/appointments/:id', authenticate, async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.query("DELETE FROM appointments WHERE id=$1", [id]);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // --- SETTINGS API ---
 app.get('/api/settings', async (req, res) => {
     try {
@@ -670,6 +701,139 @@ app.post('/api/inventory/adjust', authenticate, authorize(['Super Admin', 'Admin
         );
         // Aquí se podría agregar un log a tabla 'inventory_movements'
         res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/inventory/transfer', authenticate, async (req, res) => {
+    const { from, to, items } = req.body; // items: [{product_id, quantity}]
+    const client = await db.pool.connect();
+    try {
+        await client.query("BEGIN");
+
+        const transferRes = await client.query(
+            "INSERT INTO inventory_transfers (from_warehouse_id, to_warehouse_id, status) VALUES ($1, $2, 'Pendiente') RETURNING id",
+            [from, to]
+        );
+        const transferId = transferRes.rows[0].id;
+
+        for (const item of items) {
+            // Check stock availability in source warehouse (assuming '1' is central/main stock logic for now)
+            // Ideally we'd decrement from source warehouse_stock table.
+            // For now, we simulate "sending" by just creating the record. Real subtraction would happen here.
+
+            await client.query(
+                "INSERT INTO inventory_transfer_items (transfer_id, product_id, quantity) VALUES ($1, $2, $3)",
+                [transferId, item.product_id, item.quantity]
+            );
+        }
+
+        await client.query("COMMIT");
+        res.json({ success: true, transferId });
+    } catch (e) {
+        await client.query("ROLLBACK");
+        res.status(500).json({ error: e.message });
+    } finally {
+        client.release();
+    }
+});
+
+app.get('/api/inventory/transfers/pending/:warehouseId', authenticate, async (req, res) => {
+    const { warehouseId } = req.params;
+    try {
+        const result = await db.query(`
+            SELECT t.id, w.name as from_name, t.created_at,
+                   json_agg(json_build_object('product_id', ti.product_id, 'quantity', ti.quantity, 'name', p.name)) as items
+            FROM inventory_transfers t
+            JOIN warehouses w ON t.from_warehouse_id = w.id
+            JOIN inventory_transfer_items ti ON t.id = ti.transfer_id
+            JOIN products p ON ti.product_id = p.id
+            WHERE t.to_warehouse_id = $1::integer AND t.status = 'Pendiente'
+            GROUP BY t.id, w.name, t.created_at
+        `, [warehouseId]);
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/inventory/transfers/:id/confirm', authenticate, async (req, res) => {
+    const { id } = req.params;
+    const client = await db.pool.connect();
+    try {
+        await client.query("BEGIN");
+
+        // Get items
+        const itemsRes = await client.query("SELECT * FROM inventory_transfer_items WHERE transfer_id = $1::integer", [id]);
+        const transferRes = await client.query("SELECT to_warehouse_id FROM inventory_transfers WHERE id = $1::integer", [id]);
+        const toWarehouseId = transferRes.rows[0].to_warehouse_id;
+
+        for (const item of itemsRes.rows) {
+            // Add to warehouse_stock
+            await client.query(`
+                INSERT INTO warehouse_stock (warehouse_id, product_id, stock)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (warehouse_id, product_id) DO UPDATE SET stock = warehouse_stock.stock + $3
+            `, [toWarehouseId, item.product_id, item.quantity]);
+        }
+
+        await client.query("UPDATE inventory_transfers SET status = 'Completado' WHERE id = $1::integer", [id]);
+        await client.query("COMMIT");
+        res.json({ success: true });
+    } catch (e) {
+        await client.query("ROLLBACK");
+        res.status(500).json({ error: e.message });
+    } finally {
+        client.release();
+    }
+});
+
+app.get('/api/inventory/levels/:warehouseId', authenticate, async (req, res) => {
+    const { warehouseId } = req.params;
+    try {
+        const result = await db.query(`
+            SELECT p.id, p.name, p.code, p.unit_of_measure, COALESCE(ws.stock, 0) as stock
+            FROM products p
+            LEFT JOIN warehouse_stock ws ON p.id = ws.product_id AND ws.warehouse_id = $1::integer
+        `, [warehouseId]);
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/inventory/kits', authenticate, async (req, res) => {
+    const { name, description, items } = req.body;
+    const client = await db.pool.connect();
+    try {
+        await client.query("BEGIN");
+        const kitRes = await client.query(
+            "INSERT INTO inventory_kits (name, description) VALUES ($1, $2) RETURNING id",
+            [name, description]
+        );
+        const kitId = kitRes.rows[0].id;
+        for (const item of items) {
+             await client.query(
+                 "INSERT INTO inventory_kit_items (kit_id, product_id, quantity) VALUES ($1, $2, $3)",
+                 [kitId, item.product_id, item.quantity]
+             );
+        }
+        await client.query("COMMIT");
+        res.json({ success: true });
+    } catch (e) {
+        await client.query("ROLLBACK");
+        res.status(500).json({ error: e.message });
+    } finally {
+        client.release();
+    }
+});
+
+app.get('/api/inventory/kits', authenticate, async (req, res) => {
+    try {
+        const result = await db.query(`
+            SELECT k.*,
+            json_agg(json_build_object('product_id', ki.product_id, 'quantity', ki.quantity, 'product_name', p.name)) as items
+            FROM inventory_kits k
+            LEFT JOIN inventory_kit_items ki ON k.id = ki.kit_id
+            LEFT JOIN products p ON ki.product_id = p.id
+            GROUP BY k.id
+        `);
+        res.json(result.rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
