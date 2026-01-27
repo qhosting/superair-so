@@ -42,5 +42,5 @@ Este documento detalla el estado actual de las tareas técnicas del sistema Supe
 
 ## 5. Próximos Pasos Recomendados
 
-- [ ] Implementar CI/CD Pipeline.
-- [ ] Optimización de índices de base de datos.
+- [ ] Implementar CI/CD Pipeline en proveedor Cloud.
+- [ ] Optimización de índices de base de datos (Script inicial creado).
