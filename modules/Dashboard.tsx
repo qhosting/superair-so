@@ -8,11 +8,13 @@ import {
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useNavigate, useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import { User, Appointment, Quote, Lead, UserRole } from '../types';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const socket = useSocket();
   const [loading, setLoading] = useState(true);
   const [apiHealth, setApiHealth] = useState({ server: 'Checking', db: 'Checking' });
   
@@ -90,6 +92,34 @@ const Dashboard: React.FC = () => {
     fetchData();
     return () => { isMounted = false; };
   }, [generateDailyBriefing]);
+
+  useEffect(() => {
+      if (!socket) return;
+
+      const handleUpdate = () => {
+          // Re-fetch dashboard data lightly on events
+          const token = localStorage.getItem('superair_token');
+          fetch('/api/dashboard/stats', { headers: { 'Authorization': `Bearer ${token}` } })
+            .then(r => r.ok ? r.json() : null)
+            .then(statsRes => {
+                if(statsRes) {
+                    setQuotes(Array(1).fill({ total: statsRes.revenue, status: 'Aceptada' }));
+                    setLeads(Array(statsRes.activeLeads).fill({}));
+                    setAppointments(Array(statsRes.todayApts).fill({}));
+                }
+            });
+      };
+
+      socket.on('lead_update', handleUpdate);
+      socket.on('order_update', handleUpdate);
+      socket.on('dashboard_update', handleUpdate);
+
+      return () => {
+          socket.off('lead_update', handleUpdate);
+          socket.off('order_update', handleUpdate);
+          socket.off('dashboard_update', handleUpdate);
+      };
+  }, [socket]);
 
   const stats = useMemo(() => {
     // Now stats come directly from backend, mapped into state arrays for compatibility

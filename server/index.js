@@ -7,7 +7,10 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { GoogleGenAI } from "@google/genai";
 import { sendWhatsApp } from './services.js';
+import { generateQuotePDF } from './pdfGenerator.js';
 import multer from 'multer';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,6 +31,16 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 const app = express();
+const server = createServer(app);
+const io = new Server(server, {
+    cors: { origin: "*", methods: ["GET", "POST"] }
+});
+
+io.on('connection', (socket) => {
+    console.log('🔌 Cliente conectado:', socket.id);
+    socket.on('disconnect', () => console.log('🔌 Cliente desconectado:', socket.id));
+});
+
 app.use(express.json({ limit: '20mb' }));
 // Servir archivos estáticos subidos
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -124,7 +137,9 @@ app.post('/api/leads', async (req, res) => {
              RETURNING id::text, name, email, phone, source, status, notes, history, created_at AS "createdAt"`,
             [name, email || null, phone || null, source || 'Manual', notes || '', status || 'Nuevo', JSON.stringify([])]
         );
-        res.json(result.rows[0]);
+        const newLead = result.rows[0];
+        io.emit('lead_update', newLead);
+        res.json(newLead);
     } catch (e) { 
         res.status(500).json({ error: 'Error al guardar lead: ' + e.message }); 
     }
@@ -148,6 +163,7 @@ app.put('/api/leads/:id', authenticate, authorize(['Super Admin', 'Admin']), asy
             [status || null, history ? JSON.stringify(history) : null, notes || null, name || null, email || null, phone || null, id]
         );
         if (result.rows.length === 0) return res.status(404).json({ error: 'Lead no encontrado' });
+        io.emit('lead_update', result.rows[0]);
         res.json(result.rows[0]);
     } catch (e) { 
         res.status(500).json({ error: 'Error al actualizar lead: ' + e.message }); 
@@ -217,7 +233,9 @@ app.post('/api/clients', authenticate, authorize(['Super Admin', 'Admin']), asyn
             "INSERT INTO clients (name, contact_name, email, phone, address, rfc, type, category, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *, id::text as id",
             [name, contact_name, email, phone, address, rfc, type, category || 'Bronze', notes]
         );
-        res.json(result.rows[0]);
+        const newQuote = result.rows[0];
+        io.emit('dashboard_update', { type: 'quote', data: newQuote });
+        res.json(newQuote);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -503,6 +521,23 @@ app.post('/api/quotes/ai-audit', authenticate, async (req, res) => {
     } catch (e) { res.status(500).json({ error: 'Falla en IA' }); }
 });
 
+app.get('/api/quotes/:id/pdf', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const quoteRes = await db.query("SELECT * FROM quotes WHERE id = $1::integer", [id]);
+        if (quoteRes.rows.length === 0) return res.status(404).send('Cotización no encontrada');
+
+        const quote = quoteRes.rows[0];
+        const clientRes = await db.query("SELECT * FROM clients WHERE id = $1::integer", [quote.client_id]);
+        const client = clientRes.rows[0] || { name: 'Cliente General' };
+
+        generateQuotePDF(quote, client, res);
+    } catch (e) {
+        console.error(e);
+        res.status(500).send('Error generando PDF');
+    }
+});
+
 // --- ORDERS & SALES API ---
 app.get('/api/orders', authenticate, async (req, res) => {
     try {
@@ -524,12 +559,14 @@ app.get('/api/orders', authenticate, async (req, res) => {
 app.post('/api/orders/pay', authenticate, async (req, res) => {
     const { orderId, amount, method } = req.body;
     try {
-        await db.query(`
+        const result = await db.query(`
             UPDATE orders
             SET paid_amount = paid_amount + $1,
                 status = CASE WHEN (paid_amount + $1) >= total THEN 'Completado' ELSE status END
             WHERE id = $2::integer
+            RETURNING *
         `, [amount, orderId]);
+        io.emit('order_update', result.rows[0]);
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -770,6 +807,6 @@ if (fs.existsSync(distPath)) {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     console.log(`🚀 SuperAir Server Running on Port ${PORT}`);
 });
