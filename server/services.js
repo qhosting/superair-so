@@ -1,4 +1,4 @@
-import { GoogleGenAI, SchemaType } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 
 const WAHA_URL = process.env.WAHA_URL || 'http://waha:3000';
 const CHATWOOT_URL = process.env.CHATWOOT_URL || 'https://app.chatwoot.com';

@@ -277,10 +277,10 @@ const Leads: React.FC = () => {
                                     }
                                 } catch (e) { showToast("Error de red", "error"); }
                             }}
-                            className="p-2 hover:bg-rose-50 rounded-xl transition-all text-rose-400 hover:text-rose-600"
+                            className="flex items-center gap-2 px-4 py-2 bg-rose-50 hover:bg-rose-100 rounded-xl transition-all text-rose-600 font-bold text-[10px] uppercase tracking-wider"
                             title="Eliminar Lead"
                           >
-                              <Trash2 size={20} />
+                              <Trash2 size={16} /> Eliminar
                           </button>
                           <button onClick={() => setSelectedLead(null)} className="p-2 hover:bg-slate-200 rounded-xl transition-all text-slate-400"><X size={24} /></button>
                       </div>
@@ -332,6 +332,9 @@ const Leads: React.FC = () => {
                               <p className="text-center text-[9px] text-slate-400 font-bold uppercase mt-4 tracking-widest">Al convertir, los datos se pasarán al expediente de clientes 360°</p>
                           </div>
                       )}
+                      <div className="mt-4 text-center">
+                          <span className="text-[8px] text-slate-300 font-mono">SuperAir v1.3.0 - Module: Leads</span>
+                      </div>
                   </div>
               </div>
           </div>
