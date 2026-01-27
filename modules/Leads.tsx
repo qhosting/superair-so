@@ -33,7 +33,10 @@ const Leads: React.FC = () => {
   const fetchLeads = async () => {
     setLoading(true);
     try {
-        const res = await fetch('/api/leads');
+        const token = localStorage.getItem('superair_token');
+        const res = await fetch('/api/leads', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
         const data = await res.json();
         if (res.ok) {
             setLeads(Array.isArray(data) ? data : []);
@@ -57,9 +60,13 @@ const Leads: React.FC = () => {
       setDraggedLead(null);
       
       try {
+          const token = localStorage.getItem('superair_token');
           const res = await fetch(`/api/leads/${draggedLead.id}`, {
               method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+              },
               body: JSON.stringify({ status })
           });
           if (res.ok) {
@@ -80,7 +87,11 @@ const Leads: React.FC = () => {
       
       setIsSaving(true);
       try {
-          const res = await fetch(`/api/leads/${lead.id}/convert`, { method: 'POST' });
+          const token = localStorage.getItem('superair_token');
+          const res = await fetch(`/api/leads/${lead.id}/convert`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
           const data = await res.json();
           if (res.ok) {
               showToast("¡Cliente generado con éxito!");
@@ -109,9 +120,13 @@ const Leads: React.FC = () => {
       setIsSaving(true);
       
       try {
+          const token = localStorage.getItem('superair_token');
           const res = await fetch(`/api/leads/${selectedLead.id}`, {
               method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+              },
               body: JSON.stringify({ history: updatedHistory })
           });
           const saved = await res.json();
@@ -134,9 +149,13 @@ const Leads: React.FC = () => {
       if (!leadForm.name || isSaving) return;
       setIsSaving(true);
       try {
+          const token = localStorage.getItem('superair_token');
           const res = await fetch('/api/leads', { 
               method: 'POST', 
-              headers: {'Content-Type':'application/json'}, 
+              headers: {
+                  'Content-Type':'application/json',
+                  'Authorization': `Bearer ${token}`
+              },
               body: JSON.stringify(leadForm) 
           });
           const data = await res.json();
@@ -238,7 +257,33 @@ const Leads: React.FC = () => {
                               </div>
                           </div>
                       </div>
-                      <button onClick={() => setSelectedLead(null)} className="p-2 hover:bg-slate-200 rounded-xl transition-all text-slate-400"><X size={24} /></button>
+                      <div className="flex items-center gap-2">
+                          <button
+                            onClick={async () => {
+                                if(!confirm("¿Eliminar este lead permanentemente?")) return;
+                                const token = localStorage.getItem('superair_token');
+                                try {
+                                    const res = await fetch(`/api/leads/${selectedLead.id}`, {
+                                        method: 'DELETE',
+                                        headers: { 'Authorization': `Bearer ${token}` }
+                                    });
+                                    if(res.ok) {
+                                        setLeads(leads.filter(l => l.id !== selectedLead.id));
+                                        setSelectedLead(null);
+                                        showToast("Lead eliminado");
+                                    } else {
+                                        const errData = await res.json().catch(() => ({}));
+                                        showToast(errData.error || "Error al eliminar", "error");
+                                    }
+                                } catch (e) { showToast("Error de red", "error"); }
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 bg-rose-50 hover:bg-rose-100 rounded-xl transition-all text-rose-600 font-bold text-[10px] uppercase tracking-wider"
+                            title="Eliminar Lead"
+                          >
+                              <Trash2 size={16} /> Eliminar
+                          </button>
+                          <button onClick={() => setSelectedLead(null)} className="p-2 hover:bg-slate-200 rounded-xl transition-all text-slate-400"><X size={24} /></button>
+                      </div>
                   </div>
 
                   <div className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">
@@ -287,6 +332,9 @@ const Leads: React.FC = () => {
                               <p className="text-center text-[9px] text-slate-400 font-bold uppercase mt-4 tracking-widest">Al convertir, los datos se pasarán al expediente de clientes 360°</p>
                           </div>
                       )}
+                      <div className="mt-4 text-center">
+                          <span className="text-[8px] text-slate-300 font-mono">SuperAir v1.3.0 - Module: Leads</span>
+                      </div>
                   </div>
               </div>
           </div>

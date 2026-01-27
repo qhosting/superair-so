@@ -31,8 +31,8 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 # Metadatos de versión sincronizados con server/index.js
-LABEL version="1.2.5"
-LABEL description="SuperAir ERP Production Environment - System Patch 1.2.5"
+LABEL version="1.3.0"
+LABEL description="SuperAir ERP Production Environment - Full Backend Implementation"
 
 # Inyectar API_KEY en el entorno de ejecución del servidor
 ARG API_KEY

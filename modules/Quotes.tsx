@@ -217,7 +217,7 @@ const Quotes: React.FC = () => {
                               <td className="py-6 px-4 text-right">
                                   <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                       <button onClick={() => window.open(`/#/view/quote/${q.public_token}`, '_blank')} className="p-3 bg-white text-sky-600 rounded-2xl shadow-sm hover:shadow-md border border-slate-100 transition-all"><ExternalLink size={18}/></button>
-                                      <button className="p-3 bg-white text-slate-400 rounded-2xl shadow-sm hover:text-rose-500 border border-slate-100 transition-all"><Download size={18}/></button>
+                                      <button onClick={() => window.open(`/api/quotes/${q.id}/pdf`, '_blank')} className="p-3 bg-white text-slate-400 rounded-2xl shadow-sm hover:text-rose-500 border border-slate-100 transition-all"><Download size={18}/></button>
                                   </div>
                               </td>
                           </tr>
