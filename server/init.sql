@@ -29,6 +29,14 @@ CREATE TABLE IF NOT EXISTS clients (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Fix for missing column in existing databases
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clients' AND column_name='contact_name') THEN
+        ALTER TABLE clients ADD COLUMN contact_name VARCHAR(255);
+    END IF;
+END $$;
+
 -- Activos de Clientes (Equipos Instalados)
 CREATE TABLE IF NOT EXISTS client_assets (
     id SERIAL PRIMARY KEY,
