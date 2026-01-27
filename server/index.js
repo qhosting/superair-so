@@ -96,10 +96,231 @@ app.post('/api/auth/login', async (req, res) => {
         if (!validPassword) return res.status(401).json({ error: 'Contraseña incorrecta' });
 
         const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '24h' });
+
+        // Audit login
+        await db.query("INSERT INTO audit_logs (user_id, user_name, action, resource, ip_address) VALUES ($1, $2, 'LOGIN', 'AUTH', $3)", [user.id, user.name, req.ip]);
+
         res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, status: user.status } });
     } catch (e) { 
         res.status(500).json({ error: 'Error interno de autenticación' }); 
     }
+});
+
+app.post('/api/auth/impersonate/:id', authenticate, authorize(['Super Admin']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await db.query("SELECT * FROM users WHERE id = $1::integer", [id]);
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+        const targetUser = result.rows[0];
+        const token = jwt.sign({ id: targetUser.id, email: targetUser.email, role: targetUser.role, name: targetUser.name }, JWT_SECRET, { expiresIn: '1h' });
+
+        // Log impersonation
+        await db.query("INSERT INTO audit_logs (user_id, user_name, action, resource, changes, ip_address) VALUES ($1, $2, 'IMPERSONATE', 'AUTH', $3, $4)",
+            [req.user.id, req.user.name, JSON.stringify({ target: targetUser.email }), req.ip]);
+
+        res.json({ token, user: { id: targetUser.id, name: targetUser.name, email: targetUser.email, role: targetUser.role, status: targetUser.status } });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- USERS API ---
+app.get('/api/users', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    try {
+        const result = await db.query("SELECT id::text, name, email, role, status, created_at FROM users ORDER BY name ASC");
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- SETTINGS API ---
+app.get('/api/settings', async (req, res) => {
+    try {
+        const result = await db.query("SELECT * FROM app_settings");
+        const settings = result.rows.reduce((acc, row) => {
+            acc[row.category] = row.data;
+            return acc;
+        }, {});
+        res.json(settings);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/settings/public', async (req, res) => {
+    try {
+        const result = await db.query("SELECT * FROM app_settings WHERE category IN ('general_info', 'quote_design')");
+        const settings = result.rows.reduce((acc, row) => {
+            acc[row.category] = row.data;
+            return acc;
+        }, {});
+        // Flatten for public consumption if needed, or send as is
+        res.json({
+            ...settings.general_info,
+            quote_design: settings.quote_design
+        });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/settings', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    const { category, data } = req.body;
+    try {
+        await db.query(
+            "INSERT INTO app_settings (category, data) VALUES ($1, $2) ON CONFLICT (category) DO UPDATE SET data = $2",
+            [category, JSON.stringify(data)]
+        );
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- MANUALS API ---
+app.get('/api/manuals', authenticate, async (req, res) => {
+    try {
+        const result = await db.query(`
+            SELECT m.*,
+            EXISTS(SELECT 1 FROM manual_reads r WHERE r.article_id = m.id AND r.user_id = $1) as is_read
+            FROM manual_articles m
+            ORDER BY created_at DESC`,
+            [req.headers['x-user-id'] || 0]
+        );
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/manuals', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    const { title, category, content, tags, pdf_url, version, author_name } = req.body;
+    try {
+        const result = await db.query(
+            "INSERT INTO manual_articles (title, category, content, tags, pdf_url, version, author_name) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
+            [title, category, content, tags, pdf_url, version, author_name]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/manuals/:id', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    const { id } = req.params;
+    const { title, category, content, tags, pdf_url, version } = req.body;
+    try {
+        const result = await db.query(
+            "UPDATE manual_articles SET title=$1, category=$2, content=$3, tags=$4, pdf_url=$5, version=$6, updated_at=NOW() WHERE id=$7 RETURNING *",
+            [title, category, content, tags, pdf_url, version, id]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/manuals/ai-generate', authenticate, async (req, res) => {
+    const { topic, category } = req.body;
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const prompt = `Escribe un manual técnico breve para técnicos de aire acondicionado sobre: "${topic}" (Categoría: ${category}).
+        Incluye lista de pasos y precauciones de seguridad. Formato texto plano.`;
+        const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
+        res.json({ content: response.text });
+    } catch (e) { res.status(500).json({ error: 'Error IA' }); }
+});
+
+app.post('/api/manuals/ai-ask', authenticate, async (req, res) => {
+    const { question } = req.body;
+    try {
+        // En un caso real, esto usaría RAG sobre la base de datos de manuales
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const prompt = `Eres un experto en HVAC de SuperAir. Responde brevemente a esta pregunta técnica: "${question}"`;
+        const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
+        res.json({ reply: response.text });
+    } catch (e) { res.status(500).json({ error: 'Error IA' }); }
+});
+
+app.post('/api/manuals/:id/mark-read', authenticate, async (req, res) => {
+    const { id } = req.params;
+    const { userId } = req.body;
+    try {
+        await db.query("INSERT INTO manual_reads (article_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [id, userId]);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- CMS API ---
+app.get('/api/cms/content', async (req, res) => {
+    try {
+        const result = await db.query("SELECT data FROM app_settings WHERE category = 'landing_content'");
+        res.json(result.rows[0]?.data || []);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/cms/content', authenticate, authorize(['Super Admin']), async (req, res) => {
+    const { content } = req.body;
+    try {
+        await db.query(
+            "INSERT INTO app_settings (category, data) VALUES ('landing_content', $1) ON CONFLICT (category) DO UPDATE SET data = $1",
+            [JSON.stringify(content)]
+        );
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/users', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    const { name, email, password, role, status } = req.body;
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const result = await db.query(
+            "INSERT INTO users (name, email, password, role, status) VALUES ($1, $2, $3, $4, $5) RETURNING id::text, name, email, role, status",
+            [name, email, hashedPassword, role, status || 'Activo']
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: 'Error creando usuario (Email duplicado?)' }); }
+});
+
+app.put('/api/users/:id', authenticate, authorize(['Super Admin']), async (req, res) => {
+    const { id } = req.params;
+    const { name, email, password, role, status } = req.body;
+    try {
+        if (password) {
+            const hashedPassword = await bcrypt.hash(password, 10);
+            await db.query("UPDATE users SET password = $1 WHERE id = $2::integer", [hashedPassword, id]);
+        }
+        const result = await db.query(
+            "UPDATE users SET name = COALESCE($1, name), email = COALESCE($2, email), role = COALESCE($3, role), status = COALESCE($4, status) WHERE id = $5::integer RETURNING id::text, name, email, role, status",
+            [name, email, role, status, id]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/users/:id', authenticate, authorize(['Super Admin']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.query("DELETE FROM users WHERE id = $1::integer", [id]);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- SECURITY & AUDIT API ---
+app.get('/api/audit-logs', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    try {
+        const result = await db.query("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 100");
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/security/health', authenticate, authorize(['Super Admin']), async (req, res) => {
+    try {
+        // Simple security heuristics
+        const usersCount = await db.query("SELECT COUNT(*) FROM users");
+        const adminCount = await db.query("SELECT COUNT(*) FROM users WHERE role = 'Super Admin'");
+        const weekLogs = await db.query("SELECT COUNT(*) FROM audit_logs WHERE created_at > NOW() - INTERVAL '7 days'");
+
+        let score = 100;
+        const issues = [];
+
+        if (parseInt(adminCount.rows[0].count) > 3) {
+            score -= 20;
+            issues.push({ title: 'Exceso de Privilegios', description: 'Hay demasiados Super Admins.', severity: 'medium' });
+        }
+        if (parseInt(weekLogs.rows[0].count) === 0) {
+            score -= 30;
+            issues.push({ title: 'Falta de Auditoría', description: 'Poca actividad registrada recientemente.', severity: 'high' });
+        }
+
+        res.json({ score, issues });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // --- LEADS API (PROTECTED WITH RBAC) ---
