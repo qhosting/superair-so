@@ -24,13 +24,23 @@ Este documento detalla el estado actual de las tareas técnicas del sistema Supe
   -   Se implementó la subida de archivos con `multer` en el endpoint `/api/upload`.
   -   El módulo de Ventas permite subir evidencia técnica (imágenes/PDFs) real.
 
-## 3. Integraciones Faltantes (Futuro)
+## 3. Funcionalidades Avanzadas
+
+- [x] **Generación de PDF en Backend:**
+  -   Implementado endpoint `/api/quotes/:id/pdf` usando `pdfkit`.
+
+- [x] **Notificaciones en Tiempo Real:**
+  -   Implementado `Socket.io` para actualizaciones automáticas en Dashboard y Leads.
+
+- [x] **Tests Automatizados:**
+  -   Configurado Jest y Playwright. Scripts `test` y `test:e2e` funcionales.
+
+## 4. Integraciones Faltantes (Futuro)
 
 - [ ] **Webhooks de Stripe/Pagos:**
   -   El registro de pagos actual es manual. Integrar una pasarela real automatizaría el estado "Pagado".
 
-## 4. Próximos Pasos Recomendados
+## 5. Próximos Pasos Recomendados
 
-- [x] Refactorizar `Dashboard.tsx` para usar un endpoint de métricas (`/api/dashboard/stats`).
-- [x] Implementar el middleware de subida de archivos para "Evidencia Técnica".
-- [ ] Implementar generación de PDF en el servidor (actualmente jsPDF en cliente).
+- [ ] Implementar CI/CD Pipeline.
+- [ ] Optimización de índices de base de datos.
