@@ -30,7 +30,6 @@ const Sales: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState('Transferencia');
   const [isPaying, setIsPaying] = useState(false);
   const [evidenceUrl, setEvidenceUrl] = useState('');
-  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -204,18 +203,9 @@ const Sales: React.FC = () => {
                               <p className="text-xs font-bold text-amber-700 leading-relaxed uppercase tracking-wide">Para cerrar administrativamente la orden #{selectedOrder.id}, es obligatorio adjuntar evidencia de la instalación concluida.</p>
                           </div>
                           <div className="space-y-1">
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Subir Evidencia (Foto/PDF)</label>
-                              <div className="relative">
-                                  <input
-                                    type="file"
-                                    className="w-full p-4 bg-slate-50 border rounded-2xl text-xs"
-                                    onChange={e => setEvidenceFile(e.target.files?.[0] || null)}
-                                  />
-                                  {evidenceFile && <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] text-emerald-600 font-black flex items-center gap-1"><CheckCircle2 size={12}/> Listo</span>}
-                              </div>
-                              <p className="text-[9px] text-slate-400 text-center font-medium mt-2">O pega una URL externa si prefieres:</p>
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">URL de Evidencia (n8n/Drive/Imgur)</label>
                               <input 
-                                className="w-full p-3 bg-slate-50 border rounded-xl font-mono text-[10px] mt-1"
+                                className="w-full p-4 bg-slate-50 border rounded-2xl font-mono text-xs"
                                 placeholder="https://..."
                                 value={evidenceUrl}
                                 onChange={e => setEvidenceUrl(e.target.value)}
@@ -223,30 +213,7 @@ const Sales: React.FC = () => {
                           </div>
                           <button 
                             onClick={async () => {
-                                let finalUrl = evidenceUrl;
-                                if (evidenceFile) {
-                                    const formData = new FormData();
-                                    formData.append('file', evidenceFile);
-                                    const uploadRes = await fetch('/api/upload', {
-                                        method: 'POST',
-                                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }, // Add Auth token
-                                        body: formData
-                                    });
-                                    if (uploadRes.ok) {
-                                        const data = await uploadRes.json();
-                                        finalUrl = data.url;
-                                    } else {
-                                        showToast("Error subiendo archivo", "error");
-                                        return;
-                                    }
-                                }
-
-                                if (!finalUrl) {
-                                    showToast("Debes subir archivo o URL", "error");
-                                    return;
-                                }
-
-                                const res = await fetch(`/api/orders/${selectedOrder.id}/close-technical`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({evidenceUrl: finalUrl}) });
+                                const res = await fetch(`/api/orders/${selectedOrder.id}/close-technical`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({evidenceUrl}) });
                                 if(res.ok) { setShowEvidenceModal(false); fetchOrders(); }
                             }}
                             className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs shadow-xl"

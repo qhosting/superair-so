@@ -7,6 +7,7 @@ import {
   Activity, Database, MessageSquare, Globe, Signal, FileText, Sparkles
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { GoogleGenAI } from "@google/genai";
 import { useNavigate, useAuth } from '../context/AuthContext';
 import { User, Appointment, Quote, Lead, UserRole } from '../types';
 
@@ -27,19 +28,20 @@ const Dashboard: React.FC = () => {
   const formatMXN = (val: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val);
 
   const generateDailyBriefing = useCallback(async (currentLeads: number, currentQuotes: number) => {
+    if (!process.env.API_KEY || process.env.API_KEY === 'undefined') {
+        setAiBriefing("Prioridad: Revisar mantenimientos preventivos ante el pronóstico de calor extremo en la zona.");
+        return;
+    }
     setAiLoading(true);
     try {
-      const res = await fetch('/api/dashboard/ai-briefing', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ currentLeads, currentQuotes })
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const prompt = `Contexto Operativo SuperAir: Tenemos ${currentLeads} prospectos, ${currentQuotes} cotizaciones totales y la temperatura en Querétaro es de 31°C (Ola de calor). 
+                     Como Director de Operaciones, dame un resumen ejecutivo de 3 lineas sobre el riesgo de saturación de servicios y qué stock deberíamos priorizar hoy.`;
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt
       });
-      if (res.ok) {
-          const data = await res.json();
-          setAiBriefing(data.text);
-      } else {
-          setAiBriefing("Prioridad: Revisar mantenimientos preventivos ante el pronóstico de calor extremo en la zona.");
-      }
+      setAiBriefing(response.text || "Sistemas operativos listos.");
     } catch (e) {
       setAiBriefing("Recomendación: Optimizar rutas de técnicos en Juriquilla por alta demanda de reparaciones por calor.");
     } finally {
@@ -53,28 +55,27 @@ const Dashboard: React.FC = () => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [statsRes, healthRes] = await Promise.all([
-          fetch('/api/dashboard/stats').then(r => r.ok ? r.json() : null),
+        const [aptsRes, quotesRes, leadsRes, healthRes] = await Promise.all([
+          fetch('/api/appointments').then(r => r.ok ? r.json() : []).catch(() => []),
+          fetch('/api/quotes').then(r => r.ok ? r.json() : []).catch(() => []),
+          fetch('/api/leads').then(r => r.ok ? r.json() : []).catch(() => []),
           fetch('/api/health').then(r => r.ok ? true : false).catch(() => false)
         ]);
 
         if (!isMounted) return;
 
-        if (statsRes) {
-            setQuotes(Array(1).fill({ total: statsRes.revenue, status: 'Aceptada' })); // Mock structure for stats.revenue compat
-            setLeads(Array(statsRes.activeLeads).fill({}));
-            setAppointments(Array(statsRes.todayApts).fill({}));
-
-            if (!aiBriefing) {
-                generateDailyBriefing(statsRes.activeLeads, 100); // 100 as approximate total quotes for context
-            }
-        }
-
+        setAppointments(aptsRes);
+        setQuotes(quotesRes);
+        setLeads(leadsRes);
         setApiHealth({ 
             server: healthRes ? 'Online' : 'Offline', 
             db: healthRes ? 'Conectada' : 'Error' 
         });
 
+        // Llamar a la IA una sola vez después de obtener los datos base
+        if (!aiBriefing) {
+            generateDailyBriefing(leadsRes.length, quotesRes.length);
+        }
       } catch (err) {
         console.error(err);
       } finally {
@@ -84,11 +85,10 @@ const Dashboard: React.FC = () => {
 
     fetchData();
     return () => { isMounted = false; };
-  }, [generateDailyBriefing]);
+  }, [generateDailyBriefing]); // aiBriefing no es dependencia para evitar ciclos
 
   const stats = useMemo(() => {
-    // Now stats come directly from backend, mapped into state arrays for compatibility
-    const revenue = quotes.reduce((acc, q) => acc + Number(q.total || 0), 0);
+    const revenue = quotes.filter(q => q.status === 'Aceptada' || q.status === 'Ejecutada').reduce((acc, q) => acc + Number(q.total), 0);
     return { revenue, activeLeads: leads.length, todayApts: appointments.length };
   }, [appointments, quotes, leads]);
 
