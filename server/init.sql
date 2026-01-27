@@ -261,6 +261,33 @@ INSERT INTO users (name, email, password, role, status)
 VALUES ('Administrador Maestro', 'admin@superair.com.mx', '$2a$10$r6R9vK/lE4yS6g9oXp4oUeI.x7T9M2p8jW7F/2iY8uSg6z5X8y2', 'Super Admin', 'Activo')
 ON CONFLICT (email) DO NOTHING;
 
+-- --- ÍNDICES DE RENDIMIENTO ---
+
+-- Clientes
+CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email);
+CREATE INDEX IF NOT EXISTS idx_clients_status ON clients(status);
+
+-- Leads
+CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email);
+CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
+CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads(created_at);
+
+-- Cotizaciones y Ordenes
+CREATE INDEX IF NOT EXISTS idx_quotes_client_id ON quotes(client_id);
+CREATE INDEX IF NOT EXISTS idx_quotes_status ON quotes(status);
+CREATE INDEX IF NOT EXISTS idx_orders_client_id ON orders(client_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_due_date ON orders(due_date);
+
+-- Inventario
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+CREATE INDEX IF NOT EXISTS idx_products_code ON products(code);
+CREATE INDEX IF NOT EXISTS idx_client_assets_client_id ON client_assets(client_id);
+
+-- Citas
+CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(date);
+CREATE INDEX IF NOT EXISTS idx_appointments_technician_id ON appointments(technician_id);
+
 -- Configuraciones de Identidad Base
 INSERT INTO app_settings (category, data) 
 VALUES ('general_info', '{"companyName": "SuperAir", "isMaintenance": false, "logoUrl": "https://cdn-icons-png.flaticon.com/512/1169/1169382.png"}')
