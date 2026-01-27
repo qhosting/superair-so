@@ -257,7 +257,32 @@ const Leads: React.FC = () => {
                               </div>
                           </div>
                       </div>
-                      <button onClick={() => setSelectedLead(null)} className="p-2 hover:bg-slate-200 rounded-xl transition-all text-slate-400"><X size={24} /></button>
+                      <div className="flex items-center gap-2">
+                          <button
+                            onClick={async () => {
+                                if(!confirm("¿Eliminar este lead permanentemente?")) return;
+                                const token = localStorage.getItem('superair_token');
+                                try {
+                                    const res = await fetch(`/api/leads/${selectedLead.id}`, {
+                                        method: 'DELETE',
+                                        headers: { 'Authorization': `Bearer ${token}` }
+                                    });
+                                    if(res.ok) {
+                                        setLeads(leads.filter(l => l.id !== selectedLead.id));
+                                        setSelectedLead(null);
+                                        showToast("Lead eliminado");
+                                    } else {
+                                        showToast("Error al eliminar", "error");
+                                    }
+                                } catch (e) { showToast("Error de red", "error"); }
+                            }}
+                            className="p-2 hover:bg-rose-50 rounded-xl transition-all text-rose-400 hover:text-rose-600"
+                            title="Eliminar Lead"
+                          >
+                              <Trash2 size={20} />
+                          </button>
+                          <button onClick={() => setSelectedLead(null)} className="p-2 hover:bg-slate-200 rounded-xl transition-all text-slate-400"><X size={24} /></button>
+                      </div>
                   </div>
 
                   <div className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">

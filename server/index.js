@@ -422,6 +422,19 @@ app.put('/api/leads/:id', authenticate, authorize(['Super Admin', 'Admin']), asy
     }
 });
 
+app.delete('/api/leads/:id', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await db.query("DELETE FROM leads WHERE id = $1::integer RETURNING id", [id]);
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Lead no encontrado' });
+
+        io.emit('lead_update', { id, deleted: true }); // Notify clients to remove it
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: 'Error al eliminar lead: ' + e.message });
+    }
+});
+
 app.post('/api/leads/:id/convert', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
     const { id } = req.params;
     const client = await db.pool.connect(); // Obtener cliente dedicado para transacción
@@ -448,10 +461,14 @@ app.post('/api/leads/:id/convert', authenticate, authorize(['Super Admin', 'Admi
         
         // Crear cliente - Truncate phone to 20 chars just in case
         const safePhone = lead.phone ? lead.phone.substring(0, 20) : null;
+        const safeRfc = (lead.rfc && lead.rfc.length <= 15) ? lead.rfc : null;
+
+        // Ensure we are not violating constraints. Client email is not unique in schema but nice to keep clean.
+        // Lead might not have email, handle that.
 
         const clientRes = await client.query(
-            "INSERT INTO clients (name, contact_name, email, phone, notes, type, status, category) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id::text",
-            [lead.name, lead.name, lead.email, safePhone, lead.notes, 'Residencial', 'Activo', 'Bronze']
+            "INSERT INTO clients (name, contact_name, email, phone, notes, type, status, category, rfc) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id::text",
+            [lead.name, lead.name, lead.email, safePhone, lead.notes, 'Residencial', 'Activo', 'Bronze', safeRfc]
         );
         
         // Actualizar lead
@@ -461,9 +478,13 @@ app.post('/api/leads/:id/convert', authenticate, authorize(['Super Admin', 'Admi
         res.json({ success: true, clientId: clientRes.rows[0].id });
     } catch (e) {
         await client.query("ROLLBACK");
-        console.error("Conversion Error:", e.message);
-        // Expose the actual error message to help debugging
-        res.status(500).json({ error: `Falla técnica: ${e.message}` });
+        console.error("Conversion Error:", e); // Log full error object
+
+        let errorMsg = `Falla técnica: ${e.message}`;
+        if (e.code === '23505') errorMsg = "Error: El cliente ya existe (email o datos duplicados).";
+        if (e.code === '22001') errorMsg = "Error: Datos demasiado largos para la base de datos.";
+
+        res.status(500).json({ error: errorMsg });
     } finally {
         client.release();
     }
