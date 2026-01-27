@@ -60,9 +60,13 @@ Recomendación Técnica: ${recommendedUnit}`;
 
       // Log usage to backend
       try {
+          const token = localStorage.getItem('superair_token');
           await fetch('/api/calculator/log', {
               method: 'POST',
-              headers: {'Content-Type': 'application/json'},
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+              },
               body: JSON.stringify({ params, result: btuResult, recommendedUnit })
           });
       } catch (e) { console.error("Logging error", e); }

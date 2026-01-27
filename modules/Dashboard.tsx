@@ -29,9 +29,13 @@ const Dashboard: React.FC = () => {
   const generateDailyBriefing = useCallback(async (currentLeads: number, currentQuotes: number) => {
     setAiLoading(true);
     try {
+      const token = localStorage.getItem('superair_token');
       const res = await fetch('/api/dashboard/ai-briefing', {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+          },
           body: JSON.stringify({ currentLeads, currentQuotes })
       });
       if (res.ok) {
@@ -53,8 +57,9 @@ const Dashboard: React.FC = () => {
     const fetchData = async () => {
       try {
         setLoading(true);
+        const token = localStorage.getItem('superair_token');
         const [statsRes, healthRes] = await Promise.all([
-          fetch('/api/dashboard/stats').then(r => r.ok ? r.json() : null),
+          fetch('/api/dashboard/stats', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.ok ? r.json() : null),
           fetch('/api/health').then(r => r.ok ? true : false).catch(() => false)
         ]);
 

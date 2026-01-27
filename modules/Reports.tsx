@@ -27,11 +27,14 @@ const Reports: React.FC = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
+        const token = localStorage.getItem('superair_token');
+        const headers = { 'Authorization': `Bearer ${token}` };
+
         const [quotesRes, aptsRes, prodsRes, finRes] = await Promise.all([
-          fetch('/api/quotes').catch(() => null),
-          fetch('/api/appointments').catch(() => null),
-          fetch('/api/products').catch(() => null),
-          fetch(`/api/reports/financial?months=${dateRange}`).catch(() => null)
+          fetch('/api/quotes', { headers }).catch(() => null),
+          fetch('/api/appointments', { headers }).catch(() => null),
+          fetch('/api/products', { headers }).catch(() => null),
+          fetch(`/api/reports/financial?months=${dateRange}`, { headers }).catch(() => null)
         ]);
         
         const quotesData = quotesRes && quotesRes.ok ? await quotesRes.json() : [];
@@ -114,9 +117,13 @@ const Reports: React.FC = () => {
         clima: "Ola de calor intensa en zona Bajío (31°C - 35°C)"
       };
 
+      const token = localStorage.getItem('superair_token');
       const res = await fetch('/api/reports/ai-analysis', {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+          },
           body: JSON.stringify({ contextData })
       });
       if (res.ok) {

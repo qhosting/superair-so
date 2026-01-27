@@ -167,12 +167,23 @@ app.post('/api/leads/:id/convert', authenticate, authorize(['Super Admin', 'Admi
         
         const lead = leadRes.rows[0];
         
+        // Check if client email already exists to prevent duplicates (and potential constraint errors)
+        if (lead.email) {
+            const existingClient = await client.query("SELECT id FROM clients WHERE email = $1", [lead.email]);
+            if (existingClient.rows.length > 0) {
+                client.release();
+                return res.status(400).json({ error: 'Ya existe un cliente con este email.' });
+            }
+        }
+
         await client.query("BEGIN");
         
-        // Crear cliente
+        // Crear cliente - Truncate phone to 20 chars just in case
+        const safePhone = lead.phone ? lead.phone.substring(0, 20) : null;
+
         const clientRes = await client.query(
             "INSERT INTO clients (name, contact_name, email, phone, notes, type, status, category) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id::text",
-            [lead.name, lead.name, lead.email, lead.phone, lead.notes, 'Residencial', 'Activo', 'Bronze']
+            [lead.name, lead.name, lead.email, safePhone, lead.notes, 'Residencial', 'Activo', 'Bronze']
         );
         
         // Actualizar lead
@@ -183,7 +194,8 @@ app.post('/api/leads/:id/convert', authenticate, authorize(['Super Admin', 'Admi
     } catch (e) {
         await client.query("ROLLBACK");
         console.error("Conversion Error:", e.message);
-        res.status(500).json({ error: 'Falla técnica en la conversión. Por favor contacte a soporte.' });
+        // Expose the actual error message to help debugging
+        res.status(500).json({ error: `Falla técnica: ${e.message}` });
     } finally {
         client.release();
     }

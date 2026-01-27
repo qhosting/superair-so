@@ -227,9 +227,10 @@ const Sales: React.FC = () => {
                                 if (evidenceFile) {
                                     const formData = new FormData();
                                     formData.append('file', evidenceFile);
+                                    const token = localStorage.getItem('superair_token');
                                     const uploadRes = await fetch('/api/upload', {
                                         method: 'POST',
-                                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }, // Add Auth token
+                                        headers: { 'Authorization': `Bearer ${token}` }, // Add Auth token
                                         body: formData
                                     });
                                     if (uploadRes.ok) {
@@ -246,7 +247,15 @@ const Sales: React.FC = () => {
                                     return;
                                 }
 
-                                const res = await fetch(`/api/orders/${selectedOrder.id}/close-technical`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({evidenceUrl: finalUrl}) });
+                                const token = localStorage.getItem('superair_token');
+                                const res = await fetch(`/api/orders/${selectedOrder.id}/close-technical`, {
+                                    method:'POST',
+                                    headers: {
+                                        'Content-Type':'application/json',
+                                        'Authorization': `Bearer ${token}`
+                                    },
+                                    body: JSON.stringify({evidenceUrl: finalUrl})
+                                });
                                 if(res.ok) { setShowEvidenceModal(false); fetchOrders(); }
                             }}
                             className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs shadow-xl"
