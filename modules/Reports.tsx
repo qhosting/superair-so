@@ -10,7 +10,6 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, BarChart, Bar, Legend, PieChart as RePieChart, Pie, Cell
 } from 'recharts';
-import { GoogleGenAI } from "@google/genai";
 
 const Reports: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'financial' | 'operational' | 'inventory'>('financial');
@@ -22,23 +21,28 @@ const Reports: React.FC = () => {
   const [quotes, setQuotes] = useState<any[]>([]);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
+  const [serverFinancialData, setServerFinancialData] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
+      setLoading(true);
       try {
-        const [quotesRes, aptsRes, prodsRes] = await Promise.all([
+        const [quotesRes, aptsRes, prodsRes, finRes] = await Promise.all([
           fetch('/api/quotes').catch(() => null),
           fetch('/api/appointments').catch(() => null),
-          fetch('/api/products').catch(() => null)
+          fetch('/api/products').catch(() => null),
+          fetch(`/api/reports/financial?months=${dateRange}`).catch(() => null)
         ]);
         
         const quotesData = quotesRes && quotesRes.ok ? await quotesRes.json() : [];
         const aptsData = aptsRes && aptsRes.ok ? await aptsRes.json() : [];
         const prodsData = prodsRes && prodsRes.ok ? await prodsRes.json() : [];
+        const finData = finRes && finRes.ok ? await finRes.json() : [];
 
         setQuotes(Array.isArray(quotesData) ? quotesData : []);
         setAppointments(Array.isArray(aptsData) ? aptsData : []);
         setProducts(Array.isArray(prodsData) ? prodsData : []);
+        setServerFinancialData(Array.isArray(finData) ? finData : []);
       } catch (e) {
         console.error("Failed to load reports data");
       } finally {
@@ -46,37 +50,20 @@ const Reports: React.FC = () => {
       }
     };
     fetchData();
-  }, []);
+  }, [dateRange]);
 
   // --- PROCESAMIENTO DE DATOS AVANZADO ---
 
   const financialData = useMemo(() => {
-    const monthsMap = new Map();
-    const now = new Date();
-    
-    for (let i = parseInt(dateRange) - 1; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const name = d.toLocaleDateString('es-MX', { month: 'short' });
-      monthsMap.set(key, { name, rawDate: key, ingresos: 0, gastos: 0, ganancia: 0 });
-    }
-
-    quotes.forEach(q => {
-      if (q.status === 'Aceptada' || q.status === 'Ejecutada' || q.status === 'Completada') {
-        const date = new Date(q.created_at || q.createdAt || new Date());
-        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (monthsMap.has(key)) {
-           const current = monthsMap.get(key);
-           current.ingresos += Number(q.total);
-           const costs = Array.isArray(q.items) ? q.items.reduce((acc: any, it: any) => acc + (Number(it.cost || 0) * Number(it.quantity || 1)), 0) : Number(q.total) * 0.60;
-           current.gastos += costs;
-           current.ganancia = current.ingresos - current.gastos;
-        }
-      }
-    });
-
-    return Array.from(monthsMap.values());
-  }, [quotes, dateRange]);
+    // Prefer server side data if available, fallback to empty
+    if (serverFinancialData.length > 0) return serverFinancialData.map(d => ({
+        ...d,
+        ingresos: parseFloat(d.ingresos),
+        gastos: parseFloat(d.gastos),
+        ganancia: parseFloat(d.ganancia)
+    }));
+    return [];
+  }, [serverFinancialData]);
 
   const commercialStats = useMemo(() => {
       const total = quotes.length;
@@ -115,7 +102,6 @@ const Reports: React.FC = () => {
     setLoadingAi(true);
     setAiAnalysis(null);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const contextData = {
         empresa: "SuperAir de México",
         periodo: `Últimos ${dateRange} meses`,
@@ -128,21 +114,17 @@ const Reports: React.FC = () => {
         clima: "Ola de calor intensa en zona Bajío (31°C - 35°C)"
       };
 
-      const prompt = `Actúa como Consultor Senior de Negocios para SuperAir (HVAC).
-        Analiza estos datos de operación real: ${JSON.stringify(contextData)}.
-        Genera un dictamen ejecutivo en formato HTML (solo tags <ul> y <li>).
-        Enfócate en: 
-        1. Salud del Pipeline comercial.
-        2. Cuellos de botella en instalación (técnicos).
-        3. Estrategia de precios ante la ola de calor actual.
-        No saludes, ve directo a los puntos críticos.`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
+      const res = await fetch('/api/reports/ai-analysis', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ contextData })
       });
-
-      setAiAnalysis(response.text);
+      if (res.ok) {
+          const data = await res.json();
+          setAiAnalysis(data.analysis);
+      } else {
+          setAiAnalysis("<li>Error en análisis de servidor.</li>");
+      }
     } catch (error) {
       setAiAnalysis("<li>Error: No se pudo conectar con el motor de analítica IA.</li>");
     } finally {
