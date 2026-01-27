@@ -272,7 +272,8 @@ const Leads: React.FC = () => {
                                         setSelectedLead(null);
                                         showToast("Lead eliminado");
                                     } else {
-                                        showToast("Error al eliminar", "error");
+                                        const errData = await res.json().catch(() => ({}));
+                                        showToast(errData.error || "Error al eliminar", "error");
                                     }
                                 } catch (e) { showToast("Error de red", "error"); }
                             }}

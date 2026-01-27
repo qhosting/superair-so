@@ -1213,6 +1213,11 @@ if (fs.existsSync(distPath)) {
 }
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`🚀 SuperAir Server Running on Port ${PORT}`);
-});
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+    server.listen(PORT, () => {
+        console.log(`🚀 SuperAir Server Running on Port ${PORT}`);
+    });
+}
+
+export { app, server };
