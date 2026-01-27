@@ -1,5 +1,6 @@
 import express from 'express';
 import * as db from './db.js';
+import { runMigrations } from './migrations.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -48,8 +49,9 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 // Middleware para extraer IP real tras proxies
 app.set('trust proxy', true);
 
-// Iniciar DB
+// Iniciar DB y Correr Migraciones
 db.initDatabase();
+runMigrations().catch(console.error);
 
 // --- MIDDLEWARES DE SEGURIDAD ---
 
