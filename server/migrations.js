@@ -5,29 +5,28 @@ export const runMigrations = async () => {
     try {
         console.log('🔄 Running Database Migrations...');
 
-        // 1. Ensure 'clients' table has 'contact_name'
-        const checkContactName = await client.query(`
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name='clients' AND column_name='contact_name'
-        `);
+        const ensureColumn = async (table, column, type) => {
+            const check = await client.query(`
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name=$1 AND column_name=$2
+            `, [table, column]);
 
-        if (checkContactName.rows.length === 0) {
-            console.log('⚠️ Adding missing column: contact_name to clients');
-            await client.query("ALTER TABLE clients ADD COLUMN contact_name VARCHAR(255)");
-        }
+            if (check.rows.length === 0) {
+                console.log(`⚠️ Adding missing column: ${column} to ${table}`);
+                await client.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+            }
+        };
 
-        // 2. Ensure 'orders' has 'evidence_url'
-        const checkEvidence = await client.query(`
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name='orders' AND column_name='evidence_url'
-        `);
+        // Clients Table Migrations
+        await ensureColumn('clients', 'contact_name', 'VARCHAR(255)');
+        await ensureColumn('clients', 'notes', 'TEXT');
+        await ensureColumn('clients', 'address', 'TEXT');
+        await ensureColumn('clients', 'rfc', 'VARCHAR(15)');
+        await ensureColumn('clients', 'category', "VARCHAR(20) DEFAULT 'Bronze'");
 
-        if (checkEvidence.rows.length === 0) {
-             console.log('⚠️ Adding missing column: evidence_url to orders');
-             await client.query("ALTER TABLE orders ADD COLUMN evidence_url TEXT");
-        }
+        // Orders Table Migrations
+        await ensureColumn('orders', 'evidence_url', 'TEXT');
 
         console.log('✅ Migrations completed successfully.');
     } catch (e) {
