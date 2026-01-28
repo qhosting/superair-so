@@ -498,7 +498,7 @@ const Clients: React.FC = () => {
 
       {/* MODAL: ALTA / EDICIÓN CLIENTE */}
       {showAddModal && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[120] flex items-center justify-center p-6">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6">
               <div className="bg-white w-full max-w-4xl rounded-[3.5rem] shadow-2xl p-10 animate-in zoom-in duration-300">
                   <div className="flex justify-between items-center mb-10">
                       <div>
