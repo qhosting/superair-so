@@ -3,10 +3,11 @@ import {
   Magnet, Plus, Phone, MessageSquare, ArrowRight, UserPlus, 
   Loader2, CheckCircle2, X, Sparkles, Copy, Calendar, Edit3, 
   Trash2, User, Megaphone, Smartphone, Clock, AlertTriangle, 
-  History, Thermometer, BrainCircuit, Wand2, Send, Save
+  History, Thermometer, BrainCircuit, Wand2, Send, Save, FileSpreadsheet
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadHistoryItem } from '../types';
 import { useNavigate, useAuth } from '../context/AuthContext';
+import { exportToExcel } from '../utils/exportHelper';
 import { useNotification } from '../context/NotificationContext';
 
 const STATUS_COLUMNS: LeadStatus[] = ['Nuevo', 'Contactado', 'Calificado', 'Cotizado', 'Ganado', 'Perdido'];
@@ -183,12 +184,21 @@ const Leads: React.FC = () => {
           <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter italic">Pipeline Comercial</h2>
           <p className="text-slate-500 text-sm font-medium">Gestión de prospectos SuperAir con flujo Kanban y IA.</p>
         </div>
-        <button 
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-8 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-sky-600 shadow-2xl transition-all"
-        >
-            <Plus size={18} /> Registrar Lead
-        </button>
+        <div className="flex gap-2">
+            <button
+                onClick={() => exportToExcel(leads, 'Leads_SuperAir')}
+                className="flex items-center gap-2 px-4 py-4 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-emerald-100 transition-all"
+                title="Exportar Excel"
+            >
+                <FileSpreadsheet size={18} />
+            </button>
+            <button
+                onClick={() => setShowAddModal(true)}
+                className="flex items-center gap-2 px-8 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-sky-600 shadow-2xl transition-all"
+            >
+                <Plus size={18} /> Registrar Lead
+            </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-x-auto pb-4">

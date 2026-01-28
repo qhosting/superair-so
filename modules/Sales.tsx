@@ -4,9 +4,10 @@ import {
   ShoppingBag, Inbox, FileText, CheckCircle, X, Receipt, Link as LinkIcon, 
   Loader2, Filter, Search, Calendar, DollarSign, Wallet, CreditCard,
   AlertTriangle, MessageSquare, TrendingUp, TrendingDown, Camera,
-  Clock, ArrowUpRight, CheckCircle2, MoreVertical, Smartphone
+  Clock, ArrowUpRight, CheckCircle2, MoreVertical, Smartphone, FileSpreadsheet
 } from 'lucide-react';
 import { Order, FiscalData } from '../types';
+import { exportToExcel } from '../utils/exportHelper';
 import { useNotification } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 
@@ -81,6 +82,13 @@ const Sales: React.FC = () => {
                 <p className="text-slate-500 text-sm font-medium">Control financiero Tier-1: Rentabilidad, Vencimientos y Cash Flow.</p>
              </div>
              <div className="flex gap-3">
+                 <button
+                     onClick={() => exportToExcel(orders, 'Ventas_SuperAir')}
+                     className="flex items-center gap-2 px-4 py-3 bg-emerald-50 text-emerald-600 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-emerald-100 border border-emerald-100"
+                     title="Exportar Excel"
+                 >
+                    <FileSpreadsheet size={18} />
+                 </button>
                  <button onClick={() => setShowFiscalVault(true)} className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-indigo-700 shadow-xl shadow-indigo-600/20">
                     <Inbox size={18} /> Bóveda Fiscal
                  </button>
