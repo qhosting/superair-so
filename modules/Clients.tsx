@@ -308,7 +308,13 @@ const Clients: React.FC = () => {
                               </div>
                           </div>
                       </div>
-                      <button onClick={() => setSelectedClientId(null)} className="p-4 hover:bg-white rounded-2xl transition-all shadow-sm"><X size={24} className="text-slate-400" /></button>
+                      <button
+                        onClick={() => setSelectedClientId(null)}
+                        className="p-4 hover:bg-white rounded-2xl transition-all shadow-sm relative z-50 cursor-pointer"
+                        title="Cerrar Expediente"
+                      >
+                        <X size={24} className="text-slate-400" />
+                      </button>
                   </div>
 
                   {/* Tabs Selector */}
