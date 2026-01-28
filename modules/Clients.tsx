@@ -498,8 +498,8 @@ const Clients: React.FC = () => {
 
       {/* MODAL: ALTA / EDICIÓN CLIENTE */}
       {showAddModal && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6">
-              <div className="bg-white w-full max-w-4xl rounded-[3.5rem] shadow-2xl p-10 animate-in zoom-in duration-300">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6" onClick={(e) => e.target === e.currentTarget && setShowAddModal(false)}>
+              <div className="bg-white w-full max-w-4xl rounded-[3.5rem] shadow-2xl p-10 animate-in zoom-in duration-300 relative">
                   <div className="flex justify-between items-center mb-10">
                       <div>
                           <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tighter italic">
@@ -507,7 +507,13 @@ const Clients: React.FC = () => {
                           </h3>
                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Control administrativo y fiscal de la cuenta.</p>
                       </div>
-                      <button onClick={() => setShowAddModal(false)} className="p-3 hover:bg-slate-100 rounded-2xl transition-all"><X size={24}/></button>
+                      <button
+                        onClick={() => setShowAddModal(false)}
+                        className="p-3 hover:bg-slate-100 rounded-2xl transition-all cursor-pointer relative z-50"
+                        title="Cerrar Ventana"
+                      >
+                        <X size={24}/>
+                      </button>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
