@@ -285,6 +285,101 @@ const Users: React.FC = () => {
          </div>
       </div>
 
+      {/* User Add/Edit Modal */}
+      {showUserModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6">
+              <div className="bg-white w-full max-w-lg rounded-[3rem] shadow-2xl p-10 animate-in zoom-in duration-300">
+                  <div className="flex justify-between items-center mb-8">
+                      <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">
+                          {isEditing ? 'Editar Usuario' : 'Nuevo Usuario'}
+                      </h3>
+                      <button onClick={() => setShowUserModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-all"><X size={24} className="text-slate-400"/></button>
+                  </div>
+                  <div className="space-y-6">
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Completo</label>
+                          <input
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                            value={formData.name}
+                            onChange={e => setFormData({...formData, name: e.target.value})}
+                          />
+                      </div>
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email Corporativo</label>
+                          <input
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                            value={formData.email}
+                            onChange={e => setFormData({...formData, email: e.target.value})}
+                          />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Rol de Acceso</label>
+                              <select
+                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                                value={formData.role}
+                                onChange={e => setFormData({...formData, role: e.target.value})}
+                              >
+                                  {Object.values(UserRole).map(r => <option key={r} value={r}>{r}</option>)}
+                              </select>
+                          </div>
+                          <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Estado</label>
+                              <select
+                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                                value={formData.status}
+                                onChange={e => setFormData({...formData, status: e.target.value})}
+                              >
+                                  <option>Activo</option>
+                                  <option>Inactivo</option>
+                              </select>
+                          </div>
+                      </div>
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Contraseña {isEditing && '(Dejar en blanco para mantener)'}</label>
+                          <input
+                            type="password"
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                            value={formData.password}
+                            onChange={e => setFormData({...formData, password: e.target.value})}
+                            placeholder="••••••••"
+                          />
+                      </div>
+
+                      <button
+                        onClick={async () => {
+                            if (!formData.name || !formData.email || (!isEditing && !formData.password)) return alert("Completa los campos obligatorios");
+
+                            try {
+                                const method = isEditing ? 'PUT' : 'POST';
+                                const url = isEditing ? `/api/users/${formData.id}` : '/api/users';
+                                const res = await fetch(url, {
+                                    method,
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'Authorization': `Bearer ${localStorage.getItem('superair_token')}`
+                                    },
+                                    body: JSON.stringify(formData)
+                                });
+
+                                if (res.ok) {
+                                    fetchData();
+                                    setShowUserModal(false);
+                                } else {
+                                    const err = await res.json();
+                                    alert(err.error || "Error al guardar");
+                                }
+                            } catch (e) { alert("Error de red"); }
+                        }}
+                        className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl hover:bg-sky-600 transition-all mt-4"
+                      >
+                          {isEditing ? 'Guardar Cambios' : 'Crear Usuario'}
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* Permissions Matrix Modal */}
       {showPermissionsModal && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[120] flex items-center justify-center p-6">
