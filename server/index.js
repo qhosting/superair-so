@@ -1,4 +1,6 @@
 import express from 'express';
+import * as Sentry from "@sentry/node";
+import { nodeProfilingIntegration } from "@sentry/profiling-node";
 import * as db from './db.js';
 import { runMigrations } from './migrations.js';
 import path from 'path';
@@ -12,6 +14,8 @@ import { generateQuotePDF } from './pdfGenerator.js';
 import multer from 'multer';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import cron from 'node-cron';
+import { exec } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,6 +36,21 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 const app = express();
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  integrations: [
+    new Sentry.Integrations.Http({ tracing: true }),
+    new Sentry.Integrations.Express({ app }),
+    nodeProfilingIntegration(),
+  ],
+  tracesSampleRate: 1.0,
+  profilesSampleRate: 1.0,
+});
+
+app.use(Sentry.Handlers.requestHandler());
+app.use(Sentry.Handlers.tracingHandler());
+
 const server = createServer(app);
 const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
@@ -52,6 +71,21 @@ app.set('trust proxy', true);
 // Iniciar DB y Correr Migraciones
 db.initDatabase();
 runMigrations().catch(console.error);
+
+// --- SCHEDULED TASKS (BACKUPS) ---
+// Run every day at 2:00 AM
+cron.schedule('0 2 * * *', () => {
+    console.log('🕒 Starting Daily Database Backup...');
+    const backupScript = path.join(__dirname, 'backup_db.sh');
+    exec(`sh ${backupScript}`, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`❌ Backup Error: ${error.message}`);
+            return;
+        }
+        if (stderr) console.error(`⚠️ Backup Stderr: ${stderr}`);
+        console.log(`✅ Backup Output: ${stdout}`);
+    });
+});
 
 // --- MIDDLEWARES DE SEGURIDAD ---
 
@@ -1215,6 +1249,8 @@ if (fs.existsSync(distPath)) {
         res.sendFile(path.join(distPath, 'index.html'));
     });
 }
+
+app.use(Sentry.Handlers.errorHandler());
 
 const PORT = process.env.PORT || 3000;
 
