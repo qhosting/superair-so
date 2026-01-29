@@ -28,13 +28,7 @@ El sistema opera bajo una arquitectura **Full Stack (React + Node.js + PostgreSQ
 ## 3. Hoja de Ruta (Roadmap)
 
 ### 🔴 Alta Prioridad (Inmediato / Mantenimiento)
-Estas tareas están enfocadas en la calidad de los datos y la robustez del día a día.
-
-- [ ] **Validación de Inputs (Input Masks):**
-    - Implementar formato automático para teléfonos `(555) 123-4567` en formularios de Leads y Clientes.
-    - Validar formato de RFC y Emails antes de enviar al servidor.
-- [ ] **Testing E2E Crítico:**
-    - Crear test automatizado para el flujo completo: *Crear Lead -> Convertir a Cliente -> Crear Cotización -> Aprobar -> Generar Orden*.
+*Actualmente no hay bloqueos críticos pendientes.*
 
 ### 🟡 Mediano Plazo (Mejoras de Experiencia)
 Mejoras para agilizar el trabajo de los operativos.
@@ -65,3 +59,5 @@ Funcionalidades avanzadas para escalar el negocio.
 *   **Fix Leads:** Se corrigieron los permisos de API para permitir que los vendedores vean sus propios prospectos sin errores de sesión.
 *   **Estabilidad DB:** Implementación de sistema de migraciones que repara automáticamente tablas faltantes (ej. `contact_name` en clientes).
 *   **Infraestructura:** Implementación de **Sentry** (Monitoreo), **Backups Automáticos** (PostgreSQL Daily) y **CI/CD** (Docker Push a GHCR).
+*   **Calidad de Datos:** Se implementaron máscaras de entrada (Teléfono, RFC) y validaciones en formularios clave.
+*   **QA Automatizado:** Se creó una suite de pruebas E2E crítica (`tests/e2e/critical-flow.spec.ts`) que valida el ciclo de ventas completo.
