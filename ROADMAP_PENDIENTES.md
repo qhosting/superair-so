@@ -13,10 +13,19 @@ El sistema opera bajo una arquitectura **Full Stack (React + Node.js + PostgreSQ
 *   **Operaciones:** Ventas (Cobranza), Inventario, Almacenes, Compras.
 *   **Administración:** Usuarios (RBAC), Configuración Global, Reportes Financieros.
 *   **Tecnología:** PWA (Instalable), Exportación Excel, Migraciones Automáticas de DB.
+*   **DevOps:** Monitoreo (Sentry), Backups Automáticos, CI/CD (GitHub Actions).
 
 ---
 
-## 2. Hoja de Ruta (Roadmap)
+## 2. Políticas de Desarrollo (Workflow)
+
+*   **Git como Fuente de Verdad:** Todo cambio debe pasar por el repositorio. No realizar ediciones manuales directas en el servidor de producción.
+*   **Ramas y Merges:** Las nuevas funcionalidades se desarrollan en ramas y se fusionan a `main` tras validación.
+*   **Despliegue:** El push a `main` dispara la construcción de la imagen Docker y la publicación en el registro (CI/CD).
+
+---
+
+## 3. Hoja de Ruta (Roadmap)
 
 ### 🔴 Alta Prioridad (Inmediato / Mantenimiento)
 Estas tareas están enfocadas en la calidad de los datos y la robustez del día a día.
