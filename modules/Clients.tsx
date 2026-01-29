@@ -7,6 +7,7 @@ import {
   Trophy, Star, Building, RefreshCw
 } from 'lucide-react';
 import { Client, ClientAsset } from '../types';
+import { formatPhone, formatRFC } from '../utils/formatters';
 import { useNotification } from '../context/NotificationContext';
 
 const Clients: React.FC = () => {
@@ -538,7 +539,7 @@ const Clients: React.FC = () => {
                           <div className="grid grid-cols-2 gap-4">
                               <div className="space-y-1.5">
                                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">RFC</label>
-                                  <input value={newClient.rfc} onChange={e => setNewClient({...newClient, rfc: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-black uppercase" placeholder="XAXX010101000" />
+                                  <input value={newClient.rfc} onChange={e => setNewClient({...newClient, rfc: formatRFC(e.target.value)})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-black uppercase" placeholder="XAXX010101000" maxLength={13} />
                               </div>
                               <div className="space-y-1.5">
                                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nivel de Cliente</label>
@@ -555,7 +556,7 @@ const Clients: React.FC = () => {
                            <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">WhatsApp / Tel</label>
-                                    <input value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-black" placeholder="10 dígitos" />
+                                    <input value={newClient.phone} onChange={e => setNewClient({...newClient, phone: formatPhone(e.target.value)})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-black" placeholder="(555) 123-4567" maxLength={14} />
                                 </div>
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email</label>

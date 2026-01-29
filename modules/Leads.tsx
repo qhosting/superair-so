@@ -8,6 +8,7 @@ import {
 import { Lead, LeadStatus, LeadHistoryItem } from '../types';
 import { useNavigate, useAuth } from '../context/AuthContext';
 import { exportToExcel } from '../utils/exportHelper';
+import { formatPhone, isValidEmail } from '../utils/formatters';
 import { useNotification } from '../context/NotificationContext';
 
 const STATUS_COLUMNS: LeadStatus[] = ['Nuevo', 'Contactado', 'Calificado', 'Cotizado', 'Ganado', 'Perdido'];
@@ -375,7 +376,9 @@ const Leads: React.FC = () => {
                               <input 
                                 className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-sky-500" 
                                 value={leadForm.phone}
-                                onChange={e => setLeadForm({...leadForm, phone: e.target.value})}
+                                onChange={e => setLeadForm({...leadForm, phone: formatPhone(e.target.value)})}
+                                placeholder="(555) 123-4567"
+                                maxLength={14}
                               />
                           </div>
                           <div className="space-y-1">
