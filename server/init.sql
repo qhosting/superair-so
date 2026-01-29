@@ -252,10 +252,6 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 INSERT INTO warehouses (id, name, type) VALUES (1, 'Almacén Central Queretaro', 'Central') ON CONFLICT DO NOTHING;
 
 -- Asegurar Admin QHosting (Bypass inicial gestionado por server/index.js)
-INSERT INTO users (name, email, password, role, status) 
-VALUES ('SuperAdmin QHosting', 'admin@qhosting.net', 'INITIAL_ACCESS_REPAIR_REQUIRED', 'Super Admin', 'Activo')
-ON CONFLICT (email) DO NOTHING;
-
 -- Admin de respaldo SuperAir
 INSERT INTO users (name, email, password, role, status) 
 VALUES ('Administrador Maestro', 'admin@superair.com.mx', '$2a$10$r6R9vK/lE4yS6g9oXp4oUeI.x7T9M2p8jW7F/2iY8uSg6z5X8y2', 'Super Admin', 'Activo')

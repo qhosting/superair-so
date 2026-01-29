@@ -91,5 +91,4 @@ Como agente de IA, mis modificaciones se realizan directamente sobre el reposito
     - Revisa los cambios que he enviado (commits) y fusiónalos (merge) en tu rama principal si estás satisfecho.
 
 ## 6. Observaciones de Seguridad
-- Se detectó una credencial de administración hardcodeada en `server/index.js` (Línea 64 aprox). Se recomienda encarecidamente eliminarla o usar variables de entorno seguras para producción.
 - La base de datos expone el puerto 5432 en el contenedor, asegúrese de protegerlo con firewalls si se despliega en un servidor público.
