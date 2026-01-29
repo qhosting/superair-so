@@ -55,7 +55,7 @@ Funcionalidades avanzadas para escalar el negocio.
 ## 3. Logros Recientes (Changelog)
 
 *   **Fix Clientes 360:** Se amplió la ventana de expediente y se reparó el botón de cierre que estaba bloqueado por elementos decorativos.
-*   **Módulo Usuarios:** Se activó la creación y edición de usuarios reales (anteriormente faltaba la interfaz).
+*   **Módulo Usuarios:** Se activó la creación y edición de usuarios reales, y se corrigió la carga de datos (Headers de autenticación explícitos).
 *   **Fix Leads:** Se corrigieron los permisos de API para permitir que los vendedores vean sus propios prospectos sin errores de sesión.
 *   **Estabilidad DB:** Implementación de sistema de migraciones que repara automáticamente tablas faltantes (ej. `contact_name` en clientes).
 *   **Infraestructura:** Implementación de **Sentry** (Monitoreo), **Backups Automáticos** (PostgreSQL Daily) y **CI/CD** (Docker Push a GHCR).

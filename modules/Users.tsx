@@ -40,10 +40,13 @@ const Users: React.FC = () => {
   const fetchData = async () => {
       setLoading(true);
       try {
+          const token = localStorage.getItem('superair_token');
+          const headers = { 'Authorization': `Bearer ${token}` };
+
           const [usersRes, auditRes, healthRes] = await Promise.all([
-              fetch('/api/users'),
-              fetch('/api/audit-logs'),
-              fetch('/api/security/health')
+              fetch('/api/users', { headers }),
+              fetch('/api/audit-logs', { headers }),
+              fetch('/api/security/health', { headers })
           ]);
 
           if (usersRes.ok) setUsers(await usersRes.json());
