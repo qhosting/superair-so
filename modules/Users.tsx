@@ -79,6 +79,21 @@ const Users: React.FC = () => {
       finally { setIsImpersonating(null); }
   };
 
+  const handleDelete = async (user: User) => {
+      if (!confirm(`¿Estás seguro de eliminar a ${user.name}? Esta acción es irreversible.`)) return;
+      try {
+          const res = await fetch(`/api/users/${user.id}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${localStorage.getItem('superair_token')}` }
+          });
+          if (res.ok) {
+              fetchData();
+          } else {
+              alert("Error al eliminar");
+          }
+      } catch (e) { alert("Error de red"); }
+  };
+
   const filteredUsers = useMemo(() => {
     return users.filter(u => {
       const matchesSearch = u.name.toLowerCase().includes(searchTerm.toLowerCase()) || u.email.toLowerCase().includes(searchTerm.toLowerCase());
@@ -200,6 +215,9 @@ const Users: React.FC = () => {
                                         </button>
                                     )}
                                     <button onClick={() => { setFormData({...user, password:''}); setIsEditing(true); setShowUserModal(true); }} className="p-2 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-xl transition-all"><Edit3 size={16} /></button>
+                                    {currentUser?.role === UserRole.SUPER_ADMIN && user.id !== currentUser.id && (
+                                        <button onClick={() => handleDelete(user)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={16} /></button>
+                                    )}
                                 </div>
                             </td>
                             </tr>

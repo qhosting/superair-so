@@ -110,6 +110,98 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+// --- USERS API ---
+app.get('/api/users', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    try {
+        const result = await db.query("SELECT id::text, name, email, role, status, created_at FROM users ORDER BY name ASC");
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/users', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    const { name, email, password, role, status } = req.body;
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const result = await db.query(
+            "INSERT INTO users (name, email, password, role, status) VALUES ($1, $2, $3, $4, $5) RETURNING id::text, name, email, role, status",
+            [name, email, hashedPassword, role, status || 'Activo']
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: 'Error creando usuario (Email duplicado?)' }); }
+});
+
+app.put('/api/users/:id', authenticate, authorize(['Super Admin']), async (req, res) => {
+    const { id } = req.params;
+    const { name, email, password, role, status } = req.body;
+    try {
+        if (password) {
+            const hashedPassword = await bcrypt.hash(password, 10);
+            await db.query("UPDATE users SET password = $1 WHERE id = $2::integer", [hashedPassword, id]);
+        }
+        const result = await db.query(
+            "UPDATE users SET name = COALESCE($1, name), email = COALESCE($2, email), role = COALESCE($3, role), status = COALESCE($4, status) WHERE id = $5::integer RETURNING id::text, name, email, role, status",
+            [name, email, role, status, id]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/users/:id', authenticate, authorize(['Super Admin']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.query("DELETE FROM users WHERE id = $1::integer", [id]);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/auth/impersonate/:id', authenticate, authorize(['Super Admin']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await db.query("SELECT * FROM users WHERE id = $1::integer", [id]);
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+        const targetUser = result.rows[0];
+        const token = jwt.sign({ id: targetUser.id, email: targetUser.email, role: targetUser.role, name: targetUser.name }, JWT_SECRET, { expiresIn: '1h' });
+
+        // Log impersonation
+        await db.query("INSERT INTO audit_logs (user_id, user_name, action, resource, changes, ip_address) VALUES ($1, $2, 'IMPERSONATE', 'AUTH', $3, $4)",
+            [req.user.id, req.user.name, JSON.stringify({ target: targetUser.email }), req.ip]);
+
+        res.json({ token, user: { id: targetUser.id, name: targetUser.name, email: targetUser.email, role: targetUser.role, status: targetUser.status } });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- SECURITY & AUDIT API ---
+app.get('/api/audit-logs', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    try {
+        const result = await db.query("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 100");
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/security/health', authenticate, authorize(['Super Admin']), async (req, res) => {
+    try {
+        // Simple security heuristics
+        const usersCount = await db.query("SELECT COUNT(*) FROM users");
+        const adminCount = await db.query("SELECT COUNT(*) FROM users WHERE role = 'Super Admin'");
+        const weekLogs = await db.query("SELECT COUNT(*) FROM audit_logs WHERE created_at > NOW() - INTERVAL '7 days'");
+
+        let score = 100;
+        const issues = [];
+
+        if (parseInt(adminCount.rows[0].count) > 3) {
+            score -= 20;
+            issues.push({ title: 'Exceso de Privilegios', description: 'Hay demasiados Super Admins.', severity: 'medium' });
+        }
+        if (parseInt(weekLogs.rows[0].count) === 0) {
+            score -= 30;
+            issues.push({ title: 'Falta de Auditoría', description: 'Poca actividad registrada recientemente.', severity: 'high' });
+        }
+
+        res.json({ score, issues });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // --- LEADS API (PROTECTED WITH RBAC) ---
 app.get('/api/leads', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
     try {
