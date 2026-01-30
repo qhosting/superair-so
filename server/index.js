@@ -516,7 +516,13 @@ app.post('/api/clients/:id/ai-analysis', authenticate, async (req, res) => {
 // --- APPOINTMENTS API ---
 app.get('/api/appointments', authenticate, async (req, res) => {
     try {
-        const result = await db.query("SELECT a.*, c.name as client_name FROM appointments a JOIN clients c ON a.client_id = c.id ORDER BY a.date DESC");
+        const result = await db.query(`
+            SELECT a.*, c.name as client_name, c.address as client_address, u.name as technician
+            FROM appointments a
+            JOIN clients c ON a.client_id = c.id
+            LEFT JOIN users u ON a.technician_id = u.id
+            ORDER BY a.date DESC
+        `);
         res.json(result.rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -528,6 +534,11 @@ app.post('/api/appointments', authenticate, async (req, res) => {
             "INSERT INTO appointments (client_id, technician_id, date, time, type, notes, status) VALUES ($1, $2, $3, $4, $5, $6, 'Programada') RETURNING *",
             [client_id, technician_id, date, time, type, notes]
         );
+
+        // Notify Technician via WhatsApp (Mock/Real if configured)
+        // const techRes = await db.query("SELECT phone FROM users WHERE id = $1", [technician_id]);
+        // if (techRes.rows[0]?.phone) sendWhatsApp(techRes.rows[0].phone, `Nueva cita asignada: ${date} ${time}`);
+
         res.json(result.rows[0]);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });

@@ -27,7 +27,7 @@ const Appointments: React.FC = () => {
 
   const [newApt, setNewApt] = useState({
       client_id: '',
-      technician: isInstaller ? user.name : '',
+      technician_id: isInstaller ? user.id : '',
       date: new Date().toISOString().split('T')[0],
       time: '10:00',
       duration: 60,
@@ -38,10 +38,13 @@ const Appointments: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
+        const token = localStorage.getItem('superair_token');
+        const headers = { 'Authorization': `Bearer ${token}` };
+
         const [aptsRes, cliRes, uRes] = await Promise.all([
-            fetch('/api/appointments'),
-            fetch('/api/clients'),
-            fetch('/api/users')
+            fetch('/api/appointments', { headers }),
+            fetch('/api/clients', { headers }),
+            fetch('/api/users', { headers })
         ]);
         if (aptsRes.ok) setAppointments(await aptsRes.json());
         if (cliRes.ok) setClients(await cliRes.json());
@@ -57,9 +60,10 @@ const Appointments: React.FC = () => {
 
   const updateStatus = async (id: string | number, newStatus: string) => {
       try {
+          const token = localStorage.getItem('superair_token');
           const res = await fetch(`/api/appointments/${id}`, {
               method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
               body: JSON.stringify({ status: newStatus })
           });
           if (res.ok) {
@@ -236,15 +240,20 @@ const Appointments: React.FC = () => {
                       </div>
                       <div className="space-y-1">
                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Asignar Técnico</label>
-                          <select className="w-full p-4 bg-slate-50 border rounded-2xl font-bold" value={newApt.technician} onChange={e=>setNewApt({...newApt, technician: e.target.value})}>
+                          <select className="w-full p-4 bg-slate-50 border rounded-2xl font-bold" value={newApt.technician_id} onChange={e=>setNewApt({...newApt, technician_id: e.target.value})}>
                               <option value="">-- Sin Asignar --</option>
-                              {installers.map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
+                              {installers.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
                           </select>
                       </div>
                       <button 
                         onClick={async () => {
-                            if (!newApt.client_id || !newApt.technician) return;
-                            const res = await fetch('/api/appointments', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(newApt)});
+                            if (!newApt.client_id || !newApt.technician_id) return;
+                            const token = localStorage.getItem('superair_token');
+                            const res = await fetch('/api/appointments', {
+                                method: 'POST',
+                                headers: {'Content-Type':'application/json', 'Authorization': `Bearer ${token}`},
+                                body: JSON.stringify(newApt)
+                            });
                             if (res.ok) { setShowNewAptModal(false); fetchData(); }
                             else { const err = await res.json(); alert(err.error); }
                         }}
