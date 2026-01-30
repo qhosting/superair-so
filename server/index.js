@@ -887,11 +887,21 @@ app.post('/api/dashboard/ai-briefing', authenticate, async (req, res) => {
 });
 
 app.get('/api/reports/financial', authenticate, async (req, res) => {
+    const { months } = req.query; // e.g. 6
+    const limit = parseInt(months) || 6;
     try {
         const result = await db.query(`
-            SELECT TO_CHAR(created_at, 'YYYY-MM') as key, SUM(total) as ingresos
-            FROM quotes WHERE status IN ('Aceptada', 'Ejecutada')
-            GROUP BY 1 ORDER BY 1 ASC
+            SELECT
+                TO_CHAR(created_at, 'YYYY-MM') as key,
+                TO_CHAR(created_at, 'Mon') as name,
+                SUM(total) as ingresos,
+                SUM(total * 0.6) as gastos, -- Estimado simplificado
+                SUM(total * 0.4) as ganancia
+            FROM quotes
+            WHERE status IN ('Aceptada', 'Ejecutada', 'Completada')
+            AND created_at > NOW() - INTERVAL '${limit} months'
+            GROUP BY 1, 2
+            ORDER BY 1 ASC
         `);
         res.json(result.rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
