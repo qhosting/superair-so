@@ -638,6 +638,37 @@ app.post('/api/manuals', authenticate, authorize(['Super Admin', 'Admin']), asyn
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.put('/api/manuals/:id', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    const { id } = req.params;
+    const { title, category, content, tags, pdf_url, version } = req.body;
+    try {
+        const result = await db.query(
+            "UPDATE manual_articles SET title=$1, category=$2, content=$3, tags=$4, pdf_url=$5, version=$6, updated_at=NOW() WHERE id=$7 RETURNING *",
+            [title, category, content, tags, pdf_url, version, id]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/manuals/:id', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.query("DELETE FROM manual_articles WHERE id=$1", [id]);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/manuals/ai-generate', authenticate, async (req, res) => {
+    const { topic, category } = req.body;
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const prompt = `Escribe un manual técnico breve para técnicos de aire acondicionado sobre: "${topic}" (Categoría: ${category}).
+        Incluye lista de pasos y precauciones de seguridad. Formato texto plano.`;
+        const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
+        res.json({ content: response.text });
+    } catch (e) { res.status(500).json({ error: 'Error IA' }); }
+});
+
 app.post('/api/manuals/ai-ask', authenticate, async (req, res) => {
     const { question } = req.body;
     try {
