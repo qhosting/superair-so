@@ -165,6 +165,158 @@ app.put('/api/users/:id', authenticate, authorize(['Super Admin']), async (req, 
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/inventory/transfer', authenticate, async (req, res) => {
+    const { from, to, items } = req.body;
+    const client = await db.pool.connect();
+    try {
+        await client.query("BEGIN");
+        const transferRes = await client.query(
+            "INSERT INTO inventory_transfers (from_warehouse_id, to_warehouse_id, status) VALUES ($1, $2, 'Pendiente') RETURNING id",
+            [from, to]
+        );
+        const transferId = transferRes.rows[0].id;
+        for (const item of items) {
+            await client.query(
+                "INSERT INTO inventory_transfer_items (transfer_id, product_id, quantity) VALUES ($1, $2, $3)",
+                [transferId, item.product_id, item.quantity]
+            );
+        }
+        await client.query("COMMIT");
+        res.json({ success: true, transferId });
+    } catch (e) {
+        await client.query("ROLLBACK");
+        res.status(500).json({ error: e.message });
+    } finally {
+        client.release();
+    }
+});
+
+app.get('/api/inventory/transfers/pending/:warehouseId', authenticate, async (req, res) => {
+    const { warehouseId } = req.params;
+    try {
+        const result = await db.query(`
+            SELECT t.id, w.name as from_name, t.created_at,
+                   json_agg(json_build_object('product_id', ti.product_id, 'quantity', ti.quantity, 'name', p.name)) as items
+            FROM inventory_transfers t
+            JOIN warehouses w ON t.from_warehouse_id = w.id
+            JOIN inventory_transfer_items ti ON t.id = ti.transfer_id
+            JOIN products p ON ti.product_id = p.id
+            WHERE t.to_warehouse_id = $1::integer AND t.status = 'Pendiente'
+            GROUP BY t.id, w.name, t.created_at
+        `, [warehouseId]);
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/inventory/transfers/:id/confirm', authenticate, async (req, res) => {
+    const { id } = req.params;
+    const client = await db.pool.connect();
+    try {
+        await client.query("BEGIN");
+        const itemsRes = await client.query("SELECT * FROM inventory_transfer_items WHERE transfer_id = $1::integer", [id]);
+        const transferRes = await client.query("SELECT to_warehouse_id FROM inventory_transfers WHERE id = $1::integer", [id]);
+        const toWarehouseId = transferRes.rows[0].to_warehouse_id;
+
+        for (const item of itemsRes.rows) {
+            await client.query(`
+                INSERT INTO warehouse_stock (warehouse_id, product_id, stock)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (warehouse_id, product_id) DO UPDATE SET stock = warehouse_stock.stock + $3
+            `, [toWarehouseId, item.product_id, item.quantity]);
+        }
+        await client.query("UPDATE inventory_transfers SET status = 'Completado' WHERE id = $1::integer", [id]);
+        await client.query("COMMIT");
+        res.json({ success: true });
+    } catch (e) {
+        await client.query("ROLLBACK");
+        res.status(500).json({ error: e.message });
+    } finally {
+        client.release();
+    }
+});
+
+app.get('/api/inventory/levels/:warehouseId', authenticate, async (req, res) => {
+    const { warehouseId } = req.params;
+    try {
+        const result = await db.query(`
+            SELECT p.id, p.name, p.code, p.unit_of_measure, COALESCE(ws.stock, 0) as stock
+            FROM products p
+            LEFT JOIN warehouse_stock ws ON p.id = ws.product_id AND ws.warehouse_id = $1::integer
+        `, [warehouseId]);
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/inventory/kits', authenticate, async (req, res) => {
+    const { name, description, items } = req.body;
+    const client = await db.pool.connect();
+    try {
+        await client.query("BEGIN");
+        const kitRes = await client.query("INSERT INTO inventory_kits (name, description) VALUES ($1, $2) RETURNING id", [name, description]);
+        const kitId = kitRes.rows[0].id;
+        for (const item of items) {
+             await client.query("INSERT INTO inventory_kit_items (kit_id, product_id, quantity) VALUES ($1, $2, $3)", [kitId, item.product_id, item.quantity]);
+        }
+        await client.query("COMMIT");
+        res.json({ success: true });
+    } catch (e) {
+        await client.query("ROLLBACK");
+        res.status(500).json({ error: e.message });
+    } finally {
+        client.release();
+    }
+});
+
+app.get('/api/inventory/kits', authenticate, async (req, res) => {
+    try {
+        const result = await db.query(`
+            SELECT k.*,
+            json_agg(json_build_object('product_id', ki.product_id, 'quantity', ki.quantity, 'product_name', p.name)) as items
+            FROM inventory_kits k
+            LEFT JOIN inventory_kit_items ki ON k.id = ki.kit_id
+            LEFT JOIN products p ON ki.product_id = p.id
+            GROUP BY k.id
+        `);
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/warehouses', authenticate, async (req, res) => {
+    try {
+        const result = await db.query("SELECT *, id::text as id FROM warehouses ORDER BY name ASC");
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/warehouses', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    const { name, type, responsible_id } = req.body;
+    try {
+        const result = await db.query(
+            "INSERT INTO warehouses (name, type, responsible_id) VALUES ($1, $2, $3) RETURNING *, id::text as id",
+            [name, type, responsible_id || null]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/vendors', authenticate, async (req, res) => {
+    try {
+        const result = await db.query("SELECT *, id::text as id FROM vendors ORDER BY name ASC");
+        res.json(result.rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/vendors', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    const { name, rfc, email, phone, credit_days } = req.body;
+    try {
+        const result = await db.query(
+            "INSERT INTO vendors (name, rfc, email, phone, credit_days) VALUES ($1, $2, $3, $4, $5) RETURNING *, id::text as id",
+            [name, rfc, email, phone, credit_days || 0]
+        );
+        res.json(result.rows[0]);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.delete('/api/users/:id', authenticate, authorize(['Super Admin']), async (req, res) => {
     const { id } = req.params;
     try {
