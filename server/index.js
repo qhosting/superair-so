@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import * as Sentry from "@sentry/node";
 import { nodeProfilingIntegration } from "@sentry/profiling-node";
@@ -16,6 +17,9 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cron from 'node-cron';
 import { exec } from 'child_process';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import { z } from 'zod';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,6 +40,17 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 const app = express();
+
+// --- SECURITY HEADERS & RATE LIMITING ---
+app.use(helmet());
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api', limiter); // Apply to API routes
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
@@ -101,8 +116,23 @@ const authorize = (roles = []) => {
     };
 };
 
+// --- VALIDATION SCHEMAS ---
+const validate = (schema) => (req, res, next) => {
+    try {
+        schema.parse(req.body);
+        next();
+    } catch (e) {
+        return res.status(400).json({ error: 'Datos inválidos', details: e.errors });
+    }
+};
+
+const loginSchema = z.object({
+    email: z.string().email(),
+    password: z.string().min(1)
+});
+
 // --- AUTHENTICATION ---
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', validate(loginSchema), async (req, res) => {
     let { email, password } = req.body;
     email = (email || '').toLowerCase().trim();
     password = (password || '').trim();
