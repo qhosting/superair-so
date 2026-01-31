@@ -11,7 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 
 const Appointments: React.FC = () => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { showToast } = useNotification();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedApt, setSelectedApt] = useState<any | null>(null);
@@ -46,6 +46,12 @@ const Appointments: React.FC = () => {
             fetch('/api/clients', { headers }),
             fetch('/api/users', { headers })
         ]);
+
+        if (aptsRes.status === 401 || cliRes.status === 401 || uRes.status === 401) {
+            logout();
+            return;
+        }
+
         if (aptsRes.ok) setAppointments(await aptsRes.json());
         if (cliRes.ok) setClients(await cliRes.json());
         if (uRes.ok) {

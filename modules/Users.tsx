@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { User, UserRole, AuditLog, SecurityHealth } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { useNotification } from '../context/NotificationContext';
 
 const INITIAL_PERMISSIONS = [
     { module: 'Ventas', roles: { [UserRole.SUPER_ADMIN]: 'Full', [UserRole.ADMIN]: 'Edit', [UserRole.INSTALLER]: 'None', [UserRole.CLIENT]: 'View' } },
@@ -18,7 +19,8 @@ const INITIAL_PERMISSIONS = [
 ];
 
 const Users: React.FC = () => {
-  const { user: currentUser, login } = useAuth();
+  const { user: currentUser, login, logout } = useAuth();
+  const { showToast } = useNotification();
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('Todos los roles');
   const [activeTab, setActiveTab] = useState<'users' | 'health'>('users');
@@ -49,12 +51,18 @@ const Users: React.FC = () => {
               fetch('/api/security/health', { headers })
           ]);
 
+          if (usersRes.status === 401 || auditRes.status === 401 || healthRes.status === 401) {
+              logout();
+              return;
+          }
+
           if (usersRes.ok) setUsers(await usersRes.json());
           if (auditRes.ok) setAuditLogs(await auditRes.json());
           if (healthRes.ok) setSecurityHealth(await healthRes.json());
 
       } catch (e) {
           console.error("Error fetching data", e);
+          showToast("Error de conexión", "error");
       } finally {
           setLoading(false);
       }

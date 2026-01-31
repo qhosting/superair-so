@@ -10,8 +10,10 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, BarChart, Bar, Legend, PieChart as RePieChart, Pie, Cell
 } from 'recharts';
+import { useAuth } from '../context/AuthContext';
 
 const Reports: React.FC = () => {
+  const { logout } = useAuth();
   const [activeTab, setActiveTab] = useState<'financial' | 'operational' | 'inventory'>('financial');
   const [dateRange, setDateRange] = useState('6');
   const [loading, setLoading] = useState(true);
@@ -36,6 +38,11 @@ const Reports: React.FC = () => {
           fetch('/api/products', { headers }).catch(() => null),
           fetch(`/api/reports/financial?months=${dateRange}`, { headers }).catch(() => null)
         ]);
+
+        if (quotesRes?.status === 401 || aptsRes?.status === 401 || prodsRes?.status === 401 || finRes?.status === 401) {
+            logout();
+            return;
+        }
         
         const quotesData = quotesRes && quotesRes.ok ? await quotesRes.json() : [];
         const aptsData = aptsRes && aptsRes.ok ? await aptsRes.json() : [];
