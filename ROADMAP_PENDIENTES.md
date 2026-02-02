@@ -1,63 +1,317 @@
-# Roadmap y Pendientes - SuperAir ERP
+# 📋 ROADMAP PENDIENTES - SuperAir ERP
 
-Este documento consolida el estado actual del proyecto, los logros recientes y la hoja de ruta para el desarrollo futuro.
-
----
-
-## 1. Estado Actual (v1.3.1 - Producción)
-
-El sistema opera bajo una arquitectura **Full Stack (React + Node.js + PostgreSQL)** completamente funcional. No existen módulos simulados; toda la información es persistente y segura.
-
-### ✅ Módulos Completados
-*   **Gestión Comercial:** Leads (CRM), Clientes 360°, Cotizaciones (PDF + IA).
-*   **Operaciones:** Ventas (Cobranza), Inventario, Almacenes, Compras.
-*   **Administración:** Usuarios (RBAC), Configuración Global, Reportes Financieros.
-*   **Tecnología:** PWA (Instalable), Exportación Excel, Migraciones Automáticas de DB.
-*   **DevOps:** Monitoreo (Sentry), Backups Automáticos, CI/CD (GitHub Actions).
+**Documento de Gestión de Tareas**  
+**Fecha de Creación:** Febrero 2026  
+**Última Actualización:** 01 Febrero 2026
 
 ---
 
-## 2. Políticas de Desarrollo (Workflow)
+## 🎯 Objetivo
 
-*   **Git como Fuente de Verdad:** Todo cambio debe pasar por el repositorio. No realizar ediciones manuales directas en el servidor de producción.
-*   **Ramas y Merges:** Las nuevas funcionalidades se desarrollan en ramas y se fusionan a `main` tras validación.
-*   **Despliegue:** El push a `main` dispara la construcción de la imagen Docker y la publicación en el registro (CI/CD).
+Este documento lista las **tareas críticas, features pendientes y deuda técnica** del sistema SuperAir ERP, organizadas por prioridad para guiar el roadmap de desarrollo post-producción.
 
 ---
 
-## 3. Hoja de Ruta (Roadmap)
+## 🚨 TAREAS CRÍTICAS (Seguridad y Bugs)
 
-### 🔴 Alta Prioridad (Inmediato / Mantenimiento)
-*Actualmente no hay bloqueos críticos pendientes.*
+**Prioridad: ALTA** - Requieren atención inmediata
 
-### 🟡 Mediano Plazo (Mejoras de Experiencia)
-Mejoras para agilizar el trabajo de los operativos.
+### 🔐 Seguridad
 
-- [ ] **Optimización Móvil (Tablas):**
-    - Refinar la vista de tablas complejas (Inventario, Ventas) en celulares, usando tarjetas (Cards) en lugar de filas horizontales para evitar scroll excesivo.
-- [ ] **Modo Offline (Service Worker):**
-    - Configurar estrategias de caché avanzadas para que los técnicos puedan consultar manuales o ver citas sin internet.
-- [ ] **Notificaciones Push Nativas:**
-    - Integrar claves VAPID para enviar alertas reales al celular (Citas nuevas, Stock bajo) incluso con la app cerrada.
+- [ ] **SEC-001**: Implementar rotación automática de JWT tokens (Refresh tokens)
+  - **Descripción:** Actualmente los JWT expiran en 24h sin mecanismo de renovación
+  - **Impacto:** Riesgo de secuestro de sesión si un token es comprometido
+  - **Esfuerzo:** 2-3 días
 
-### 🔵 Largo Plazo (Innovación)
-Funcionalidades avanzadas para escalar el negocio.
+- [ ] **SEC-002**: Configurar SSL/TLS en contenedor de producción
+  - **Descripción:** El servidor escucha en HTTP plano (puerto 3000)
+  - **Impacto:** Datos sensibles viajan sin encriptación
+  - **Esfuerzo:** 1 día (configurar Nginx como reverse proxy con Let's Encrypt)
 
-- [ ] **Chatbot IA Bidireccional (WhatsApp):**
-    - Conectar el backend con la API de Meta o WAHA para que un agente de IA responda dudas básicas de clientes y agende citas automáticamente.
-- [ ] **Integración de Pagos Online:**
-    - Generar enlaces de pago (Stripe/PayPal) en las cotizaciones para que los clientes paguen con tarjeta.
-- [ ] **Portal de Cliente:**
-    - Una vista simplificada donde el cliente final pueda loguearse para ver sus facturas, equipos y solicitar mantenimiento.
+- [ ] **SEC-003**: Proteger endpoint de base de datos PostgreSQL
+  - **Descripción:** El puerto 5432 está expuesto en Docker Compose
+  - **Impacto:** Vector de ataque si el contenedor queda expuesto públicamente
+  - **Esfuerzo:** 0.5 días (remover exposición de puerto, usar red interna Docker)
+
+- [ ] **SEC-004**: Implementar 2FA (Autenticación de dos factores)
+  - **Descripción:** Roles Admin y Contador deberían tener 2FA obligatorio
+  - **Impacto:** Protección contra compromiso de credenciales
+  - **Esfuerzo:** 3-5 días (integrar TOTP con QR codes)
+
+- [ ] **SEC-005**: Auditoría de dependencias (npm audit)
+  - **Descripción:** Verificar vulnerabilidades conocidas en paquetes npm
+  - **Impacto:** Exposición a CVEs públicos
+  - **Esfuerzo:** 1 día (ejecutar `npm audit fix` y validar)
+
+### 🐛 Bugs Críticos
+
+- [ ] **BUG-001**: Fuga de memoria en WebSocket (Socket.io)
+  - **Descripción:** Sockets no se limpian correctamente en desconexiones abruptas
+  - **Impacto:** El servidor puede quedarse sin memoria después de ~10,000 conexiones
+  - **Esfuerzo:** 2 días (implementar `disconnect` handlers adecuados)
+
+- [ ] **BUG-002**: Validación de archivos subidos (Multer)
+  - **Descripción:** No hay validación de MIME types ni tamaño máximo estricto
+  - **Impacto:** Posible subida de archivos maliciosos o DoS por archivos grandes
+  - **Esfuerzo:** 1 día (agregar whitelist de extensiones y límite 10MB)
+
+- [ ] **BUG-003**: Race condition en conversión de leads
+  - **Descripción:** Múltiples clics en "Convertir a Cliente" pueden crear clientes duplicados
+  - **Impacto:** Integridad de datos
+  - **Esfuerzo:** 1 día (implementar locks transaccionales o idempotencia)
+
+- [ ] **BUG-004**: Healthcheck fallando en contenedor por timeout
+  - **Descripción:** El healthcheck de 10s puede fallar si la DB tarda en responder
+  - **Impacto:** Kubernetes/Docker Swarm puede reiniciar el contenedor innecesariamente
+  - **Esfuerzo:** 0.5 días (aumentar timeout a 15s o cachear status)
 
 ---
 
-## 3. Logros Recientes (Changelog)
+## ⭐ FEATURES NECESARIAS PARA PRODUCCIÓN
 
-*   **Fix Clientes 360:** Se amplió la ventana de expediente y se reparó el botón de cierre que estaba bloqueado por elementos decorativos.
-*   **Módulo Usuarios:** Se activó la creación y edición de usuarios reales, y se corrigió la carga de datos (Headers de autenticación explícitos).
-*   **Fix Leads:** Se corrigieron los permisos de API para permitir que los vendedores vean sus propios prospectos sin errores de sesión.
-*   **Estabilidad DB:** Implementación de sistema de migraciones que repara automáticamente tablas faltantes (ej. `contact_name` en clientes).
-*   **Infraestructura:** Implementación de **Sentry** (Monitoreo), **Backups Automáticos** (PostgreSQL Daily) y **CI/CD** (Docker Push a GHCR).
-*   **Calidad de Datos:** Se implementaron máscaras de entrada (Teléfono, RFC) y validaciones en formularios clave.
-*   **QA Automatizado:** Se creó una suite de pruebas E2E crítica (`tests/e2e/critical-flow.spec.ts`) que valida el ciclo de ventas completo.
+**Prioridad: MEDIA-ALTA** - Funcionalidades que mejorarán la experiencia de usuario y robustez del sistema
+
+### 📊 Analytics y Monitoreo
+
+- [ ] **FEAT-001**: Integrar Sentry para tracking de errores
+  - **Descripción:** Sentry ya está en dependencias pero no configurado
+  - **Impacto:** Visibilidad de errores en producción (frontend + backend)
+  - **Esfuerzo:** 1 día
+  - **Dependencias:** `@sentry/node`, `@sentry/react`
+
+- [ ] **FEAT-002**: Dashboard de métricas de negocio en tiempo real
+  - **Descripción:** Panel con KPIs actualizados cada minuto (conversión, ventas del día)
+  - **Impacto:** Toma de decisiones informada
+  - **Esfuerzo:** 3 días (usar Redis pub/sub + WebSockets)
+
+- [ ] **FEAT-003**: Logs centralizados (ELK Stack o similar)
+  - **Descripción:** Agregar un contenedor de logging (Elasticsearch + Kibana o Loki)
+  - **Impacto:** Troubleshooting eficiente en producción
+  - **Esfuerzo:** 4-5 días
+
+### 💾 Backup y Recuperación
+
+- [ ] **FEAT-004**: Backup automático de PostgreSQL
+  - **Descripción:** Script `backup_db.sh` existe pero no está en cron
+  - **Impacto:** Pérdida de datos en caso de fallo de disco
+  - **Esfuerzo:** 1 día (configurar cron + subida a S3/Google Cloud Storage)
+
+- [ ] **FEAT-005**: Estrategia de disaster recovery
+  - **Descripción:** Documentar y probar procedimiento de restauración completa
+  - **Impacto:** RTO (Recovery Time Objective) actualmente desconocido
+  - **Esfuerzo:** 2 días (documentación + drill de recuperación)
+
+### 🧾 Facturación Electrónica (México)
+
+- [ ] **FEAT-006**: Integración con PAC para CFDI 4.0
+  - **Descripción:** Generar facturas fiscales válidas (SAT México)
+  - **Impacto:** Requisito legal para B2B en México
+  - **Esfuerzo:** 10-15 días (integrar Finkok, PAC, o similar)
+
+- [ ] **FEAT-007**: Catálogo de productos con clave SAT
+  - **Descripción:** Agregar campo `clave_sat` a tabla `products`
+  - **Impacto:** Necesario para facturación válida
+  - **Esfuerzo:** 2 días (migración DB + UI)
+
+### 📱 Aplicación Móvil (Técnicos de Campo)
+
+- [ ] **FEAT-008**: PWA funcional offline
+  - **Descripción:** `vite-plugin-pwa` está instalado pero no completamente configurado
+  - **Impacto:** Técnicos podrían registrar órdenes sin internet
+  - **Esfuerzo:** 5-7 días (service workers, IndexedDB sync)
+
+- [ ] **FEAT-009**: App nativa React Native (opcional)
+  - **Descripción:** Versión iOS/Android nativa para mejor experiencia móvil
+  - **Impacto:** Acceso a cámara, GPS, notificaciones push nativas
+  - **Esfuerzo:** 30-45 días (nuevo proyecto)
+
+### 🔗 Integraciones Externas
+
+- [ ] **FEAT-010**: Sincronización con QuickBooks/Conta
+  - **Descripción:** Exportar ventas y compras a software contable
+  - **Impacto:** Reducción de doble captura
+  - **Esfuerzo:** 7-10 días (API de QuickBooks)
+
+- [ ] **FEAT-011**: Mercado Pago / Stripe para pagos en línea
+  - **Descripción:** Permitir a clientes pagar cotizaciones vía link
+  - **Impacto:** Acelera cobranza
+  - **Esfuerzo:** 5 días (webhooks + UI)
+
+- [ ] **FEAT-012**: Google Calendar bidireccional
+  - **Descripción:** Sincronizar citas en ambas direcciones
+  - **Impacto:** Mejor gestión de agendas de técnicos
+  - **Esfuerzo:** 3 días (Google Calendar API ya está en dependencias)
+
+### 📧 Comunicaciones
+
+- [ ] **FEAT-013**: Templates de email profesionales
+  - **Descripción:** Diseñar plantillas HTML para cotizaciones, recordatorios, etc.
+  - **Impacto:** Imagen profesional
+  - **Esfuerzo:** 2 días (usar MJML o similar)
+
+- [ ] **FEAT-014**: Notificaciones push en navegador
+  - **Descripción:** Alertas de nuevos leads, pagos recibidos, etc.
+  - **Impacto:** Reactividad del equipo de ventas
+  - **Esfuerzo:** 2 días (Web Push API)
+
+### 🎨 UX/UI
+
+- [ ] **FEAT-015**: Modo oscuro (Dark Mode)
+  - **Descripción:** Implementar tema oscuro en toda la aplicación
+  - **Impacto:** Preferencia de usuarios, reduce fatiga visual
+  - **Esfuerzo:** 4-5 días (Tailwind dark: variant)
+
+- [ ] **FEAT-016**: Onboarding interactivo para nuevos usuarios
+  - **Descripción:** Tour guiado al primer login
+  - **Impacto:** Reduce curva de aprendizaje
+  - **Esfuerzo:** 3 días (librería como Intro.js)
+
+- [ ] **FEAT-017**: Accesibilidad (WCAG 2.1 AA)
+  - **Descripción:** Navegación por teclado, lectores de pantalla, contraste
+  - **Impacto:** Inclusión, cumplimiento legal en algunos mercados
+  - **Esfuerzo:** 7-10 días (auditoría + remediación)
+
+---
+
+## 🛠️ DEUDA TÉCNICA
+
+**Prioridad: MEDIA-BAJA** - Refactorización y optimización para mantenibilidad a largo plazo
+
+### 🔄 Refactorización de Código
+
+- [ ] **TECH-001**: Migrar `server/index.js` a arquitectura modular
+  - **Descripción:** El archivo tiene 51,141 bytes (todo en un solo archivo)
+  - **Impacto:** Dificulta mantenimiento y testing
+  - **Esfuerzo:** 5-7 días (separar en `routes/`, `controllers/`, `middlewares/`)
+
+- [ ] **TECH-002**: Tipado estricto en backend (migrar a TypeScript)
+  - **Descripción:** El servidor está en JavaScript plano
+  - **Impacto:** Errores de tipo en runtime, peor DX
+  - **Esfuerzo:** 10-15 días (migración gradual)
+
+- [ ] **TECH-003**: Extraer componentes React duplicados
+  - **Descripción:** Hay patterns repetidos (tablas, modales, formularios)
+  - **Impacto:** DRY violation, inconsistencias de UI
+  - **Esfuerzo:** 3-4 días (crear componentes genéricos)
+
+- [ ] **TECH-004**: Optimizar queries SQL (índices y N+1)
+  - **Descripción:** Algunas queries no tienen índices en columnas frecuentes
+  - **Impacto:** Rendimiento degrada con volumen de datos
+  - **Esfuerzo:** 2-3 días (EXPLAIN queries, agregar índices)
+
+### 📝 Documentación
+
+- [ ] **TECH-005**: JSDoc completo en funciones críticas
+  - **Descripción:** Muchas funciones no tienen documentación inline
+  - **Impacto:** Dificulta onboarding de nuevos desarrolladores
+  - **Esfuerzo:** 3 días
+
+- [ ] **TECH-006**: Swagger/OpenAPI para API REST
+  - **Descripción:** No hay documentación autogenerada de endpoints
+  - **Impacto:** Integración de terceros es difícil
+  - **Esfuerzo:** 2 días (swagger-jsdoc + swagger-ui-express)
+
+- [ ] **TECH-007**: Diagramas de arquitectura (C4 Model)
+  - **Descripción:** Falta documentación visual de arquitectura
+  - **Impacto:** Dificulta comunicación con stakeholders
+  - **Esfuerzo:** 2 días (usar draw.io o PlantUML)
+
+### ⚡ Performance
+
+- [ ] **TECH-008**: Lazy loading de módulos React
+  - **Descripción:** Todos los módulos se cargan en bundle inicial
+  - **Impacto:** Time to Interactive alto (~800KB bundle)
+  - **Esfuerzo:** 2 días (React.lazy + Suspense)
+
+- [ ] **TECH-009**: Caché de respuestas API con Redis
+  - **Descripción:** Redis solo se usa para sesiones, no para caché de datos
+  - **Impacto:** Queries repetitivas golpean la DB innecesariamente
+  - **Esfuerzo:** 3 días (estrategia de invalidación)
+
+- [ ] **TECH-010**: CDN para assets estáticos
+  - **Descripción:** Imágenes y JS se sirven desde el contenedor app
+  - **Impacto:** Latencia alta para usuarios geográficamente distantes
+  - **Esfuerzo:** 1 día (configurar CloudFront o similar)
+
+### 🧪 Testing
+
+- [ ] **TECH-011**: Aumentar cobertura de unit tests a >80%
+  - **Descripción:** Actualmente hay tests mínimos de ejemplo
+  - **Impacto:** Regresiones no detectadas
+  - **Esfuerzo:** 10-15 días (escribir tests para servicios críticos)
+
+- [ ] **TECH-012**: Tests de carga (K6 o Artillery)
+  - **Descripción:** No se ha probado concurrencia alta
+  - **Impacto:** Comportamiento bajo carga desconocido
+  - **Esfuerzo:** 3 días (escribir escenarios + ejecutar)
+
+- [ ] **TECH-013**: Visual regression testing
+  - **Descripción:** Cambios CSS pueden romper UI sin detección
+  - **Impacto:** Bugs visuales en producción
+  - **Esfuerzo:** 2 días (Percy.io o Chromatic)
+
+### 🔧 DevOps
+
+- [ ] **TECH-014**: Kubernetes Helm Charts
+  - **Descripción:** Docker Compose no es ideal para clusters de producción
+  - **Impacto:** Escalabilidad horizontal limitada
+  - **Esfuerzo:** 5-7 días (crear charts, probar en Minikube)
+
+- [ ] **TECH-015**: Canary deployments
+  - **Descripción:** Actualmente se despliega todo o nada
+  - **Impacto:** Riesgo alto en despliegues
+  - **Esfuerzo:** 3 días (configurar en CI/CD)
+
+- [ ] **TECH-016**: Secrets management (Vault o similar)
+  - **Descripción:** API Keys en variables de entorno plano
+  - **Impacto:** Rotación de secretos es manual
+  - **Esfuerzo:** 4 días (integrar HashiCorp Vault o AWS Secrets Manager)
+
+---
+
+## 📊 Matriz de Priorización
+
+| ID | Tarea | Prioridad | Esfuerzo | Impacto | Puntaje (I/E) |
+|----|-------|-----------|----------|---------|---------------|
+| SEC-002 | SSL/TLS | ALTA | 1d | CRÍTICO | ⭐⭐⭐⭐⭐ |
+| SEC-003 | Proteger DB | ALTA | 0.5d | CRÍTICO | ⭐⭐⭐⭐⭐ |
+| BUG-004 | Fix Healthcheck | ALTA | 0.5d | ALTO | ⭐⭐⭐⭐⭐ |
+| FEAT-004 | Backup Auto | ALTA | 1d | CRÍTICO | ⭐⭐⭐⭐⭐ |
+| SEC-001 | Refresh Tokens | ALTA | 2d | ALTO | ⭐⭐⭐⭐ |
+| BUG-002 | Validación Files | ALTA | 1d | ALTO | ⭐⭐⭐⭐ |
+| FEAT-001 | Sentry | MEDIA | 1d | ALTO | ⭐⭐⭐⭐ |
+| FEAT-006 | Facturación CFDI | MEDIA | 15d | CRÍTICO | ⭐⭐⭐⭐ |
+| TECH-001 | Modularizar server | MEDIA | 7d | MEDIO | ⭐⭐⭐ |
+| FEAT-015 | Dark Mode | BAJA | 5d | BAJO | ⭐⭐ |
+
+---
+
+## 🎯 Sprints Sugeridos (Q1 2026)
+
+### Sprint 1 (Semana 1-2): Seguridad Crítica
+- SEC-002, SEC-003, SEC-005, BUG-002, BUG-004
+
+### Sprint 2 (Semana 3-4): Monitoreo y Backup
+- FEAT-001 (Sentry), FEAT-004 (Backup), FEAT-005 (DR)
+
+### Sprint 3 (Semana 5-7): Facturación Fiscal
+- FEAT-006, FEAT-007
+
+### Sprint 4 (Semana 8-10): Deuda Técnica
+- TECH-001, TECH-008, TECH-011
+
+---
+
+## 📌 Notas Finales
+
+- **Criterios de Priorización:** Seguridad > Estabilidad > Funcionalidad > Performance > Deuda Técnica
+- **Método Ágil:** Se recomienda gestión con Scrum (sprints de 2 semanas)
+- **Ownership:** Asignar un responsable (DRI) por cada tarea crítica
+- **Revisiones:** Este roadmap debe revisarse mensualmente
+
+---
+
+**Documento Vivo** - Se actualizará conforme se completen tareas o surjan nuevas prioridades.
+
+**Última Actualización:** 01 Febrero 2026  
+**Próxima Revisión:** 01 Marzo 2026
