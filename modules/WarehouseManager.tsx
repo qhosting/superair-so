@@ -33,8 +33,14 @@ const WarehouseManager: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
+        const token = localStorage.getItem('superair_token');
+        const headers = { 'Authorization': `Bearer ${token}` };
+
         const [wRes, uRes, pRes, kRes] = await Promise.all([
-            fetch('/api/warehouses'), fetch('/api/users'), fetch('/api/products'), fetch('/api/inventory/kits')
+            fetch('/api/warehouses', { headers }),
+            fetch('/api/users', { headers }),
+            fetch('/api/products', { headers }),
+            fetch('/api/inventory/kits', { headers })
         ]);
         if (wRes.ok) setWarehouses(await wRes.json());
         if (uRes.ok) setUsers((await uRes.json()).filter((u: UserType) => u.role === UserRole.INSTALLER || u.role === UserRole.ADMIN));
@@ -49,9 +55,12 @@ const WarehouseManager: React.FC = () => {
   const loadLevels = async (id: string) => {
       setLoading(true);
       try {
+          const token = localStorage.getItem('superair_token');
+          const headers = { 'Authorization': `Bearer ${token}` };
+
           const [levelsRes, pendingRes] = await Promise.all([
-              fetch(`/api/inventory/levels/${id}`),
-              fetch(`/api/inventory/transfers/pending/${id}`)
+              fetch(`/api/inventory/levels/${id}`, { headers }),
+              fetch(`/api/inventory/transfers/pending/${id}`, { headers })
           ]);
           if (levelsRes.ok) setWarehouseLevels(await levelsRes.json());
           if (pendingRes.ok) setPendingTransfers(await pendingRes.json());
@@ -68,7 +77,11 @@ const WarehouseManager: React.FC = () => {
   const handleConfirmTransfer = async (transferId: string | number) => {
       setLoading(true);
       try {
-          const res = await fetch(`/api/inventory/transfers/${transferId}/confirm`, { method: 'POST' });
+          const token = localStorage.getItem('superair_token');
+          const res = await fetch(`/api/inventory/transfers/${transferId}/confirm`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
           if (res.ok) {
               showToast("Recepción confirmada. Stock actualizado en la unidad.");
               if (selectedWarehouse) loadLevels(selectedWarehouse.id);
@@ -85,9 +98,10 @@ const WarehouseManager: React.FC = () => {
       }
       setLoading(true);
       try {
+          const token = localStorage.getItem('superair_token');
           const res = await fetch('/api/inventory/transfer', {
               method: 'POST',
-              headers: {'Content-Type': 'application/json'},
+              headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
               body: JSON.stringify(transferForm)
           });
           if (res.ok) {
@@ -171,7 +185,7 @@ const WarehouseManager: React.FC = () => {
                           
                           <div className="flex gap-3">
                                <button onClick={() => loadLevels(selectedWarehouse.id)} className="p-4 bg-slate-50 rounded-2xl hover:bg-slate-100 transition-all"><RefreshCw size={20} className={loading ? 'animate-spin' : ''}/></button>
-                               <button className="flex items-center gap-2 px-6 py-4 bg-rose-50 text-rose-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-rose-100">
+                               <button onClick={() => showToast("Incidencia reportada a supervisión", "info")} className="flex items-center gap-2 px-6 py-4 bg-rose-50 text-rose-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-rose-100">
                                    <AlertTriangle size={16}/> Reportar Incidencia
                                </button>
                           </div>
@@ -400,7 +414,12 @@ const WarehouseManager: React.FC = () => {
                       <div className="space-y-3">
                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Artículos en Kit</p>
                            <button onClick={async () => {
-                               const res = await fetch('/api/inventory/kits', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(kitForm) });
+                               const token = localStorage.getItem('superair_token');
+                               const res = await fetch('/api/inventory/kits', {
+                                   method: 'POST',
+                                   headers: {'Content-Type':'application/json', 'Authorization': `Bearer ${token}`},
+                                   body: JSON.stringify(kitForm)
+                                });
                                if(res.ok) { setShowKitModal(false); fetchData(); }
                            }} className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs shadow-xl">Guardar Plantilla Kit</button>
                       </div>
@@ -430,7 +449,12 @@ const WarehouseManager: React.FC = () => {
                           <input className="w-full p-4 bg-slate-50 border rounded-2xl font-bold" placeholder="Ej: Camioneta 01" value={warehouseForm.name} onChange={e=>setWarehouseForm({...warehouseForm, name: e.target.value})} />
                       </div>
                       <button onClick={async () => {
-                          const res = await fetch('/api/warehouses', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(warehouseForm) });
+                          const token = localStorage.getItem('superair_token');
+                          const res = await fetch('/api/warehouses', {
+                              method: 'POST',
+                              headers: {'Content-Type':'application/json', 'Authorization': `Bearer ${token}`},
+                              body: JSON.stringify(warehouseForm)
+                            });
                           if(res.ok) { setShowAddModal(false); fetchData(); }
                       }} className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs">Vincular e Inicializar</button>
                   </div>

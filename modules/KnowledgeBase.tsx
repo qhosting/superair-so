@@ -40,19 +40,36 @@ const KnowledgeBase: React.FC = () => {
   const fetchArticles = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/manuals', { headers: { 'x-user-id': user?.id || '0' } });
+      const token = localStorage.getItem('superair_token');
+      const res = await fetch('/api/manuals', { headers: { 'Authorization': `Bearer ${token}`, 'x-user-id': user?.id || '0' } });
       if (res.ok) setArticles(await res.json());
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
+  };
+
+  const handleDeleteArticle = async (article: ManualArticle) => {
+      if (!confirm(`¿Eliminar manual "${article.title}"?`)) return;
+      try {
+          const token = localStorage.getItem('superair_token');
+          const res = await fetch(`/api/manuals/${article.id}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (res.ok) {
+              fetchArticles();
+              showToast("Manual eliminado");
+          }
+      } catch (e) { showToast("Error al eliminar", "error"); }
   };
 
   const handleAISuggest = async () => {
       if (!articleForm.title) return showToast("Primero escribe un título para el tema", "warning");
       setIsGenerating(true);
       try {
+          const token = localStorage.getItem('superair_token');
           const res = await fetch('/api/manuals/ai-generate', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
               body: JSON.stringify({ topic: articleForm.title, category: articleForm.category })
           });
           const data = await res.json();
@@ -72,9 +89,10 @@ const KnowledgeBase: React.FC = () => {
       setIsAsking(true);
 
       try {
+          const token = localStorage.getItem('superair_token');
           const res = await fetch('/api/manuals/ai-ask', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
               body: JSON.stringify({ question: q })
           });
           const data = await res.json();
@@ -85,9 +103,10 @@ const KnowledgeBase: React.FC = () => {
 
   const markAsRead = async (articleId: string) => {
       try {
+          const token = localStorage.getItem('superair_token');
           const res = await fetch(`/api/manuals/${articleId}/mark-read`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
               body: JSON.stringify({ userId: user?.id })
           });
           if (res.ok) {
@@ -111,9 +130,10 @@ const KnowledgeBase: React.FC = () => {
       const method = articleForm.id ? 'PUT' : 'POST';
       const url = articleForm.id ? `/api/manuals/${articleForm.id}` : '/api/manuals';
       
+      const token = localStorage.getItem('superair_token');
       const res = await fetch(url, {
           method,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ ...articleForm, author_name: user?.name })
       });
       
@@ -230,7 +250,10 @@ const KnowledgeBase: React.FC = () => {
                                       {getCategoryIcon(article.category)}
                                   </div>
                                   {(user?.role === 'Admin' || user?.role === 'Super Admin') && (
-                                    <button onClick={(e) => { e.stopPropagation(); setArticleForm(article); setShowEditModal(true); }} className="p-2 text-slate-300 hover:text-sky-600 transition-colors opacity-0 group-hover:opacity-100"><Edit3 size={16}/></button>
+                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={(e) => { e.stopPropagation(); setArticleForm(article); setShowEditModal(true); }} className="p-2 text-slate-300 hover:text-sky-600 transition-colors"><Edit3 size={16}/></button>
+                                        <button onClick={(e) => { e.stopPropagation(); handleDeleteArticle(article); }} className="p-2 text-slate-300 hover:text-rose-600 transition-colors"><Trash2 size={16}/></button>
+                                    </div>
                                   )}
                               </div>
                               <h3 className="text-xl font-black text-slate-900 mb-3 group-hover:text-sky-600 transition-colors">{article.title}</h3>

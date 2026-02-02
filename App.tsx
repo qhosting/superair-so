@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { HashRouter, Routes, Route, Navigate, useLocation } from './context/AuthContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider, useNotification } from './context/NotificationContext';
+import { SocketProvider } from './context/SocketContext';
 import { Loader2 } from 'lucide-react';
 import ChatwootWidget from './components/ChatwootWidget';
 
@@ -128,9 +129,11 @@ const App: React.FC = () => {
   return (
     <AuthProvider>
       <NotificationProvider>
-        <HashRouter>
-          <AppRoutes />
-        </HashRouter>
+        <SocketProvider>
+          <HashRouter>
+            <AppRoutes />
+          </HashRouter>
+        </SocketProvider>
       </NotificationProvider>
     </AuthProvider>
   );

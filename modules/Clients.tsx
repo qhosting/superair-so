@@ -7,6 +7,7 @@ import {
   Trophy, Star, Building, RefreshCw
 } from 'lucide-react';
 import { Client, ClientAsset } from '../types';
+import { formatPhone, formatRFC } from '../utils/formatters';
 import { useNotification } from '../context/NotificationContext';
 
 const Clients: React.FC = () => {
@@ -283,32 +284,38 @@ const Clients: React.FC = () => {
       {/* DRAWER: VISIÓN 360° CLIENTE */}
       {selectedClientId && profile360 && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[150] flex justify-end">
-              <div className="w-full max-w-2xl bg-white h-full shadow-2xl animate-in slide-in-from-right duration-500 flex flex-col border-l border-slate-200">
+              <div className="w-full max-w-5xl bg-white h-full shadow-2xl animate-in slide-in-from-right duration-500 flex flex-col border-l border-slate-200">
                   {/* Header Profile */}
                   <div className="p-10 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/50 relative overflow-hidden">
-                      <div className="absolute top-0 right-0 p-4 opacity-5">
-                          <Building size={150} className="text-slate-900" />
+                      <div className="absolute top-0 right-0 p-4 opacity-[0.02] pointer-events-none">
+                          <Building size={300} className="text-slate-900" />
                       </div>
                       <div className="flex items-center gap-6 relative z-10">
-                          <div className={`w-20 h-20 rounded-[2.5rem] flex items-center justify-center text-white shadow-xl ${profile360.client.type === 'Comercial' ? 'bg-slate-900' : 'bg-sky-600'}`}>
-                             <User size={32}/>
+                          <div className={`w-24 h-24 rounded-[2.5rem] flex items-center justify-center text-white shadow-xl ${profile360.client.type === 'Comercial' ? 'bg-slate-900' : 'bg-sky-600'}`}>
+                             <User size={40}/>
                           </div>
                           <div>
-                              <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">{profile360.client.name}</h3>
-                              <div className="flex items-center gap-3 mt-1">
+                              <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tighter italic">{profile360.client.name}</h3>
+                              <div className="flex items-center gap-3 mt-2">
                                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{profile360.client.rfc || 'PÚBLICO EN GENERAL'}</span>
                                   <span className="w-1.5 h-1.5 bg-slate-300 rounded-full" />
                                   <span className={`text-[10px] font-black uppercase tracking-widest ${profile360.health === 'Healthy' ? 'text-emerald-600' : 'text-rose-600 animate-pulse'}`}>{profile360.health === 'Healthy' ? 'Saludable' : 'Mants. Vencidos'}</span>
                               </div>
-                              <div className="mt-5 flex gap-2">
-                                  <button onClick={handleOpenEditClient} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase hover:bg-slate-50 transition-all shadow-sm"><Edit3 size={12}/> Editar Datos</button>
-                                  <button onClick={() => handleDeleteClient(selectedClientId)} disabled={isSaving} className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-500 border border-rose-100 rounded-xl text-[9px] font-black uppercase hover:bg-rose-100 transition-all">
-                                      {isSaving ? <Loader2 className="animate-spin" size={12}/> : <Trash2 size={12}/>} Eliminar
+                              <div className="mt-6 flex gap-3">
+                                  <button onClick={handleOpenEditClient} className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50 transition-all shadow-sm"><Edit3 size={14}/> Editar Datos</button>
+                                  <button onClick={() => handleDeleteClient(selectedClientId)} disabled={isSaving} className="flex items-center gap-2 px-5 py-2.5 bg-rose-50 text-rose-500 border border-rose-100 rounded-xl text-[10px] font-black uppercase hover:bg-rose-100 transition-all">
+                                      {isSaving ? <Loader2 className="animate-spin" size={14}/> : <Trash2 size={14}/>} Eliminar
                                   </button>
                               </div>
                           </div>
                       </div>
-                      <button onClick={() => setSelectedClientId(null)} className="p-4 hover:bg-white rounded-2xl transition-all shadow-sm"><X size={24} className="text-slate-400" /></button>
+                      <button
+                        onClick={() => setSelectedClientId(null)}
+                        className="absolute top-8 right-8 p-4 bg-white hover:bg-slate-50 rounded-full transition-all shadow-md z-50 cursor-pointer border border-slate-100"
+                        title="Cerrar Expediente"
+                      >
+                        <X size={24} className="text-slate-400" />
+                      </button>
                   </div>
 
                   {/* Tabs Selector */}
@@ -498,8 +505,8 @@ const Clients: React.FC = () => {
 
       {/* MODAL: ALTA / EDICIÓN CLIENTE */}
       {showAddModal && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[120] flex items-center justify-center p-6">
-              <div className="bg-white w-full max-w-4xl rounded-[3.5rem] shadow-2xl p-10 animate-in zoom-in duration-300">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6" onClick={(e) => e.target === e.currentTarget && setShowAddModal(false)}>
+              <div className="bg-white w-full max-w-4xl rounded-[3.5rem] shadow-2xl p-10 animate-in zoom-in duration-300 relative">
                   <div className="flex justify-between items-center mb-10">
                       <div>
                           <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tighter italic">
@@ -507,7 +514,13 @@ const Clients: React.FC = () => {
                           </h3>
                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Control administrativo y fiscal de la cuenta.</p>
                       </div>
-                      <button onClick={() => setShowAddModal(false)} className="p-3 hover:bg-slate-100 rounded-2xl transition-all"><X size={24}/></button>
+                      <button
+                        onClick={() => setShowAddModal(false)}
+                        className="p-3 hover:bg-slate-100 rounded-2xl transition-all cursor-pointer relative z-50"
+                        title="Cerrar Ventana"
+                      >
+                        <X size={24}/>
+                      </button>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
@@ -526,7 +539,7 @@ const Clients: React.FC = () => {
                           <div className="grid grid-cols-2 gap-4">
                               <div className="space-y-1.5">
                                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">RFC</label>
-                                  <input value={newClient.rfc} onChange={e => setNewClient({...newClient, rfc: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-black uppercase" placeholder="XAXX010101000" />
+                                  <input value={newClient.rfc} onChange={e => setNewClient({...newClient, rfc: formatRFC(e.target.value)})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-black uppercase" placeholder="XAXX010101000" maxLength={13} />
                               </div>
                               <div className="space-y-1.5">
                                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nivel de Cliente</label>
@@ -543,7 +556,7 @@ const Clients: React.FC = () => {
                            <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">WhatsApp / Tel</label>
-                                    <input value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-black" placeholder="10 dígitos" />
+                                    <input value={newClient.phone} onChange={e => setNewClient({...newClient, phone: formatPhone(e.target.value)})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-black" placeholder="(555) 123-4567" maxLength={14} />
                                 </div>
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email</label>
