@@ -1,16 +1,44 @@
 
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   
   return {
-    plugins: [react()],
+    plugins: [
+      react(),
+      VitePWA({
+        registerType: 'autoUpdate',
+        devOptions: {
+          enabled: true
+        },
+        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+        manifest: {
+          name: 'SuperAir ERP',
+          short_name: 'SuperAir',
+          description: 'Sistema de Gestión HVAC Industrial',
+          theme_color: '#0f172a',
+          background_color: '#ffffff',
+          display: 'standalone',
+          icons: [
+            {
+              src: 'pwa-192x192.png',
+              sizes: '192x192',
+              type: 'image/png'
+            },
+            {
+              src: 'pwa-512x512.png',
+              sizes: '512x512',
+              type: 'image/png'
+            }
+          ]
+        }
+      })
+    ],
     define: {
-      // Se elimina el fallback hardcoded para cumplir con la política de seguridad.
-      // La API_KEY debe ser proporcionada en las variables de entorno de Easypanel.
-      'process.env.API_KEY': JSON.stringify(env.API_KEY),
+      // API Key removed from frontend bundle for security. All AI calls must go through backend proxies.
     },
     server: {
       port: 5173,

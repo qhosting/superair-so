@@ -11,7 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 
 const Appointments: React.FC = () => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { showToast } = useNotification();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedApt, setSelectedApt] = useState<any | null>(null);
@@ -27,7 +27,7 @@ const Appointments: React.FC = () => {
 
   const [newApt, setNewApt] = useState({
       client_id: '',
-      technician: isInstaller ? user.name : '',
+      technician_id: isInstaller ? user.id : '',
       date: new Date().toISOString().split('T')[0],
       time: '10:00',
       duration: 60,
@@ -38,11 +38,20 @@ const Appointments: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
+        const token = localStorage.getItem('superair_token');
+        const headers = { 'Authorization': `Bearer ${token}` };
+
         const [aptsRes, cliRes, uRes] = await Promise.all([
-            fetch('/api/appointments'),
-            fetch('/api/clients'),
-            fetch('/api/users')
+            fetch('/api/appointments', { headers }),
+            fetch('/api/clients', { headers }),
+            fetch('/api/users', { headers })
         ]);
+
+        if (aptsRes.status === 401 || cliRes.status === 401 || uRes.status === 401) {
+            logout();
+            return;
+        }
+
         if (aptsRes.ok) setAppointments(await aptsRes.json());
         if (cliRes.ok) setClients(await cliRes.json());
         if (uRes.ok) {
@@ -57,9 +66,10 @@ const Appointments: React.FC = () => {
 
   const updateStatus = async (id: string | number, newStatus: string) => {
       try {
+          const token = localStorage.getItem('superair_token');
           const res = await fetch(`/api/appointments/${id}`, {
               method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
               body: JSON.stringify({ status: newStatus })
           });
           if (res.ok) {
@@ -155,16 +165,22 @@ const Appointments: React.FC = () => {
                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cliente y Ubicación</p>
                           <div className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100 relative group">
                               <h4 className="text-xl font-black text-slate-900 uppercase mb-2">{selectedApt.client_name}</h4>
-                              <p className="text-sm text-slate-500 font-medium leading-relaxed mb-6">{selectedApt.client_address}</p>
+                              <p className="text-sm text-slate-500 font-medium leading-relaxed mb-6">{selectedApt.client_address || 'Sin dirección registrada'}</p>
                               
-                              <a 
-                                href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(selectedApt.client_address)}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex items-center gap-3 w-full py-4 bg-white text-slate-900 border border-slate-200 rounded-2xl font-black uppercase text-[10px] tracking-widest justify-center hover:bg-slate-900 hover:text-white transition-all shadow-sm"
-                              >
-                                  <Navigation size={16}/> Abrir en Navegador (Ruta GPS)
-                              </a>
+                              {selectedApt.client_address ? (
+                                  <a
+                                    href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(selectedApt.client_address)}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex items-center gap-3 w-full py-4 bg-white text-slate-900 border border-slate-200 rounded-2xl font-black uppercase text-[10px] tracking-widest justify-center hover:bg-slate-900 hover:text-white transition-all shadow-sm"
+                                  >
+                                      <Navigation size={16}/> Abrir en Navegador (Ruta GPS)
+                                  </a>
+                              ) : (
+                                  <div className="flex items-center gap-3 w-full py-4 bg-slate-100 text-slate-400 border border-slate-200 rounded-2xl font-black uppercase text-[10px] tracking-widest justify-center cursor-not-allowed">
+                                      <AlertTriangle size={16}/> Dirección No Registrada
+                                  </div>
+                              )}
                           </div>
                       </div>
 
@@ -236,15 +252,20 @@ const Appointments: React.FC = () => {
                       </div>
                       <div className="space-y-1">
                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Asignar Técnico</label>
-                          <select className="w-full p-4 bg-slate-50 border rounded-2xl font-bold" value={newApt.technician} onChange={e=>setNewApt({...newApt, technician: e.target.value})}>
+                          <select className="w-full p-4 bg-slate-50 border rounded-2xl font-bold" value={newApt.technician_id} onChange={e=>setNewApt({...newApt, technician_id: e.target.value})}>
                               <option value="">-- Sin Asignar --</option>
-                              {installers.map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
+                              {installers.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
                           </select>
                       </div>
                       <button 
                         onClick={async () => {
-                            if (!newApt.client_id || !newApt.technician) return;
-                            const res = await fetch('/api/appointments', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(newApt)});
+                            if (!newApt.client_id || !newApt.technician_id) return;
+                            const token = localStorage.getItem('superair_token');
+                            const res = await fetch('/api/appointments', {
+                                method: 'POST',
+                                headers: {'Content-Type':'application/json', 'Authorization': `Bearer ${token}`},
+                                body: JSON.stringify(newApt)
+                            });
                             if (res.ok) { setShowNewAptModal(false); fetchData(); }
                             else { const err = await res.json(); alert(err.error); }
                         }}

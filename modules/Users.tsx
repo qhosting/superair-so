@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { User, UserRole, AuditLog, SecurityHealth } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { useNotification } from '../context/NotificationContext';
 
 const INITIAL_PERMISSIONS = [
     { module: 'Ventas', roles: { [UserRole.SUPER_ADMIN]: 'Full', [UserRole.ADMIN]: 'Edit', [UserRole.INSTALLER]: 'None', [UserRole.CLIENT]: 'View' } },
@@ -18,7 +19,8 @@ const INITIAL_PERMISSIONS = [
 ];
 
 const Users: React.FC = () => {
-  const { user: currentUser, login } = useAuth();
+  const { user: currentUser, login, logout } = useAuth();
+  const { showToast } = useNotification();
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('Todos los roles');
   const [activeTab, setActiveTab] = useState<'users' | 'health'>('users');
@@ -40,11 +42,19 @@ const Users: React.FC = () => {
   const fetchData = async () => {
       setLoading(true);
       try {
+          const token = localStorage.getItem('superair_token');
+          const headers = { 'Authorization': `Bearer ${token}` };
+
           const [usersRes, auditRes, healthRes] = await Promise.all([
-              fetch('/api/users'),
-              fetch('/api/audit-logs'),
-              fetch('/api/security/health')
+              fetch('/api/users', { headers }),
+              fetch('/api/audit-logs', { headers }),
+              fetch('/api/security/health', { headers })
           ]);
+
+          if (usersRes.status === 401 || auditRes.status === 401 || healthRes.status === 401) {
+              logout();
+              return;
+          }
 
           if (usersRes.ok) setUsers(await usersRes.json());
           if (auditRes.ok) setAuditLogs(await auditRes.json());
@@ -52,6 +62,7 @@ const Users: React.FC = () => {
 
       } catch (e) {
           console.error("Error fetching data", e);
+          showToast("Error de conexión", "error");
       } finally {
           setLoading(false);
       }
@@ -74,6 +85,21 @@ const Users: React.FC = () => {
           }
       } catch (e) { alert("Error de impersonación"); }
       finally { setIsImpersonating(null); }
+  };
+
+  const handleDelete = async (user: User) => {
+      if (!confirm(`¿Estás seguro de eliminar a ${user.name}? Esta acción es irreversible.`)) return;
+      try {
+          const res = await fetch(`/api/users/${user.id}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${localStorage.getItem('superair_token')}` }
+          });
+          if (res.ok) {
+              fetchData();
+          } else {
+              alert("Error al eliminar");
+          }
+      } catch (e) { alert("Error de red"); }
   };
 
   const filteredUsers = useMemo(() => {
@@ -197,6 +223,9 @@ const Users: React.FC = () => {
                                         </button>
                                     )}
                                     <button onClick={() => { setFormData({...user, password:''}); setIsEditing(true); setShowUserModal(true); }} className="p-2 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-xl transition-all"><Edit3 size={16} /></button>
+                                    {currentUser?.role === UserRole.SUPER_ADMIN && user.id !== currentUser.id && (
+                                        <button onClick={() => handleDelete(user)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={16} /></button>
+                                    )}
                                 </div>
                             </td>
                             </tr>
@@ -284,6 +313,101 @@ const Users: React.FC = () => {
             </div>
          </div>
       </div>
+
+      {/* User Add/Edit Modal */}
+      {showUserModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-6">
+              <div className="bg-white w-full max-w-lg rounded-[3rem] shadow-2xl p-10 animate-in zoom-in duration-300">
+                  <div className="flex justify-between items-center mb-8">
+                      <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">
+                          {isEditing ? 'Editar Usuario' : 'Nuevo Usuario'}
+                      </h3>
+                      <button onClick={() => setShowUserModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-all"><X size={24} className="text-slate-400"/></button>
+                  </div>
+                  <div className="space-y-6">
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Completo</label>
+                          <input
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                            value={formData.name}
+                            onChange={e => setFormData({...formData, name: e.target.value})}
+                          />
+                      </div>
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email Corporativo</label>
+                          <input
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                            value={formData.email}
+                            onChange={e => setFormData({...formData, email: e.target.value})}
+                          />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Rol de Acceso</label>
+                              <select
+                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                                value={formData.role}
+                                onChange={e => setFormData({...formData, role: e.target.value})}
+                              >
+                                  {Object.values(UserRole).map(r => <option key={r} value={r}>{r}</option>)}
+                              </select>
+                          </div>
+                          <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Estado</label>
+                              <select
+                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                                value={formData.status}
+                                onChange={e => setFormData({...formData, status: e.target.value})}
+                              >
+                                  <option>Activo</option>
+                                  <option>Inactivo</option>
+                              </select>
+                          </div>
+                      </div>
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Contraseña {isEditing && '(Dejar en blanco para mantener)'}</label>
+                          <input
+                            type="password"
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                            value={formData.password}
+                            onChange={e => setFormData({...formData, password: e.target.value})}
+                            placeholder="••••••••"
+                          />
+                      </div>
+
+                      <button
+                        onClick={async () => {
+                            if (!formData.name || !formData.email || (!isEditing && !formData.password)) return alert("Completa los campos obligatorios");
+
+                            try {
+                                const method = isEditing ? 'PUT' : 'POST';
+                                const url = isEditing ? `/api/users/${formData.id}` : '/api/users';
+                                const res = await fetch(url, {
+                                    method,
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'Authorization': `Bearer ${localStorage.getItem('superair_token')}`
+                                    },
+                                    body: JSON.stringify(formData)
+                                });
+
+                                if (res.ok) {
+                                    fetchData();
+                                    setShowUserModal(false);
+                                } else {
+                                    const err = await res.json();
+                                    alert(err.error || "Error al guardar");
+                                }
+                            } catch (e) { alert("Error de red"); }
+                        }}
+                        className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl hover:bg-sky-600 transition-all mt-4"
+                      >
+                          {isEditing ? 'Guardar Cambios' : 'Crear Usuario'}
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
 
       {/* Permissions Matrix Modal */}
       {showPermissionsModal && (

@@ -47,7 +47,7 @@ const CalculatorModule: React.FC = () => {
       return '5.0 Toneladas (Unidad Paquete)';
   }, [btuResult]);
 
-  const copyToClipboard = () => {
+  const copyToClipboard = async () => {
       const text = `ANÁLISIS DE CARGA TÉRMICA SUPERAIR:
 Area: ${params.width * params.length}m²
 Ocupantes: ${params.people}
@@ -57,6 +57,19 @@ Recomendación Técnica: ${recommendedUnit}`;
       
       navigator.clipboard.writeText(text);
       showToast("Cálculo técnico copiado al portapapeles");
+
+      // Log usage to backend
+      try {
+          const token = localStorage.getItem('superair_token');
+          await fetch('/api/calculator/log', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({ params, result: btuResult, recommendedUnit })
+          });
+      } catch (e) { console.error("Logging error", e); }
   };
 
   return (
