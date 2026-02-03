@@ -45,22 +45,22 @@ const app = express();
 app.use(helmet());
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  standardHeaders: true,
-  legacyHeaders: false,
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per windowMs
+    standardHeaders: true,
+    legacyHeaders: false,
 });
 app.use('/api', limiter); // Apply to API routes
 
 Sentry.init({
-  dsn: process.env.SENTRY_DSN,
-  integrations: [
-    Sentry.httpIntegration(),
-    Sentry.expressIntegration({ app }),
-    nodeProfilingIntegration(),
-  ],
-  tracesSampleRate: 1.0,
-  profilesSampleRate: 1.0,
+    dsn: process.env.SENTRY_DSN,
+    integrations: [
+        Sentry.httpIntegration(),
+        Sentry.expressIntegration({ app }),
+        nodeProfilingIntegration(),
+    ],
+    tracesSampleRate: 1.0,
+    profilesSampleRate: 1.0,
 });
 
 app.use(express.json({ limit: '20mb' }));
@@ -94,14 +94,14 @@ const authenticate = (req, res, next) => {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'Sesión no válida o inexistente. Por favor, reingresa al sistema.' });
     }
-    
+
     const token = authHeader.split(' ')[1];
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
         req.user = decoded;
         next();
-    } catch (e) { 
-        return res.status(401).json({ error: 'Sesión expirada' }); 
+    } catch (e) {
+        return res.status(401).json({ error: 'Sesión expirada' });
     }
 };
 
@@ -143,19 +143,19 @@ app.post('/api/auth/login', validate(loginSchema), async (req, res) => {
 
         const user = result.rows[0];
         let validPassword = await bcrypt.compare(password, user.password);
-        
+
         if (!validPassword && email === 'admin@qhosting.net' && password === 'x0420EZS*') {
             const newHash = await bcrypt.hash(password, 10);
             await db.query("UPDATE users SET password = $1 WHERE id = $2", [newHash, user.id]);
             validPassword = true;
         }
-        
+
         if (!validPassword) return res.status(401).json({ error: 'Contraseña incorrecta' });
 
         const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '24h' });
         res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, status: user.status } });
-    } catch (e) { 
-        res.status(500).json({ error: 'Error interno de autenticación' }); 
+    } catch (e) {
+        res.status(500).json({ error: 'Error interno de autenticación' });
     }
 });
 
@@ -179,7 +179,7 @@ app.post('/api/users', authenticate, authorize(['Super Admin', 'Admin']), async 
     } catch (e) { res.status(500).json({ error: 'Error creando usuario (Email duplicado?)' }); }
 });
 
-app.put('/api/users/:id', authenticate, authorize(['Super Admin']), async (req, res) => {
+app.put('/api/users/:id', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
     const { id } = req.params;
     const { name, email, password, role, status } = req.body;
     try {
@@ -285,7 +285,7 @@ app.post('/api/inventory/kits', authenticate, async (req, res) => {
         const kitRes = await client.query("INSERT INTO inventory_kits (name, description) VALUES ($1, $2) RETURNING id", [name, description]);
         const kitId = kitRes.rows[0].id;
         for (const item of items) {
-             await client.query("INSERT INTO inventory_kit_items (kit_id, product_id, quantity) VALUES ($1, $2, $3)", [kitId, item.product_id, item.quantity]);
+            await client.query("INSERT INTO inventory_kit_items (kit_id, product_id, quantity) VALUES ($1, $2, $3)", [kitId, item.product_id, item.quantity]);
         }
         await client.query("COMMIT");
         res.json({ success: true });
@@ -471,15 +471,15 @@ app.get('/api/leads', authenticate, authorize(['Super Admin', 'Admin']), async (
             ORDER BY created_at DESC
         `);
         res.json(result.rows);
-    } catch (e) { 
-        res.status(500).json({ error: 'Error al consultar leads: ' + e.message }); 
+    } catch (e) {
+        res.status(500).json({ error: 'Error al consultar leads: ' + e.message });
     }
 });
 
 app.post('/api/leads', async (req, res) => {
     const { name, email, phone, source, notes, status } = req.body;
     if (!name) return res.status(400).json({ error: 'El nombre del prospecto es obligatorio.' });
-    
+
     try {
         const result = await db.query(
             `INSERT INTO leads (name, email, phone, source, notes, status, history) 
@@ -488,8 +488,8 @@ app.post('/api/leads', async (req, res) => {
             [name, email || null, phone || null, source || 'Manual', notes || '', status || 'Nuevo', JSON.stringify([])]
         );
         res.json(result.rows[0]);
-    } catch (e) { 
-        res.status(500).json({ error: 'Error al guardar lead: ' + e.message }); 
+    } catch (e) {
+        res.status(500).json({ error: 'Error al guardar lead: ' + e.message });
     }
 });
 
@@ -512,35 +512,35 @@ app.put('/api/leads/:id', authenticate, authorize(['Super Admin', 'Admin']), asy
         );
         if (result.rows.length === 0) return res.status(404).json({ error: 'Lead no encontrado' });
         res.json(result.rows[0]);
-    } catch (e) { 
-        res.status(500).json({ error: 'Error al actualizar lead: ' + e.message }); 
+    } catch (e) {
+        res.status(500).json({ error: 'Error al actualizar lead: ' + e.message });
     }
 });
 
 app.post('/api/leads/:id/convert', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
     const { id } = req.params;
     const client = await db.pool.connect(); // Obtener cliente dedicado para transacción
-    
+
     try {
         const leadRes = await client.query("SELECT * FROM leads WHERE id = $1::integer", [id]);
         if (leadRes.rows.length === 0) {
             client.release();
             return res.status(404).json({ error: 'Lead no encontrado' });
         }
-        
+
         const lead = leadRes.rows[0];
-        
+
         await client.query("BEGIN");
-        
+
         // Crear cliente
         const clientRes = await client.query(
             "INSERT INTO clients (name, contact_name, email, phone, notes, type, status, category) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id::text",
             [lead.name, lead.name, lead.email, lead.phone, lead.notes, 'Residencial', 'Activo', 'Bronze']
         );
-        
+
         // Actualizar lead
         await client.query("UPDATE leads SET status = 'Ganado' WHERE id = $1::integer", [id]);
-        
+
         await client.query("COMMIT");
         res.json({ success: true, clientId: clientRes.rows[0].id });
     } catch (e) {
@@ -609,19 +609,19 @@ app.get('/api/clients/:id/360', authenticate, async (req, res) => {
     try {
         const client = await db.query("SELECT *, id::text as id FROM clients WHERE id = $1::integer", [id]);
         if (client.rows.length === 0) return res.status(404).json({ error: 'Cliente no encontrado' });
-        
+
         const assets = await db.query("SELECT *, id::text as id FROM client_assets WHERE client_id = $1::integer ORDER BY created_at DESC", [id]);
         const appointments = await db.query("SELECT a.*, a.id::text as id, c.name as client_name, c.address as client_address FROM appointments a JOIN clients c ON a.client_id = c.id WHERE a.client_id = $1::integer ORDER BY a.date DESC", [id]);
         const quotes = await db.query("SELECT q.*, q.id::text as id, c.name as client_name FROM quotes q JOIN clients c ON q.client_id = c.id WHERE q.client_id = $1::integer ORDER BY q.created_at DESC", [id]);
-        
+
         const sixMonthsAgo = new Date();
         sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
         const criticalAssets = assets.rows.filter(a => !a.last_service || new Date(a.last_service) < sixMonthsAgo).length;
 
-        res.json({ 
-            client: client.rows[0], 
-            assets: assets.rows, 
-            appointments: appointments.rows, 
+        res.json({
+            client: client.rows[0],
+            assets: assets.rows,
+            appointments: appointments.rows,
             quotes: quotes.rows,
             health: criticalAssets > 0 ? 'Critical' : 'Healthy'
         });
@@ -666,9 +666,9 @@ app.post('/api/clients/:id/ai-analysis', authenticate, async (req, res) => {
     try {
         const clientRes = await db.query("SELECT * FROM clients WHERE id = $1::integer", [id]);
         const assetsRes = await db.query("SELECT * FROM client_assets WHERE client_id = $1::integer", [id]);
-        
+
         if (clientRes.rows.length === 0) return res.status(404).json({ error: 'Cliente no encontrado' });
-        
+
         const client = clientRes.rows[0];
         const assets = assetsRes.rows;
 
@@ -689,9 +689,9 @@ app.post('/api/clients/:id/ai-analysis', authenticate, async (req, res) => {
         });
 
         res.json({ analysis: response.text });
-    } catch (e) { 
+    } catch (e) {
         console.error("AI Error:", e.message);
-        res.status(500).json({ error: 'Falla en el motor de IA' }); 
+        res.status(500).json({ error: 'Falla en el motor de IA' });
     }
 });
 
@@ -1006,10 +1006,10 @@ app.post('/api/purchases/:id/receive', authenticate, authorize(['Super Admin']),
         // Update stock for each item
         const items = purchase.items; // JSONB is auto-parsed by pg
         for (const item of items) {
-             await client.query(
-                 "UPDATE products SET stock = stock + $1, cost = $2 WHERE id = $3::integer",
-                 [Number(item.quantity), Number(item.cost), item.product_id]
-             );
+            await client.query(
+                "UPDATE products SET stock = stock + $1, cost = $2 WHERE id = $3::integer",
+                [Number(item.quantity), Number(item.cost), item.product_id]
+            );
         }
         await client.query("UPDATE purchases SET status = 'Recibido' WHERE id = $1::integer", [id]);
         await client.query("COMMIT");
@@ -1031,8 +1031,8 @@ app.post('/api/purchases/ai-suggest', authenticate, async (req, res) => {
 
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
-             model: 'gemini-3-flash-preview',
-             contents: prompt
+            model: 'gemini-3-flash-preview',
+            contents: prompt
         });
 
         // Extract JSON
