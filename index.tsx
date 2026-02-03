@@ -3,27 +3,28 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import * as Sentry from "@sentry/react";
 import App from './App';
+import './index.css';
 
 Sentry.init({
-  dsn: import.meta.env.VITE_SENTRY_DSN,
-  integrations: [
-    Sentry.browserTracingIntegration(),
-    Sentry.replayIntegration(),
-  ],
-  tracesSampleRate: 1.0,
-  replaysSessionSampleRate: 0.1,
-  replaysOnErrorSampleRate: 1.0,
+    dsn: import.meta.env.VITE_SENTRY_DSN,
+    integrations: [
+        Sentry.browserTracingIntegration(),
+        Sentry.replayIntegration(),
+    ],
+    tracesSampleRate: 1.0,
+    replaysSessionSampleRate: 0.1,
+    replaysOnErrorSampleRate: 1.0,
 });
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
-  throw new Error("Could not find root element to mount to");
+    throw new Error("Could not find root element to mount to");
 }
 
 // --- GLOBAL FETCH INTERCEPTOR (FIXED FOR GETTER-ONLY ENVIRONMENTS) ---
 (function applyInterceptor() {
     const originalFetch = window.fetch.bind(window);
-    
+
     const interceptedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         let url = '';
         if (typeof input === 'string') url = input;
@@ -32,13 +33,13 @@ if (!rootElement) {
 
         const isApiCall = url.includes('/api/');
         const isLoginPath = url.includes('/api/auth/login');
-        
+
         if (isApiCall && !isLoginPath) {
             const token = localStorage.getItem('superair_token');
             if (token) {
                 init = init || {};
                 const headers: Record<string, string> = {};
-                
+
                 if (init.headers) {
                     if (init.headers instanceof Headers) {
                         init.headers.forEach((value, key) => { headers[key] = value; });
@@ -52,7 +53,7 @@ if (!rootElement) {
                 if (!headers['Authorization'] && !headers['authorization']) {
                     headers['Authorization'] = `Bearer ${token}`;
                 }
-                
+
                 init.headers = headers;
             }
         }
@@ -64,7 +65,7 @@ if (!rootElement) {
                 const currentToken = localStorage.getItem('superair_token');
                 if (currentToken) {
                     console.warn(`🔐 Acceso denegado (${response.status}) para: ${url}. Verificando sesión...`);
-                    
+
                     if (response.status === 401) {
                         localStorage.removeItem('superair_token');
                         localStorage.removeItem('superair_user');
@@ -76,8 +77,8 @@ if (!rootElement) {
 
             return response;
         } catch (error) {
-            window.dispatchEvent(new CustomEvent('superair_network_error', { 
-                detail: { message: "Error de comunicación con el servidor ERP." } 
+            window.dispatchEvent(new CustomEvent('superair_network_error', {
+                detail: { message: "Error de comunicación con el servidor ERP." }
             }));
             throw error;
         }
@@ -104,13 +105,13 @@ if (!rootElement) {
 
 const root = ReactDOM.createRoot(rootElement);
 root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
+    <React.StrictMode>
+        <App />
+    </React.StrictMode>
 );
 
 if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
-  });
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => { });
+    });
 }
