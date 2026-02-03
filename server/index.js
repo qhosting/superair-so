@@ -179,6 +179,36 @@ app.post('/api/users', authenticate, authorize(['Super Admin', 'Admin']), async 
     } catch (e) { res.status(500).json({ error: 'Error creando usuario (Email duplicado?)' }); }
 });
 
+app.post('/api/products/bulk', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
+    const { products } = req.body;
+    if (!Array.isArray(products)) return res.status(400).json({ error: 'Datos de productos inválidos' });
+
+    const client = await db.pool.connect();
+    try {
+        await client.query("BEGIN");
+        for (const p of products) {
+            await client.query(
+                `INSERT INTO products (code, name, category, type, unit_of_measure, cost, price, stock, min_stock)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                 ON CONFLICT (code) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    category = EXCLUDED.category,
+                    price = EXCLUDED.price,
+                    cost = EXCLUDED.cost,
+                    stock = EXCLUDED.stock`,
+                [p.code, p.name, p.category, p.type || 'product', p.unit_of_measure || 'Pza', p.cost || 0, p.price || 0, p.stock || 0, p.min_stock || 0]
+            );
+        }
+        await client.query("COMMIT");
+        res.json({ success: true, count: products.length });
+    } catch (e) {
+        await client.query("ROLLBACK");
+        res.status(500).json({ error: e.message });
+    } finally {
+        client.release();
+    }
+});
+
 app.put('/api/users/:id', authenticate, authorize(['Super Admin', 'Admin']), async (req, res) => {
     const { id } = req.params;
     const { name, email, password, role, status } = req.body;
@@ -1069,6 +1099,36 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/api/dashboard/alerts', authenticate, async (req, res) => {
+    try {
+        const [lowStock, pendingApts, expiringGarantias] = await Promise.all([
+            db.query("SELECT name, stock, min_stock FROM products WHERE stock < min_stock AND type = 'product' LIMIT 5"),
+            db.query("SELECT c.name as client, a.type, a.time FROM appointments a JOIN clients c ON a.client_id = c.id WHERE a.date = CURRENT_DATE AND a.status = 'Programada' LIMIT 5"),
+            db.query("SELECT name, last_service FROM clients WHERE last_service < NOW() - INTERVAL '6 months' LIMIT 5")
+        ]);
+
+        const alerts = [];
+        lowStock.rows.forEach(p => alerts.push({ title: 'Stock Bajo', desc: `${p.name} (${p.stock} disponibles)`, type: 'Urgent' }));
+        pendingApts.rows.forEach(a => alerts.push({ title: 'Cita Pendiente', desc: `${a.client} - ${a.time} (${a.type})`, type: 'Action' }));
+        expiringGarantias.rows.forEach(c => alerts.push({ title: 'Mantenimiento Sugerido', desc: `${c.name} - Sin servicio hace +6 meses`, type: 'Pending' }));
+
+        res.json(alerts);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/weather', async (req, res) => {
+    // Proxy simple o simulador dinámico basado en hora (mejor que hardcoded 31 fijo)
+    const hour = new Date().getHours();
+    let temp = 24;
+    let status = 'Despejado';
+
+    if (hour > 11 && hour < 17) { temp = 32; status = 'Calor Intenso'; }
+    else if (hour >= 17 && hour < 21) { temp = 28; status = 'Cálido'; }
+    else if (hour >= 21 || hour < 7) { temp = 18; status = 'Fresco'; }
+
+    res.json({ temp, status, city: 'Querétaro, MX' });
+});
+
 app.post('/api/dashboard/ai-briefing', authenticate, async (req, res) => {
     const { currentLeads, currentQuotes } = req.body;
     try {
@@ -1088,10 +1148,10 @@ app.get('/api/reports/financial', authenticate, async (req, res) => {
                 TO_CHAR(created_at, 'YYYY-MM') as key,
                 TO_CHAR(created_at, 'Mon') as name,
                 SUM(total) as ingresos,
-                SUM(total * 0.6) as gastos, -- Estimado simplificado
-                SUM(total * 0.4) as ganancia
-            FROM quotes
-            WHERE status IN ('Aceptada', 'Ejecutada', 'Completada')
+                SUM(cost_total) as gastos,
+                SUM(total - cost_total) as ganancia
+            FROM orders
+            WHERE status IN ('Completado', 'Parcial', 'Entregado')
             AND created_at > NOW() - INTERVAL '${limit} months'
             GROUP BY 1, 2
             ORDER BY 1 ASC

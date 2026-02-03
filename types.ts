@@ -1,38 +1,38 @@
 
 export enum AppRoute {
-  DASHBOARD = 'dashboard',
-  LEADS = 'leads',
-  CLIENTS = 'clients',
-  QUOTES = 'quotes',
-  PURCHASES = 'purchases',
-  SALES = 'sales',
-  INVENTORY = 'inventory',
-  WAREHOUSES = 'warehouses',
-  APPOINTMENTS = 'appointments',
-  REPORTS = 'reports',
-  MANUAL = 'manual',
-  BUILDER = 'builder',
-  USERS = 'users',
-  SETTINGS = 'settings',
-  CALCULATOR = 'calculator'
+    DASHBOARD = 'dashboard',
+    LEADS = 'leads',
+    CLIENTS = 'clients',
+    QUOTES = 'quotes',
+    PURCHASES = 'purchases',
+    SALES = 'sales',
+    INVENTORY = 'inventory',
+    WAREHOUSES = 'warehouses',
+    APPOINTMENTS = 'appointments',
+    REPORTS = 'reports',
+    MANUAL = 'manual',
+    BUILDER = 'builder',
+    USERS = 'users',
+    SETTINGS = 'settings',
+    CALCULATOR = 'calculator'
 }
 
 // --- AUTH & RBAC ---
 export enum UserRole {
-  SUPER_ADMIN = 'Super Admin',
-  ADMIN = 'Admin',
-  INSTALLER = 'Instalador',
-  CLIENT = 'Cliente'
+    SUPER_ADMIN = 'Super Admin',
+    ADMIN = 'Admin',
+    INSTALLER = 'Instalador',
+    CLIENT = 'Cliente'
 }
 
 export interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  status: 'Activo' | 'Inactivo';
-  lastLogin?: string;
-  passwordLastChanged?: string;
+    id: string;
+    name: string;
+    email: string;
+    role: UserRole;
+    status: 'Activo' | 'Inactivo';
+    lastLogin?: string;
+    passwordLastChanged?: string;
 }
 
 export interface AuditLog {
@@ -62,17 +62,18 @@ export interface SecurityHealth {
 
 // --- CLIENTS & CRM ---
 export interface Client {
-  id: string;
-  name: string;
-  email?: string;
-  phone?: string;
-  address?: string;
-  rfc?: string;
-  type: 'Residencial' | 'Comercial';
-  status: string;
-  notes?: string;
-  lastService?: string;
-  ltv?: number;
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+    rfc?: string;
+    type: 'Residencial' | 'Comercial';
+    category?: string;
+    status: string;
+    notes?: string;
+    lastService?: string;
+    ltv?: number;
 }
 
 export interface ClientAsset {
@@ -88,9 +89,9 @@ export interface ClientAsset {
 
 // --- QUOTES & SALES ---
 export enum PaymentTerms {
-  FIFTY_FIFTY = '50% Anticipo / 50% Contra Entrega',
-  NET_30 = 'Neto 30 días',
-  CASH = 'Contado'
+    FIFTY_FIFTY = '50% Anticipo / 50% Contra Entrega',
+    NET_30 = 'Neto 30 días',
+    CASH = 'Contado'
 }
 
 export type QuoteItemCategory = 'Equipos' | 'Materiales' | 'Mano de Obra';
@@ -137,43 +138,43 @@ export interface FiscalData {
 }
 
 export interface Order {
-  id: string | number;
-  clientId: string | number;
-  clientName: string;
-  clientPhone?: string;
-  total: number;
-  paidAmount: number;
-  costTotal: number;
-  cost_total?: number;
-  status: 'Pendiente' | 'Parcial' | 'Completado' | 'Cancelado';
-  cfdiStatus: 'Pendiente' | 'Timbrado';
-  paymentTerms: string;
-  createdAt: string;
-  dueDate: string;
-  isOverdue: boolean;
-  profitMargin: number;
-  commission: number;
-  evidenceUrl?: string;
-  fiscalData?: FiscalData;
-  items: OrderItem[];
+    id: string | number;
+    clientId: string | number;
+    clientName: string;
+    clientPhone?: string;
+    total: number;
+    paidAmount: number;
+    costTotal: number;
+    cost_total?: number;
+    status: 'Pendiente' | 'Parcial' | 'Completado' | 'Cancelado';
+    cfdiStatus: 'Pendiente' | 'Timbrado';
+    paymentTerms: string;
+    createdAt: string;
+    dueDate: string;
+    isOverdue: boolean;
+    profitMargin: number;
+    commission: number;
+    evidenceUrl?: string;
+    fiscalData?: FiscalData;
+    items: OrderItem[];
 }
 
 // --- INVENTORY & LOGISTICS ---
 export type UnitOfMeasure = 'Pza' | 'Kg' | 'Mts' | 'Lto' | 'Jgo';
 
 export interface Product {
-  id: string | number;
-  code?: string;
-  name: string;
-  description?: string;
-  price: number;
-  cost: number;
-  stock: number;
-  min_stock: number;
-  category: string;
-  type: 'product' | 'service';
-  unit_of_measure: UnitOfMeasure;
-  requires_serial?: boolean;
+    id: string | number;
+    code?: string;
+    name: string;
+    description?: string;
+    price: number;
+    cost: number;
+    stock: number;
+    min_stock: number;
+    category: string;
+    type: 'product' | 'service';
+    unit_of_measure: UnitOfMeasure;
+    requires_serial?: boolean;
 }
 
 export interface InventoryKitItem {
