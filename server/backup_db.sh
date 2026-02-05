@@ -24,3 +24,8 @@ else
   echo "❌ Backup failed!"
   exit 1
 fi
+
+echo "☁️  Syncing with Google Drive..."
+# Run the Node.js uploader
+# Assuming node is available in the environment this runs in
+cd "$(dirname "$0")" && node backup_to_drive.js

@@ -12,7 +12,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x, 20.x]
+        node-version: [18.x]
 
     steps:
     - uses: actions/checkout@v3
@@ -26,13 +26,15 @@ jobs:
     - name: Install Dependencies
       run: npm ci
 
+    - name: Run Linter
+      run: npm run lint --if-present
+
     - name: Run Unit Tests
       run: npm test
 
     - name: Build Frontend
       run: npm run build
       env:
-        # Prevent treating warnings as errors in CI if needed, or set other build env vars
         CI: false
 
     - name: Install Playwright Browsers
@@ -63,4 +65,14 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository }}:latest
           build-args: |
-            API_KEY=${{ secrets.API_KEY }}
+             API_KEY=${{ secrets.API_KEY }}
+
+      - name: Trigger Easypanel Deploy
+        if: success()
+        run: |
+           if [ -n "${{ secrets.EASYPANEL_WEBHOOK_URL }}" ]; then
+             echo "Triggering deployment webhook..."
+             curl -X POST "${{ secrets.EASYPANEL_WEBHOOK_URL }}"
+           else
+             echo "No webhook configured. Skipping trigger."
+           fi

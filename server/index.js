@@ -99,6 +99,14 @@ const authenticate = (req, res, next) => {
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
         req.user = decoded;
+
+        // Enhance Sentry Scope
+        Sentry.setUser({
+            id: decoded.id,
+            email: decoded.email,
+            role: decoded.role
+        });
+
         next();
     } catch (e) {
         return res.status(401).json({ error: 'Sesión expirada' });
