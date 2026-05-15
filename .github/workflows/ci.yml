@@ -65,16 +65,16 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository }}:latest
           build-args: |
-             API_KEY=${{ secrets.API_KEY }}
+            API_KEY=${{secrets.API_KEY}}
 
       - name: Trigger Easypanel Deploy
         if: success()
         env:
-          EASYPANEL_WEBHOOK: ${{ secrets.EASYPANEL_WEBHOOK_URL }}
+          EASYPANEL_WEBHOOK: ${{secrets.EASYPANEL_WEBHOOK_URL}}
         run: |
-           if [ -n "$EASYPANEL_WEBHOOK" ]; then
-             echo "Triggering deployment webhook..."
-             curl -X POST "$EASYPANEL_WEBHOOK"
-           else
-             echo "No webhook configured. Skipping trigger."
-           fi
+          if [ -n "$EASYPANEL_WEBHOOK" ]; then
+            echo "Triggering deployment webhook..."
+            curl -X POST "$EASYPANEL_WEBHOOK"
+          else
+            echo "No webhook configured. Skipping trigger."
+          fi
