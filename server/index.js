@@ -44,6 +44,16 @@ const app = express();
 // --- SECURITY HEADERS & RATE LIMITING ---
 app.use(helmet());
 
+// Handle malformed URIs
+app.use((req, res, next) => {
+    try {
+        decodeURIComponent(req.path);
+        next();
+    } catch (e) {
+        res.status(400).json({ error: 'Malformed URI' });
+    }
+});
+
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100, // Limit each IP to 100 requests per windowMs

@@ -69,10 +69,12 @@ jobs:
 
       - name: Trigger Easypanel Deploy
         if: success()
+        env:
+          EASYPANEL_WEBHOOK: ${{ secrets.EASYPANEL_WEBHOOK_URL }}
         run: |
-           if [ -n "${{ secrets.EASYPANEL_WEBHOOK_URL }}" ]; then
+           if [ -n "$EASYPANEL_WEBHOOK" ]; then
              echo "Triggering deployment webhook..."
-             curl -X POST "${{ secrets.EASYPANEL_WEBHOOK_URL }}"
+             curl -X POST "$EASYPANEL_WEBHOOK"
            else
              echo "No webhook configured. Skipping trigger."
            fi

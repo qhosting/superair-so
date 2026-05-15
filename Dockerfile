@@ -25,13 +25,13 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Configuración de entorno y zona horaria para México
-RUN apk add --no-cache tzdata
+RUN apk add --no-cache tzdata postgresql-client
 ENV TZ=America/Mexico_City
 ENV NODE_ENV=production
 ENV PORT=3000
 
 # Metadatos de versión sincronizados con server/index.js
-LABEL version="1.3.0"
+LABEL version="1.3.1"
 LABEL description="SuperAir ERP Production Environment - Full Backend Implementation"
 
 # Inyectar API_KEY en el entorno de ejecución del servidor
@@ -39,7 +39,7 @@ ARG API_KEY
 ENV API_KEY=$API_KEY
 
 # Preparar directorio de persistencia para activos dinámicos (logos, PDFs)
-RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
+RUN mkdir -p /app/uploads /app/backups && chown -R node:node /app/uploads /app/backups
 
 # Copiar dependencias exclusivas de producción para optimizar imagen
 COPY --chown=node:node package*.json ./
